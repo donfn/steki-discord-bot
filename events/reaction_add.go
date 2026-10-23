@@ -1,90 +1,46 @@
 package events
 
 import (
-	"fmt"
-	"log"
-	"time"
-
 	"github.com/bwmarrin/discordgo"
 )
 
-func (h *Handler) OnReactionAdd(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
-	if r.UserID == s.State.User.ID {
+// onReactionAdd implements the restart control and the interest-role picker.
+// Both only apply inside the reacting member's own registration channel.
+func (h *Handler) onReactionAdd(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
+	if r.GuildID == "" || (s.State.User != nil && r.UserID == s.State.User.ID) {
 		return
 	}
+	h.setGuildID(r.GuildID)
 
-	ch, err := s.State.Channel(r.ChannelID)
+	ctx, cancel := h.ctx()
+	defer cancel()
+
+	ch, err := h.channel(ctx, s, r.ChannelID)
 	if err != nil {
-		ch, err = s.Channel(r.ChannelID)
-		if err != nil {
-			return
-		}
+		return
 	}
-
-	if ch.Name != fmt.Sprintf("register-%s", r.UserID) {
+	owner, ok := userIDFromChannelName(ch.Name)
+	if !ok || owner != r.UserID {
 		return
 	}
 
-	emoji := r.Emoji.Name
-
-	if emoji == "🔄" {
-		if err := h.restartRegistration(s, r.ChannelID, r.UserID); err != nil {
-			log.Println("OnReactionAdd: restartRegistration:", err)
+	if r.Emoji.Name == restartEmoji {
+		if err := h.restartRegistration(s, r.ChannelID, r.UserID, r.GuildID); err != nil {
+			h.log.Error("restart registration failed", "user_id", r.UserID, "error", err)
 		}
 		return
 	}
 
-	roleID, ok := reactionRoles[emoji]
-	if !ok {
-		s.MessageReactionRemove(r.ChannelID, r.MessageID, emoji, r.UserID)
+	roleID, known := reactionRoles[r.Emoji.Name]
+	if !known {
+		// APIName is "name:id" for custom emoji, which the endpoint requires.
+		if err := s.MessageReactionRemove(r.ChannelID, r.MessageID, r.Emoji.APIName(), r.UserID); err != nil {
+			h.log.Debug("remove unknown reaction failed", "emoji", r.Emoji.Name, "error", err)
+		}
 		return
 	}
 
-	if err := s.GuildMemberRoleAdd(r.GuildID, r.UserID, roleID); err != nil {
-		log.Println("OnReactionAdd: add role:", err)
-		return
+	if err := h.grantRole(ctx, s, r.GuildID, r.UserID, roleID); err != nil {
+		h.log.Error("add interest role failed", "user_id", r.UserID, "role_id", roleID, "error", err)
 	}
-
-	reg, _ := h.regRepo.FindByUser(r.UserID)
-	h.completeRegistration(s, r.ChannelID, reg)
-}
-
-func (h *Handler) restartRegistration(s *discordgo.Session, channelID, userID string) error {
-	if err := h.regRepo.DeleteByUser(userID); err != nil {
-		return err
-	}
-
-	msgs, err := s.ChannelMessages(channelID, 100, "", "", "")
-	if err == nil && len(msgs) > 0 {
-		ids := make([]string, len(msgs))
-		for i, msg := range msgs {
-			ids[i] = msg.ID
-		}
-		s.ChannelMessagesBulkDelete(channelID, ids)
-	}
-
-	s.ChannelMessageSend(channelID, fmt.Sprintf(
-		"**Γειά σου <@%s>, καλωσόρισες στο Steki!** \nΘα χρειαστεί να επιβεβαιώσουμε την φοιτητική σου ιδιότητα.\n\n"+
-			"Είναι πολύ απλό: \n**Θα σου στείλω έναν κωδικό στο ακαδημαϊκό σου email και εσύ θα πρέπει να μου τον στείλεις πίσω.**",
-		userID,
-	))
-
-	time.AfterFunc(1*time.Second, func() {
-		msg, err := s.ChannelMessageSend(channelID,
-			"Αν κολλήσεις σε κάποιο από τα βήματα μπορείς να πατήσεις το :arrows_counterclockwise: κάτω από αυτό το μήνυμα "+
-				"και θα ξανα-αρχίσουμε τη διαδικασία από την αρχή. Εναλλακτικά, στείλε στο <#939177847933780018>.",
-		)
-		if err == nil {
-			s.MessageReactionAdd(channelID, msg.ID, "🔄")
-		}
-	})
-
-	time.AfterFunc(2*time.Second, func() {
-		s.ChannelMessageSend(channelID,
-			"**Για να συνεχίσουμε, στείλε μου εδώ το ακαδημαϊκό σου email. "+
-				"Θα πρέπει να είναι της μορφής *thXXXXXX@edu.hmu.gr* (αυτό που σου έδωσε η γραμματεία κατά την εγγραφή)**.",
-		)
-	})
-
-	return nil
 }

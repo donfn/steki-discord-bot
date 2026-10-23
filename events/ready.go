@@ -2,83 +2,82 @@ package events
 
 import (
 	"fmt"
-	"log"
-	"strings"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
 )
 
-func (h *Handler) OnReady(s *discordgo.Session, r *discordgo.Ready) {
-	log.Printf("Logged in as %s", r.User.Username)
+// onReady runs on every fresh gateway session (not on resumes).
+//
+// Background loops are started exactly once, but the reconciler is invoked on
+// every Ready: a new session is precisely when GUILD_MEMBER_ADD events may
+// have been missed, and the sweep is what recovers them.
+func (h *Handler) onReady(s *discordgo.Session, r *discordgo.Ready) {
+	for _, g := range r.Guilds {
+		h.setGuildID(g.ID)
+	}
+
+	h.log.Info("gateway ready",
+		"user", r.User.Username, "guilds", len(r.Guilds), "session", r.SessionID)
+
 	h.startOnce.Do(func() {
-		bootTime := time.Now()
-		go h.rotateStatus(s, bootTime)
-		go h.spamUnregistered(s)
+		h.goLoop("status", 30*time.Second, func() { h.updateStatus(s) })
+		h.startMaintenance(s)
+	})
+
+	go h.safely("reconcile_on_ready", func() {
+		if err := h.registerCommands(s); err != nil {
+			h.log.Error("register slash commands failed", "error", err)
+		}
+		h.reconcile(s)
 	})
 }
 
-func (h *Handler) rotateStatus(s *discordgo.Session, bootTime time.Time) {
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
+// onGuildCreate learns the guild ID, which the bot is otherwise never told.
+func (h *Handler) onGuildCreate(_ *discordgo.Session, g *discordgo.GuildCreate) {
+	h.setGuildID(g.ID)
+}
 
-	i := 0
-	for range ticker.C {
-		var status string
-		switch i {
-		case 0:
-			d := time.Since(bootTime)
-			days := int(d.Hours()) / 24
-			hours := int(d.Hours()) % 24
-			mins := int(d.Minutes()) % 60
-			status = fmt.Sprintf("Bot Uptime: %dd %dh %dm", days, hours, mins)
-		case 2:
-			status = fmt.Sprintf("Κακόβουλα μηνύματα που έχουν μπλοκαριστεί: %d", h.getBlocked())
-		case 3:
-			status = fmt.Sprintf("Επεξεργασμένα μηνύματα: %d", h.getProcessed())
-		}
-		if status != "" {
-			if err := s.UpdateGameStatus(0, status); err != nil {
-				log.Println("rotateStatus:", err)
-			}
-		}
-		i = (i + 1) % 4
+// onDisconnect and onResumed make gateway health visible in the logs, since
+// silent reconnects were masking dropped joins.
+func (h *Handler) onDisconnect(_ *discordgo.Session, _ *discordgo.Disconnect) {
+	h.log.Warn("gateway disconnected")
+}
+
+func (h *Handler) onResumed(s *discordgo.Session, _ *discordgo.Resumed) {
+	h.log.Info("gateway resumed")
+	go h.safely("reconcile_on_resume", func() { h.reconcile(s) })
+}
+
+// updateStatus rotates the presence text.
+//
+// The previous implementation ticked every ten seconds regardless of
+// connection state, producing a steady stream of
+// "rotateStatus: no websocket connection exists" errors while reconnecting.
+func (h *Handler) updateStatus(s *discordgo.Session) {
+	s.RLock()
+	ready := s.DataReady
+	s.RUnlock()
+	if !ready {
+		return
+	}
+
+	var status string
+	switch h.statusIndex.Add(1) % 3 {
+	case 0:
+		status = "Uptime: " + formatUptime(time.Since(h.bootTime))
+	case 1:
+		status = fmt.Sprintf("Κακόβουλα μηνύματα: %d", h.blocked.Load())
+	case 2:
+		status = fmt.Sprintf("Επεξεργασμένα μηνύματα: %d", h.processed.Load())
+	}
+
+	if err := s.UpdateGameStatus(0, status); err != nil {
+		h.log.Debug("update status failed", "error", err)
 	}
 }
 
-func (h *Handler) spamUnregistered(s *discordgo.Session) {
-	ticker := time.NewTicker(20 * time.Minute)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		for _, guild := range s.State.Guilds {
-			channels, err := s.GuildChannels(guild.ID)
-			if err != nil {
-				log.Println("spamUnregistered: get channels:", err)
-				continue
-			}
-			for _, ch := range channels {
-				if !strings.HasPrefix(ch.Name, "register-") {
-					continue
-				}
-				parts := strings.SplitN(ch.Name, "-", 2)
-				if len(parts) < 2 {
-					continue
-				}
-				userID := parts[1]
-				dm, err := s.UserChannelCreate(userID)
-				if err != nil {
-					continue
-				}
-				msg := fmt.Sprintf(
-					"🆘 Το Steki για εσένα τώρα φαίνεται κενό και αυτό είναι γιατί δεν έχεις γραφτεί.\n\n"+
-						"ℹ️ Για να ολοκληρώσεις την εγγραφή σου στο Steki, μπές εδώ → <#%s>!\n\n"+
-						"💁🏻 Αν αντιμετωπίζεις κάποιο πρόβλημα ή δεν ξέρεις τι να κάνεις, στείλε στο <#939177847933780018>.\n"+
-						"Έχε υπόψη ότι είμαι απλά ένα πρόγραμμα.",
-					ch.ID,
-				)
-				s.ChannelMessageSend(dm.ID, msg)
-			}
-		}
-	}
+// formatUptime renders a duration as "Nd Nh Nm".
+func formatUptime(d time.Duration) string {
+	return fmt.Sprintf("%dd %dh %dm", int(d.Hours())/24, int(d.Hours())%24, int(d.Minutes())%60)
 }

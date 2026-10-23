@@ -12,3 +12,7 @@ steki-bot
 
 # Go test cache
 *.test
+
+# Build artifacts
+/migrate
+/cmd/migrate/migrate

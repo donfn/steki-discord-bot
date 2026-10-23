@@ -1,63 +1,97 @@
+// Package config loads and validates the bot's runtime configuration.
+//
+// Everything that is fixed for the Steki guild (channel, category and role IDs)
+// lives as a constant here rather than as an environment variable: those IDs
+// never change, and keeping them out of the environment is what makes the
+// deployment configuration small enough to read at a glance.
 package config
 
 import (
+	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 
 	"github.com/joho/godotenv"
 )
 
+// Discord IDs for the Steki guild. These are compile-time constants on purpose.
+// The guild ID itself is deliberately absent: it is read from the gateway at
+// runtime, so the bot never has to be told which guild it is in.
+const (
+	LogChannelID       = "939180081857839174"
+	WelcomeChannelID   = "886981920108478526"
+	SupportChannelID   = "939177847933780018"
+	RegisterCategoryID = "890021609631531009"
+)
+
+// Config holds everything the bot needs to run.
 type Config struct {
-	Env      string
-	Token    string
-	DevToken string
+	DiscordToken string
+	DatabaseURL  string
+	ResendAPIKey string
 
-	FooterText string
-	FooterIcon string
-	Color      string
-	Version    string
-
-	MongoURL        string
-	MailgunAPIToken string
-	Salt            string
-
+	EmailFrom    string
 	URLBlacklist []string
-
-	// Hardcoded Discord IDs (channel/category/role)
-	LogChannelID       string
-	WelcomeChannelID   string
-	RegisterCategoryID string
+	LogLevel     slog.Level
+	Port         string
 }
 
-func Load() *Config {
+// Load reads configuration from the environment, falling back to a .env file
+// when one is present. It returns an error naming every missing required
+// variable at once, so a misconfigured deploy fails on boot with a complete
+// list rather than one variable at a time.
+func Load() (*Config, error) {
 	_ = godotenv.Load()
 
-	var blacklist []string
-	if bl := os.Getenv("URL_BLACKLIST"); bl != "" {
-		blacklist = strings.Split(bl, ",")
+	cfg := &Config{
+		DiscordToken: os.Getenv("DISCORD_TOKEN"),
+		DatabaseURL:  os.Getenv("DATABASE_URL"),
+		ResendAPIKey: os.Getenv("RESEND_API_KEY"),
+		EmailFrom:    envOr("EMAIL_FROM", "Steki <steki@poiw.org>"),
+		LogLevel:     parseLevel(os.Getenv("LOG_LEVEL")),
+		Port:         envOr("PORT", "8080"),
 	}
 
-	return &Config{
-		Env:                getEnv("NODE_ENV", "production"),
-		Token:              os.Getenv("TOKEN"),
-		DevToken:           os.Getenv("DEV_TOKEN"),
-		FooterText:         os.Getenv("FOOTER_TEXT"),
-		FooterIcon:         os.Getenv("FOOTER_ICON"),
-		Color:              os.Getenv("COLOR"),
-		Version:            os.Getenv("VERSION"),
-		MongoURL:           os.Getenv("MONGO_URL"),
-		MailgunAPIToken:    os.Getenv("MAILGUN_API_TOKEN"),
-		Salt:               os.Getenv("SALT"),
-		URLBlacklist: blacklist,
-		LogChannelID:       "939180081857839174",
-		WelcomeChannelID:   "886981920108478526",
-		RegisterCategoryID: "890021609631531009",
+	for _, entry := range strings.Split(os.Getenv("URL_BLACKLIST"), ",") {
+		if entry = strings.TrimSpace(entry); entry != "" {
+			cfg.URLBlacklist = append(cfg.URLBlacklist, strings.ToLower(entry))
+		}
 	}
+
+	var missing []string
+	if cfg.DiscordToken == "" {
+		missing = append(missing, "DISCORD_TOKEN")
+	}
+	if cfg.DatabaseURL == "" {
+		missing = append(missing, "DATABASE_URL")
+	}
+	if cfg.ResendAPIKey == "" {
+		missing = append(missing, "RESEND_API_KEY")
+	}
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("missing required environment variables: %s", strings.Join(missing, ", "))
+	}
+
+	return cfg, nil
 }
 
-func getEnv(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
+func envOr(key, fallback string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
 		return v
 	}
 	return fallback
+}
+
+func parseLevel(s string) slog.Level {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "debug":
+		return slog.LevelDebug
+	case "warn", "warning":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
 }

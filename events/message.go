@@ -1,42 +1,28 @@
 package events
 
 import (
-	"log"
-	"strings"
-
 	"github.com/bwmarrin/discordgo"
 )
 
-func (h *Handler) OnMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
-	if m.Author == nil || m.Author.Bot {
+// onMessage screens guild messages for blacklisted links and drives the
+// registration flow inside register channels. Direct messages are ignored.
+func (h *Handler) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
+	if m.Author == nil || m.Author.Bot || m.GuildID == "" {
+		return
+	}
+	h.setGuildID(m.GuildID)
+	h.processed.Add(1)
+
+	if h.linkChk.Check(s, m.Message) {
+		h.blocked.Add(1)
 		return
 	}
 
-	h.incrProcessed()
-
-	deleted, err := h.linkChk.Check(s, m.Message)
-	if err != nil {
-		log.Println("linkcheck:", err)
-	}
-	if deleted {
-		h.incrBlocked()
+	ctx, cancel := h.ctx()
+	ch, err := h.channel(ctx, s, m.ChannelID)
+	cancel()
+	if err != nil || !isRegisterChannel(ch) {
 		return
 	}
-
-	if m.ChannelID == h.cfg.LogChannelID {
-		h.handleAdminCommand(s, m)
-		return
-	}
-
-	ch, err := s.State.Channel(m.ChannelID)
-	if err != nil {
-		ch, err = s.Channel(m.ChannelID)
-		if err != nil {
-			return
-		}
-	}
-
-	if strings.HasPrefix(ch.Name, "register-") {
-		h.handleRegistration(s, m, ch)
-	}
+	h.handleRegistration(s, m)
 }

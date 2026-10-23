@@ -1,29 +1,109 @@
 package events
 
 import (
+	"errors"
 	"fmt"
-	"log"
-	"time"
 
 	"github.com/bwmarrin/discordgo"
+
+	"steki-bot/config"
+	"steki-bot/dc"
+	"steki-bot/store"
 )
 
-func (h *Handler) OnMemberAdd(s *discordgo.Session, m *discordgo.GuildMemberAdd) {
-	user := m.User
+// onMemberAdd records a join, greets the member and gives them a registration
+// channel.
+func (h *Handler) onMemberAdd(s *discordgo.Session, m *discordgo.GuildMemberAdd) {
+	if m.User == nil || m.User.Bot {
+		return
+	}
+	h.setGuildID(m.GuildID)
 
-	ch, err := s.GuildChannelCreateComplex(m.GuildID, discordgo.GuildChannelCreateData{
-		Name:     fmt.Sprintf("register-%s", user.ID),
-		Type:     discordgo.ChannelTypeGuildText,
-		Topic:    "Ολοκλήρωσε την εγγραφή σου για να μπορέσεις να δείς όλα τα κανάλια στο Steki!",
-		ParentID: h.cfg.RegisterCategoryID,
+	ctx, cancel := h.ctx()
+	err := h.st.UpsertMemberJoin(ctx, m.User.ID, m.User.Username)
+	cancel()
+	if err != nil {
+		// Carry on: a missing join counter must not cost the member their
+		// registration channel.
+		h.log.Error("record member join failed", "user_id", m.User.ID, "error", err)
+	}
+	h.audit(m.User.ID, "", store.EventJoined, map[string]any{"username": m.User.Username}, "")
+
+	h.ensureRegisterChannel(s, m.GuildID, m.User)
+}
+
+// ensureRegisterChannel makes sure an unverified member has an open
+// registration with a live channel. It is the one path shared by the gateway
+// join and the reconciler, which is what lets a join missed during a gateway
+// outage be recovered later without duplicating any logic.
+//
+// It is idempotent: the registration row is created under a partial unique
+// index, an existing channel is reused, and the per-member lock keeps a
+// redelivered GUILD_MEMBER_ADD and a reconciler sweep from both creating one.
+func (h *Handler) ensureRegisterChannel(s *discordgo.Session, guildID string, user *discordgo.User) {
+	defer h.lockUser(user.ID)()
+
+	ctx, cancel := h.ctxTimeout(flowTimeout)
+	defer cancel()
+
+	if err := h.st.EnsureMember(ctx, user.ID, user.Username); err != nil {
+		h.log.Error("ensure member failed", "user_id", user.ID, "error", err)
+		h.alertMods(s, "⚠️ Δεν μπόρεσα να ανοίξω εγγραφή για τον <@%s>: ```%v```", user.ID, err)
+		return
+	}
+	reg, created, err := h.st.EnsureOpenRegistration(ctx, user.ID, guildID)
+	if err != nil {
+		h.log.Error("ensure registration failed", "user_id", user.ID, "error", err)
+		h.alertMods(s, "⚠️ Δεν μπόρεσα να ανοίξω εγγραφή για τον <@%s>: ```%v```", user.ID, err)
+		return
+	}
+
+	// An open registration that still points at a live channel needs nothing.
+	if !created && reg.ChannelID != nil {
+		exists, err := h.channelExists(ctx, s, *reg.ChannelID)
+		if err != nil {
+			h.log.Error("cannot confirm register channel, leaving it for the reconciler",
+				"user_id", user.ID, "channel_id", *reg.ChannelID, "error", err)
+			return
+		}
+		if exists {
+			return
+		}
+		h.log.Info("registration channel vanished, recreating",
+			"user_id", user.ID, "channel_id", *reg.ChannelID)
+	}
+
+	ch, categoryID, err := h.placer.Create(ctx, s, guildID, registerChannelData(guildID, user.ID))
+	if err != nil {
+		h.reportChannelFailure(s, user, reg.ID, err)
+		return
+	}
+
+	if err := h.st.AttachChannel(ctx, reg.ID, ch.ID, categoryID); err != nil {
+		// The reconciler adopts a register channel its row lost track of.
+		h.log.Error("attach channel failed", "user_id", user.ID, "channel_id", ch.ID, "error", err)
+	}
+	h.audit(user.ID, reg.ID, store.EventChannelCreated,
+		map[string]any{"channel_id": ch.ID, "category_id": categoryID}, "")
+
+	h.sendWelcome(s, ch.ID, user.ID)
+}
+
+// registerChannelData describes a member's registration channel: hidden from
+// everyone except the member and the moderators who watch registrations.
+func registerChannelData(guildID, userID string) discordgo.GuildChannelCreateData {
+	return discordgo.GuildChannelCreateData{
+		Name:  registerChannelName(userID),
+		Type:  discordgo.ChannelTypeGuildText,
+		Topic: "Ολοκλήρωσε την εγγραφή σου για να μπορέσεις να δείς όλα τα κανάλια στο Steki!",
 		PermissionOverwrites: []*discordgo.PermissionOverwrite{
 			{
-				ID:   m.GuildID,
+				ID:   guildID, // @everyone
 				Type: discordgo.PermissionOverwriteTypeRole,
 				Deny: discordgo.PermissionViewChannel,
 			},
 			{
-				ID:    user.ID,
+				ID:    userID,
 				Type:  discordgo.PermissionOverwriteTypeMember,
 				Allow: discordgo.PermissionViewChannel,
 			},
@@ -33,41 +113,56 @@ func (h *Handler) OnMemberAdd(s *discordgo.Session, m *discordgo.GuildMemberAdd)
 				Allow: discordgo.PermissionViewChannel,
 			},
 		},
-	})
-	if err != nil {
-		log.Println("OnMemberAdd: create channel:", err)
+	}
+}
+
+// reportChannelFailure makes a failed channel creation loud. The production
+// incident this replaces logged one line to stdout and returned, leaving the
+// member with no channel and nobody aware of it.
+func (h *Handler) reportChannelFailure(s *discordgo.Session, user *discordgo.User, regID string, err error) {
+	h.log.Error("create register channel failed",
+		"user_id", user.ID, "username", user.Username,
+		"api_code", dc.APICode(err), "http_status", dc.RESTCode(err), "error", err)
+
+	h.audit(user.ID, regID, store.EventChannelCreateFailed,
+		map[string]any{"error": err.Error(), "api_code": dc.APICode(err)}, "")
+
+	detail := fmt.Sprintf("```%v```", err)
+	if errors.Is(err, dc.ErrGuildChannelLimit) {
+		h.alertMods(s,
+			"🚨 <@&%s> Ο σέρβερ έφτασε το όριο καναλιών του Discord. "+
+				"Ο χρήστης **%s** (<@%s>) **δεν** πήρε κανάλι εγγραφής.\n"+
+				"Χρειάζεται να διαγραφούν κανάλια χειροκίνητα.\n%s",
+			staffRoleID, user.Username, user.ID, detail)
 		return
 	}
+	h.alertMods(s,
+		"🚨 <@&%s> Απέτυχε η δημιουργία καναλιού εγγραφής για τον **%s** (<@%s>).\n"+
+			"Ο χρήστης **δεν** μπορεί να γραφτεί μέχρι να λυθεί.\n%s",
+		staffRoleID, user.Username, user.ID, detail)
+}
 
-	welcome := fmt.Sprintf(":wave: Γειά σου, <@%s>! Πάτα εδώ για να γραφτείς στο Steki → <#%s>.", user.ID, ch.ID)
-	s.ChannelMessageSend(h.cfg.WelcomeChannelID, welcome)
+// sendWelcome announces the channel and posts the opening of the flow.
+func (h *Handler) sendWelcome(s *discordgo.Session, channelID, userID string) {
+	announcement := fmt.Sprintf(
+		":wave: Γειά σου, <@%s>! Πάτα εδώ για να γραφτείς στο Steki → <#%s>.",
+		userID, channelID)
 
-	if dm, err := s.UserChannelCreate(user.ID); err == nil {
-		s.ChannelMessageSend(dm.ID, welcome)
+	h.send(s, config.WelcomeChannelID, announcement)
+	if dm, err := s.UserChannelCreate(userID); err == nil {
+		h.send(s, dm.ID, announcement)
 	}
+	h.postFlowIntro(s, channelID, userID)
+}
 
-	s.ChannelMessageSend(ch.ID, fmt.Sprintf(
-		"**Γειά σου <@%s>, καλωσόρισες στο Steki!** \nΘα χρειαστεί να επιβεβαιώσουμε την φοιτητική σου ιδιότητα.\n\n"+
-			"Είναι πολύ απλό: \n**Θα σου στείλω έναν κωδικό στο ακαδημαϊκό σου email και εσύ θα πρέπει να μου τον γράψεις εδώ.**",
-		user.ID,
-	))
-
-	time.AfterFunc(1*time.Second, func() {
-		msg, err := s.ChannelMessageSend(ch.ID,
-			"Αν κολλήσεις σε κάποιο από τα βήματα, μπορείς να κάνεις react με :arrows_counterclockwise: στο μήνυμα αυτό "+
-				"και θα αρχίσει η διαδικασία από την αρχή. Εναλλακτικά, στείλε στο <#939177847933780018>.\n"+
-				"Το email σου θα ανωνυμοποιηθεί (sha256), για αποκλειστική χρήση στην παρούσα διαδικασία.",
-		)
-		if err == nil {
-			s.MessageReactionAdd(ch.ID, msg.ID, "🔄")
+// postFlowIntro posts the greeting, the restart control and the first
+// question. Shared by a fresh channel and a restarted one.
+func (h *Handler) postFlowIntro(s *discordgo.Session, channelID, userID string) {
+	h.send(s, channelID, fmt.Sprintf(msgWelcome, userID))
+	if msg := h.send(s, channelID, fmt.Sprintf(msgRestartHint, config.SupportChannelID)); msg != nil {
+		if err := s.MessageReactionAdd(channelID, msg.ID, restartEmoji); err != nil {
+			h.log.Warn("add restart reaction failed", "channel_id", channelID, "error", err)
 		}
-	})
-
-	time.AfterFunc(2*time.Second, func() {
-		s.ChannelMessageSend(ch.ID,
-			"**Για να συνεχίσουμε, στείλε μου εδώ το ακαδημαϊκό σου email. "+
-				"Θα πρέπει να είναι της μορφής *thXXXXXX@edu.hmu.gr* (αυτό που σου έδωσε η γραμματεία κατά την εγγραφή)**.\n\n"+
-				":new: Τώρα φοιτητές από εξωτερικά τμήματα (csd.uoc.gr) μπορούν να γραφτούν ως Verified Outsiders.",
-		)
-	})
+	}
+	h.send(s, channelID, msgAskEmail)
 }

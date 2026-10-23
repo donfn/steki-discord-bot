@@ -1,48 +1,53 @@
 package events
 
 import (
+	"errors"
 	"fmt"
-	"log"
-	"strings"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
+
+	"steki-bot/store"
 )
 
-func (h *Handler) OnMemberRemove(s *discordgo.Session, m *discordgo.GuildMemberRemove) {
-	user := m.User
-
-	// JoinedAt is populated from gateway cache when GUILD_MEMBERS intent is enabled
-	joinedAt := m.JoinedAt
-	if joinedAt.IsZero() {
-		if cached, err := s.State.Member(m.GuildID, user.ID); err == nil {
-			joinedAt = cached.JoinedAt
-		}
-	}
-
-	var daysSince string
-	if !joinedAt.IsZero() {
-		days := time.Since(joinedAt).Hours() / 24
-		daysSince = fmt.Sprintf("%.2f ημέρες", days)
-	} else {
-		daysSince = "άγνωστο"
-	}
-
-	h.logger.Log(s, fmt.Sprintf(
-		"Ο χρήστης *%s* (<@%s>) αποχώρησε από τον σέρβερ. Ήταν στον σέρβερ για %s.",
-		user.Username, user.ID, daysSince,
-	))
-
-	channels, err := s.GuildChannels(m.GuildID)
-	if err != nil {
-		log.Println("OnMemberRemove: get channels:", err)
+// onMemberRemove cleans up after a member who left or was removed.
+//
+// The channel is found through the registration row rather than by scanning
+// every channel in the guild, which is both cheaper and correct when the
+// channel sits in an overflow category.
+func (h *Handler) onMemberRemove(s *discordgo.Session, m *discordgo.GuildMemberRemove) {
+	if m.User == nil {
 		return
 	}
-	for _, ch := range channels {
-		if strings.Contains(ch.Name, fmt.Sprintf("register-%s", user.ID)) {
-			if _, err := s.ChannelDelete(ch.ID); err != nil {
-				log.Println("OnMemberRemove: delete channel:", err)
-			}
-		}
+	h.setGuildID(m.GuildID)
+
+	defer h.lockUser(m.User.ID)()
+
+	ctx, cancel := h.ctxTimeout(flowTimeout)
+	defer cancel()
+
+	// discordgo evicts the member from its cache before this handler runs,
+	// so the join time comes from the database instead.
+	stay := "άγνωστο"
+	if member, err := h.st.GetMember(ctx, m.User.ID); err == nil {
+		stay = fmt.Sprintf("%.2f ημέρες", time.Since(member.LastJoinAt).Hours()/24)
 	}
+	h.alertMods(s, "Ο χρήστης *%s* (<@%s>) αποχώρησε από τον σέρβερ. Ήταν στον σέρβερ για %s.",
+		m.User.Username, m.User.ID, stay)
+
+	if err := h.st.MarkMemberLeft(ctx, m.User.ID); err != nil {
+		h.log.Warn("mark member left failed", "user_id", m.User.ID, "error", err)
+	}
+
+	reg, err := h.st.OpenRegistration(ctx, m.User.ID)
+	if errors.Is(err, store.ErrNotFound) {
+		return
+	}
+	if err != nil {
+		h.log.Error("member_remove: lookup registration failed", "user_id", m.User.ID, "error", err)
+		return
+	}
+
+	h.audit(m.User.ID, reg.ID, store.EventLeft, map[string]any{"step": reg.Step}, "")
+	h.closeAndCleanup(ctx, s, reg, store.OutcomeLeft)
 }

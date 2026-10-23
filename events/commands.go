@@ -1,0 +1,622 @@
+package events
+
+import (
+	"errors"
+	"fmt"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/bwmarrin/discordgo"
+
+	"steki-bot/store"
+)
+
+// replyLimit keeps replies under Discord's 2000-character message cap.
+const replyLimit = 1900
+
+// staffOnly gates the commands at the Discord level. The explicit role check
+// in requireStaff is still performed, because this permission can be
+// overridden by a server administrator.
+var staffOnly = int64(discordgo.PermissionManageGuild)
+
+// commandDefs is the full moderator surface. It replaces the bare-text
+// addEmail / removeEmail / removeHash commands that were parsed out of the log
+// channel, where anyone able to post could see them.
+var commandDefs = []*discordgo.ApplicationCommand{
+	{
+		Name:                     "reg",
+		Description:              "Διαχείριση εγγραφών",
+		DefaultMemberPermissions: &staffOnly,
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Name:        "status",
+				Description: "Κατάσταση εγγραφής ενός χρήστη",
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Options: []*discordgo.ApplicationCommandOption{{
+					Name: "user", Description: "Ο χρήστης",
+					Type: discordgo.ApplicationCommandOptionUser, Required: true,
+				}},
+			},
+			{
+				Name:        "history",
+				Description: "Πλήρες ιστορικό ενεργειών ενός χρήστη",
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Options: []*discordgo.ApplicationCommandOption{{
+					Name: "user", Description: "Ο χρήστης",
+					Type: discordgo.ApplicationCommandOptionUser, Required: true,
+				}},
+			},
+			{
+				Name:        "stuck",
+				Description: "Ποιοι έχουν κολλήσει στην εγγραφή",
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+			},
+			{
+				Name:        "restart",
+				Description: "Επανεκκίνηση της εγγραφής ενός χρήστη",
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Options: []*discordgo.ApplicationCommandOption{{
+					Name: "user", Description: "Ο χρήστης",
+					Type: discordgo.ApplicationCommandOptionUser, Required: true,
+				}},
+			},
+			{
+				Name:        "verify",
+				Description: "Χειροκίνητη επαλήθευση χρήστη",
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Options: []*discordgo.ApplicationCommandOption{
+					{
+						Name: "user", Description: "Ο χρήστης",
+						Type: discordgo.ApplicationCommandOptionUser, Required: true,
+					},
+					{
+						Name: "email", Description: "Το ακαδημαϊκό email",
+						Type: discordgo.ApplicationCommandOptionString, Required: true,
+					},
+				},
+			},
+		},
+	},
+	{
+		Name:                     "email",
+		Description:              "Διαχείριση καταχωρημένων email",
+		DefaultMemberPermissions: &staffOnly,
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Name:        "whois",
+				Description: "Σε ποιον ανήκει ένα email",
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Options: []*discordgo.ApplicationCommandOption{{
+					Name: "email", Description: "Το email",
+					Type: discordgo.ApplicationCommandOptionString, Required: true,
+				}},
+			},
+			{
+				Name:        "add",
+				Description: "Προσθήκη email στη βάση",
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Options: []*discordgo.ApplicationCommandOption{
+					{
+						Name: "email", Description: "Το email",
+						Type: discordgo.ApplicationCommandOptionString, Required: true,
+					},
+					{
+						Name: "user", Description: "Ο κάτοχος (προαιρετικό)",
+						Type: discordgo.ApplicationCommandOptionUser,
+					},
+				},
+			},
+			{
+				Name:        "remove",
+				Description: "Αφαίρεση email από τη βάση",
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Options: []*discordgo.ApplicationCommandOption{{
+					Name: "email", Description: "Το email ή το hash",
+					Type: discordgo.ApplicationCommandOptionString, Required: true,
+				}},
+			},
+		},
+	},
+	{
+		Name:                     "bot",
+		Description:              "Κατάσταση του bot",
+		DefaultMemberPermissions: &staffOnly,
+		Options: []*discordgo.ApplicationCommandOption{{
+			Name:        "stats",
+			Description: "Στατιστικά και υγεία συστήματος",
+			Type:        discordgo.ApplicationCommandOptionSubCommand,
+		}},
+	},
+}
+
+// registerCommands installs the command set on the guild. Guild commands
+// update instantly, unlike global ones.
+func (h *Handler) registerCommands(s *discordgo.Session) error {
+	guildID := h.guildID()
+	if guildID == "" || s.State.User == nil {
+		return nil
+	}
+	ctx, cancel := h.ctx()
+	defer cancel()
+
+	return h.retry(ctx, "commands.overwrite", func() error {
+		_, err := s.ApplicationCommandBulkOverwrite(
+			s.State.User.ID, guildID, commandDefs, discordgo.WithContext(ctx))
+		return err
+	})
+}
+
+// commandFunc handles one subcommand. The reply has already been deferred;
+// the handler fills it in with reply.
+type commandFunc func(h *Handler, s *discordgo.Session, i *discordgo.InteractionCreate,
+	sub *discordgo.ApplicationCommandInteractionDataOption)
+
+// commandRoutes maps "command subcommand" to its handler.
+var commandRoutes = map[string]commandFunc{
+	"reg status":   (*Handler).cmdRegStatus,
+	"reg history":  (*Handler).cmdRegHistory,
+	"reg stuck":    (*Handler).cmdRegStuck,
+	"reg restart":  (*Handler).cmdRegRestart,
+	"reg verify":   (*Handler).cmdRegVerify,
+	"email whois":  (*Handler).cmdEmailWhois,
+	"email add":    (*Handler).cmdEmailAdd,
+	"email remove": (*Handler).cmdEmailRemove,
+	"bot stats":    (*Handler).cmdBotStats,
+}
+
+// onInteractionCreate dispatches moderator slash commands.
+func (h *Handler) onInteractionCreate(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	if i.Type != discordgo.InteractionApplicationCommand {
+		return
+	}
+	h.setGuildID(i.GuildID)
+
+	// The Discord-level permission can be overridden by a server
+	// administrator, so the role check is repeated here.
+	if i.Member == nil || !hasAnyRole(i.Member, []string{staffRoleID, modRoleID}) {
+		h.respondNow(s, i, "⛔ Η εντολή αυτή είναι μόνο για την Ομάδα Διαχείρισης.")
+		return
+	}
+
+	data := i.ApplicationCommandData()
+	if len(data.Options) == 0 {
+		return
+	}
+	sub := data.Options[0]
+	route, ok := commandRoutes[data.Name+" "+sub.Name]
+	if !ok {
+		h.respondNow(s, i, "Άγνωστη εντολή.")
+		return
+	}
+
+	// Acknowledge first: Discord drops an interaction not answered within
+	// three seconds, and several commands make more round trips than that
+	// reliably allows.
+	if !h.deferReply(s, i) {
+		return
+	}
+	route(h, s, i, sub)
+}
+
+// respondNow sends an immediate ephemeral reply, for answers that need no work.
+func (h *Handler) respondNow(s *discordgo.Session, i *discordgo.InteractionCreate, content string) {
+	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: truncate(content, replyLimit),
+			Flags:   discordgo.MessageFlagsEphemeral,
+		},
+	})
+	if err != nil {
+		h.log.Error("interaction respond failed", "error", err)
+	}
+}
+
+// deferReply acknowledges the command with an ephemeral "thinking" state, so
+// moderator output never leaks into a channel members can read.
+func (h *Handler) deferReply(s *discordgo.Session, i *discordgo.InteractionCreate) bool {
+	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{Flags: discordgo.MessageFlagsEphemeral},
+	})
+	if err != nil {
+		h.log.Error("interaction defer failed", "error", err)
+		return false
+	}
+	return true
+}
+
+// reply fills in a deferred response.
+func (h *Handler) reply(s *discordgo.Session, i *discordgo.InteractionCreate, content string) {
+	content = truncate(content, replyLimit)
+	if _, err := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content}); err != nil {
+		h.log.Error("interaction reply failed", "error", err)
+	}
+}
+
+// dbError reports a database failure to the moderator.
+func (h *Handler) dbError(s *discordgo.Session, i *discordgo.InteractionCreate, err error) {
+	h.reply(s, i, fmt.Sprintf("Σφάλμα βάσης: %v", err))
+}
+
+// findOpt pulls a named option out of a subcommand's option list.
+func findOpt(opts []*discordgo.ApplicationCommandInteractionDataOption, name string) *discordgo.ApplicationCommandInteractionDataOption {
+	for _, o := range opts {
+		if o.Name == name {
+			return o
+		}
+	}
+	return nil
+}
+
+// optUser resolves a user option. Discord ships the full user in the
+// interaction's resolved data, so no REST lookup is needed. It returns nil
+// when the option is absent.
+func optUser(i *discordgo.InteractionCreate, opts []*discordgo.ApplicationCommandInteractionDataOption,
+	name string) *discordgo.User {
+
+	opt := findOpt(opts, name)
+	if opt == nil {
+		return nil
+	}
+	user := opt.UserValue(nil) // ID only
+	if r := i.ApplicationCommandData().Resolved; r != nil {
+		if full, ok := r.Users[user.ID]; ok {
+			return full
+		}
+	}
+	return user
+}
+
+// optString returns a string option, or "" when it is absent.
+func optString(opts []*discordgo.ApplicationCommandInteractionDataOption, name string) string {
+	if opt := findOpt(opts, name); opt != nil {
+		return opt.StringValue()
+	}
+	return ""
+}
+
+// actorID is the moderator who ran the command.
+func actorID(i *discordgo.InteractionCreate) string {
+	if i.Member != nil && i.Member.User != nil {
+		return i.Member.User.ID
+	}
+	return ""
+}
+
+func (h *Handler) cmdRegStatus(s *discordgo.Session, i *discordgo.InteractionCreate, sub *discordgo.ApplicationCommandInteractionDataOption) {
+	user := optUser(i, sub.Options, "user")
+	ctx, cancel := h.ctx()
+	defer cancel()
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "**Κατάσταση για <@%s>**\n", user.ID)
+
+	member, err := h.st.GetMember(ctx, user.ID)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		b.WriteString("Δεν υπάρχει εγγραφή στη βάση.\n")
+	case err != nil:
+		h.dbError(s, i, err)
+		return
+	default:
+		fmt.Fprintf(&b, "• Πρώτη εμφάνιση: <t:%d:R>\n", member.FirstSeenAt.Unix())
+		fmt.Fprintf(&b, "• Είσοδοι: %d · Αποβολές: %d\n", member.JoinCount, member.KickedCount)
+		if member.VerifiedAt != nil {
+			email := "—"
+			if member.VerifiedEmail != nil {
+				email = *member.VerifiedEmail
+			}
+			fmt.Fprintf(&b, "• ✅ Επαληθευμένος <t:%d:R> με `%s`\n", member.VerifiedAt.Unix(), email)
+		}
+		if member.LeftAt != nil {
+			fmt.Fprintf(&b, "• Αποχώρησε <t:%d:R>\n", member.LeftAt.Unix())
+		}
+	}
+
+	reg, err := h.st.OpenRegistration(ctx, user.ID)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		b.WriteString("\nΔεν υπάρχει ανοιχτή εγγραφή.")
+	case err != nil:
+		h.dbError(s, i, err)
+		return
+	default:
+		idle := reg.IdleFor(time.Now())
+		fmt.Fprintf(&b, "\n**Ανοιχτή εγγραφή**\n• Βήμα: `%s`\n", reg.Step)
+		if reg.Email != nil {
+			fmt.Fprintf(&b, "• Email: `%s`\n", *reg.Email)
+		}
+		fmt.Fprintf(&b, "• Λάθος προσπάθειες: %d · Κωδικοί: %d\n", reg.FailedAttempts, reg.CodeSentCount)
+		fmt.Fprintf(&b, "• Αδράνεια: %s%s\n", idle.Round(time.Minute), reapHint(idle))
+		if reg.ChannelID != nil {
+			fmt.Fprintf(&b, "• Κανάλι: <#%s>\n", *reg.ChannelID)
+		}
+	}
+
+	h.reply(s, i, b.String())
+}
+
+// reapHint says what the reaper will do next, so a moderator can see at a
+// glance whether someone is about to be removed.
+func reapHint(idle time.Duration) string {
+	switch {
+	case idle >= kickAfter:
+		return " ⚠️ (προς αποβολή)"
+	case idle >= nudgeAfter:
+		return fmt.Sprintf(" (αποβολή σε %s)", (kickAfter - idle).Round(time.Minute))
+	default:
+		return ""
+	}
+}
+
+func (h *Handler) cmdRegHistory(s *discordgo.Session, i *discordgo.InteractionCreate, sub *discordgo.ApplicationCommandInteractionDataOption) {
+	user := optUser(i, sub.Options, "user")
+	ctx, cancel := h.ctx()
+	defer cancel()
+
+	events, err := h.st.History(ctx, user.ID, 25)
+	if err != nil {
+		h.dbError(s, i, err)
+		return
+	}
+	if len(events) == 0 {
+		h.reply(s, i, fmt.Sprintf("Δεν υπάρχει ιστορικό για τον <@%s>.", user.ID))
+		return
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "**Ιστορικό <@%s>** (τελευταία %d)\n", user.ID, len(events))
+	for _, e := range events {
+		fmt.Fprintf(&b, "<t:%d:f> · `%s`", e.CreatedAt.Unix(), e.Kind)
+		if email, ok := e.Detail["email"].(string); ok {
+			fmt.Fprintf(&b, " · %s", email)
+		}
+		if e.ActorID != nil {
+			fmt.Fprintf(&b, " · από <@%s>", *e.ActorID)
+		}
+		b.WriteString("\n")
+	}
+	h.reply(s, i, b.String())
+}
+
+func (h *Handler) cmdRegStuck(s *discordgo.Session, i *discordgo.InteractionCreate, _ *discordgo.ApplicationCommandInteractionDataOption) {
+	ctx, cancel := h.ctx()
+	defer cancel()
+
+	open, err := h.st.ListOpen(ctx) // oldest activity first
+	if err != nil {
+		h.dbError(s, i, err)
+		return
+	}
+	if len(open) == 0 {
+		h.reply(s, i, "✅ Κανείς δεν έχει κολλήσει σε εγγραφή.")
+		return
+	}
+
+	const shown = 20
+	now := time.Now()
+	var b strings.Builder
+	fmt.Fprintf(&b, "**Ανοιχτές εγγραφές: %d**\n", len(open))
+	for n, reg := range open {
+		if n == shown {
+			fmt.Fprintf(&b, "… και %d ακόμα\n", len(open)-shown)
+			break
+		}
+		idle := reg.IdleFor(now)
+		fmt.Fprintf(&b, "• <@%s> · `%s` · αδράνεια %s%s\n",
+			reg.UserID, reg.Step, idle.Round(time.Minute), reapHint(idle))
+	}
+	h.reply(s, i, b.String())
+}
+
+func (h *Handler) cmdRegRestart(s *discordgo.Session, i *discordgo.InteractionCreate, sub *discordgo.ApplicationCommandInteractionDataOption) {
+	user := optUser(i, sub.Options, "user")
+	ctx, cancel := h.ctx()
+	defer cancel()
+
+	reg, err := h.st.OpenRegistration(ctx, user.ID)
+	if errors.Is(err, store.ErrNotFound) {
+		h.reply(s, i, fmt.Sprintf("Δεν βρέθηκε ανοιχτή εγγραφή για τον <@%s>.", user.ID))
+		return
+	}
+	if err != nil {
+		h.dbError(s, i, err)
+		return
+	}
+	if reg.ChannelID == nil {
+		h.reply(s, i, "Η εγγραφή δεν έχει κανάλι. Θα το φτιάξει ο reconciler.")
+		return
+	}
+
+	if err := h.restartRegistration(s, *reg.ChannelID, user.ID, i.GuildID); err != nil {
+		h.reply(s, i, fmt.Sprintf("Η επανεκκίνηση απέτυχε: %v", err))
+		return
+	}
+	h.audit(user.ID, reg.ID, store.EventModAction, map[string]any{"action": "restart"}, actorID(i))
+	h.reply(s, i, fmt.Sprintf("🔄 Η εγγραφή του <@%s> επανεκκινήθηκε.", user.ID))
+}
+
+func (h *Handler) cmdRegVerify(s *discordgo.Session, i *discordgo.InteractionCreate, sub *discordgo.ApplicationCommandInteractionDataOption) {
+	user := optUser(i, sub.Options, "user")
+	email := store.NormalizeEmail(optString(sub.Options, "email"))
+
+	if _, ok := classifyEmail(email); !ok {
+		h.reply(s, i, fmt.Sprintf("Το `%s` δεν είναι αποδεκτό ακαδημαϊκό email.", email))
+		return
+	}
+
+	defer h.lockUser(user.ID)()
+	ctx, cancel := h.ctxTimeout(flowTimeout)
+	defer cancel()
+
+	if err := h.st.EnsureMember(ctx, user.ID, user.Username); err != nil {
+		h.dbError(s, i, err)
+		return
+	}
+	reg, _, err := h.st.EnsureOpenRegistration(ctx, user.ID, i.GuildID)
+	if err != nil {
+		h.dbError(s, i, err)
+		return
+	}
+
+	err = h.grantVerification(ctx, s, i.GuildID, reg, email)
+	switch {
+	case err == nil:
+	case errors.Is(err, store.ErrEmailTaken):
+		h.reply(s, i, fmt.Sprintf("Το `%s` ανήκει ήδη σε άλλον λογαριασμό. Δες `/email whois`.", email))
+		return
+	case errors.Is(err, errRoleNotGranted):
+		h.reply(s, i, fmt.Sprintf("Η βάση ενημερώθηκε αλλά ο ρόλος δεν δόθηκε: %v", err))
+		return
+	default:
+		h.dbError(s, i, err)
+		return
+	}
+
+	if reg.ChannelID != nil {
+		if err := h.deleteChannel(ctx, s, *reg.ChannelID); err != nil {
+			h.log.Warn("verify: delete channel failed", "channel_id", *reg.ChannelID, "error", err)
+		}
+	}
+
+	h.audit(user.ID, reg.ID, store.EventModAction,
+		map[string]any{"action": "verify", "email": email}, actorID(i))
+	h.alertMods(s, "🛠️ Ο <@%s> επαλήθευσε χειροκίνητα τον <@%s> με `%s`.", actorID(i), user.ID, email)
+	h.reply(s, i, fmt.Sprintf("✅ Ο <@%s> επαληθεύτηκε με `%s`.", user.ID, email))
+}
+
+func (h *Handler) cmdEmailWhois(s *discordgo.Session, i *discordgo.InteractionCreate, sub *discordgo.ApplicationCommandInteractionDataOption) {
+	email := store.NormalizeEmail(optString(sub.Options, "email"))
+	ctx, cancel := h.ctx()
+	defer cancel()
+
+	rec, err := h.st.WhoIs(ctx, email)
+	if errors.Is(err, store.ErrNotFound) {
+		use, err := h.st.CheckEmail(ctx, email)
+		switch {
+		case err != nil:
+			h.dbError(s, i, err)
+		case use.Legacy:
+			h.reply(s, i, fmt.Sprintf(
+				"Το `%s` υπάρχει μόνο ως παλιό hash (πριν τη μετάβαση σε Postgres). Κάτοχος άγνωστος.", email))
+		default:
+			h.reply(s, i, fmt.Sprintf("Το `%s` δεν έχει χρησιμοποιηθεί.", email))
+		}
+		return
+	}
+	if err != nil {
+		h.dbError(s, i, err)
+		return
+	}
+
+	owner := "άγνωστος"
+	if rec.UserID != nil {
+		owner = fmt.Sprintf("<@%s>", *rec.UserID)
+	}
+	h.reply(s, i, fmt.Sprintf(
+		"**`%s`**\n• Κάτοχος: %s\n• Τμήμα: `%s`\n• Πηγή: `%s`\n• Καταχωρήθηκε: <t:%d:f>",
+		rec.Email, owner, rec.Domain, rec.Source, rec.VerifiedAt.Unix()))
+}
+
+func (h *Handler) cmdEmailAdd(s *discordgo.Session, i *discordgo.InteractionCreate, sub *discordgo.ApplicationCommandInteractionDataOption) {
+	email := store.NormalizeEmail(optString(sub.Options, "email"))
+	if store.EmailDomain(email) == "" {
+		h.reply(s, i, fmt.Sprintf("Το `%s` δεν είναι διεύθυνση email.", email))
+		return
+	}
+
+	var owner *string
+	ownerID := ""
+	if u := optUser(i, sub.Options, "user"); u != nil {
+		owner, ownerID = &u.ID, u.ID
+	}
+
+	ctx, cancel := h.ctx()
+	defer cancel()
+
+	if err := h.st.AddVerifiedEmail(ctx, email, owner, store.SourceModerator); err != nil {
+		h.dbError(s, i, err)
+		return
+	}
+	h.audit(ownerID, "", store.EventModAction,
+		map[string]any{"action": "email_add", "email": email}, actorID(i))
+	h.reply(s, i, fmt.Sprintf("✅ Το `%s` προστέθηκε στη βάση.", email))
+}
+
+func (h *Handler) cmdEmailRemove(s *discordgo.Session, i *discordgo.InteractionCreate, sub *discordgo.ApplicationCommandInteractionDataOption) {
+	input := strings.TrimSpace(optString(sub.Options, "email"))
+	ctx, cancel := h.ctx()
+	defer cancel()
+
+	removed, err := h.st.RemoveVerifiedEmail(ctx, input)
+	if err != nil {
+		h.dbError(s, i, err)
+		return
+	}
+	if !removed {
+		// Perhaps a raw hash was supplied instead of an address.
+		if removed, err = h.st.RemoveLegacyHash(ctx, input); err != nil {
+			h.dbError(s, i, err)
+			return
+		}
+	}
+	if !removed {
+		h.reply(s, i, fmt.Sprintf("Το `%s` δεν βρέθηκε στη βάση.", input))
+		return
+	}
+
+	h.audit("", "", store.EventModAction,
+		map[string]any{"action": "email_remove", "email": input}, actorID(i))
+	h.reply(s, i, fmt.Sprintf("🗑️ Το `%s` αφαιρέθηκε από τη βάση.", input))
+}
+
+func (h *Handler) cmdBotStats(s *discordgo.Session, i *discordgo.InteractionCreate, _ *discordgo.ApplicationCommandInteractionDataOption) {
+	ctx, cancel := h.ctxTimeout(flowTimeout)
+	defer cancel()
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "**Κατάσταση bot**\n• Uptime: %s\n", formatUptime(time.Since(h.bootTime)))
+	fmt.Fprintf(&b, "• Μηνύματα: %d · Μπλοκαρισμένα: %d\n", h.processed.Load(), h.blocked.Load())
+
+	if err := h.st.Ping(ctx); err != nil {
+		fmt.Fprintf(&b, "• 🔴 Βάση: %v\n", err)
+	} else {
+		stat := h.st.PoolStat()
+		fmt.Fprintf(&b, "• 🟢 Βάση: %d/%d συνδέσεις\n", stat.AcquiredConns(), stat.MaxConns())
+	}
+
+	if open, err := h.st.ListOpen(ctx); err == nil {
+		fmt.Fprintf(&b, "• Ανοιχτές εγγραφές: %d\n", len(open))
+	}
+	if es, err := h.st.EmailStats(ctx); err == nil {
+		fmt.Fprintf(&b, "• Emails: %d (με κάτοχο: %d) · παλιά hashes: %d\n",
+			es.Verified, es.VerifiedLinked, es.LegacyHashes)
+	}
+
+	if occ, err := h.placer.Occupancies(ctx, s, h.guildID()); err == nil {
+		b.WriteString("\n**Κατηγορίες εγγραφής**\n")
+		for _, o := range occ {
+			warn := ""
+			if o.Used >= o.Capacity-5 {
+				warn = " ⚠️"
+			}
+			fmt.Fprintf(&b, "• `%s`: %d/%d%s\n", o.Name, o.Used, o.Capacity, warn)
+		}
+	}
+
+	if counts, err := h.st.CountEventsByKind(ctx, time.Now().Add(-24*time.Hour)); err == nil && len(counts) > 0 {
+		b.WriteString("\n**Τελευταίο 24ωρο**\n")
+		kinds := make([]string, 0, len(counts))
+		for k := range counts {
+			kinds = append(kinds, k)
+		}
+		sort.Strings(kinds)
+		for _, k := range kinds {
+			fmt.Fprintf(&b, "• `%s`: %d\n", k, counts[k])
+		}
+	}
+
+	h.reply(s, i, b.String())
+}
