@@ -166,28 +166,38 @@ var commandRoutes = map[string]commandFunc{
 }
 
 // onInteractionCreate dispatches moderator slash commands.
+//
+// Every command is logged on arrival and every refusal says why, because a
+// command Discord shows as "didn't respond" is otherwise indistinguishable
+// from one that never reached the bot.
 func (h *Handler) onInteractionCreate(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	if i.Type != discordgo.InteractionApplicationCommand || !h.inHomeGuild(i.GuildID) {
+	if i.Type != discordgo.InteractionApplicationCommand {
+		return
+	}
+	data := i.ApplicationCommandData()
+	log := h.log.With("command", commandPath(data), "guild_id", i.GuildID, "user_id", actorID(i))
+	log.Info("slash command received")
+
+	if !h.inHomeGuild(i.GuildID) {
+		log.Warn("slash command ignored: not the Steki guild", "home_guild_id", h.guildID())
 		return
 	}
 
 	// The Discord-level permission can be overridden by a server
 	// administrator, so the role check is repeated here.
 	if i.Member == nil || !hasAnyRole(i.Member, []string{staffRoleID, modRoleID}) {
+		log.Warn("slash command refused: caller lacks the staff and moderator roles")
 		h.respondNow(s, i, "⛔ Η εντολή αυτή είναι μόνο για την Ομάδα Διαχείρισης.")
 		return
 	}
 
-	data := i.ApplicationCommandData()
-	if len(data.Options) == 0 {
-		return
-	}
-	sub := data.Options[0]
-	route, ok := commandRoutes[data.Name+" "+sub.Name]
+	route, ok := commandRoutes[commandPath(data)]
 	if !ok {
+		log.Warn("slash command ignored: no handler")
 		h.respondNow(s, i, "Άγνωστη εντολή.")
 		return
 	}
+	sub := data.Options[0]
 
 	// Acknowledge first: Discord drops an interaction not answered within
 	// three seconds, and several commands make more round trips than that
@@ -196,6 +206,15 @@ func (h *Handler) onInteractionCreate(s *discordgo.Session, i *discordgo.Interac
 		return
 	}
 	route(h, s, i, sub)
+}
+
+// commandPath returns "command subcommand", the key into commandRoutes, or
+// just the command name when it has no subcommand.
+func commandPath(data discordgo.ApplicationCommandInteractionData) string {
+	if len(data.Options) == 0 || data.Options[0].Type != discordgo.ApplicationCommandOptionSubCommand {
+		return data.Name
+	}
+	return data.Name + " " + data.Options[0].Name
 }
 
 // respondNow sends an immediate ephemeral reply, for answers that need no work.

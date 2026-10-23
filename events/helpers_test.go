@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/bwmarrin/discordgo"
 )
 
 func TestClassifyEmail(t *testing.T) {
@@ -87,5 +89,40 @@ func TestTruncate(t *testing.T) {
 func TestQuoteNeutralisesCodeFences(t *testing.T) {
 	if got := quote("a ```b``` c"); strings.Contains(got, "`") {
 		t.Errorf("quote left a backtick in %q", got)
+	}
+}
+
+func TestCommandPath(t *testing.T) {
+	withSub := discordgo.ApplicationCommandInteractionData{
+		Name: "reg",
+		Options: []*discordgo.ApplicationCommandInteractionDataOption{
+			{Name: "stuck", Type: discordgo.ApplicationCommandOptionSubCommand},
+		},
+	}
+	if got := commandPath(withSub); got != "reg stuck" {
+		t.Errorf("commandPath = %q, want %q", got, "reg stuck")
+	}
+	if _, ok := commandRoutes[commandPath(withSub)]; !ok {
+		t.Error("reg stuck has no route")
+	}
+
+	bare := discordgo.ApplicationCommandInteractionData{Name: "reg"}
+	if got := commandPath(bare); got != "reg" {
+		t.Errorf("commandPath without subcommand = %q, want %q", got, "reg")
+	}
+	if _, ok := commandRoutes[commandPath(bare)]; ok {
+		t.Error("a bare command must not match a route, since routes need a subcommand")
+	}
+}
+
+// Every subcommand Discord is told about must have a route, or invoking it
+// would answer "unknown command".
+func TestEveryDefinedSubcommandHasARoute(t *testing.T) {
+	for _, cmd := range commandDefs {
+		for _, sub := range cmd.Options {
+			if _, ok := commandRoutes[cmd.Name+" "+sub.Name]; !ok {
+				t.Errorf("/%s %s is registered with Discord but has no route", cmd.Name, sub.Name)
+			}
+		}
 	}
 }
