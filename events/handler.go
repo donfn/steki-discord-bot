@@ -38,7 +38,7 @@ type Handler struct {
 	users keyedMutex
 
 	bootTime    time.Time
-	guild       atomic.Value // string, learned from the gateway
+	guild       atomic.Value // string: the Steki guild, see onGuildCreate
 	processed   atomic.Int64
 	blocked     atomic.Int64
 	statusIndex atomic.Int64
@@ -117,8 +117,8 @@ func (h *Handler) lockUser(userID string) (unlock func()) {
 	return h.users.Lock(userID)
 }
 
-// guildID returns the guild the bot is operating in, as learned from the
-// gateway. It is empty until the first Ready or Guild Create.
+// guildID returns the Steki guild, as learned from its GUILD_CREATE. It is
+// empty until that event arrives.
 func (h *Handler) guildID() string {
 	if v, ok := h.guild.Load().(string); ok {
 		return v
@@ -126,10 +126,11 @@ func (h *Handler) guildID() string {
 	return ""
 }
 
-func (h *Handler) setGuildID(id string) {
-	if id != "" && h.guildID() == "" {
-		h.guild.Store(id)
-	}
+// inHomeGuild reports whether an event belongs to the Steki guild. The bot is
+// a member of more than one server, and registration, the reaper and the
+// reconciler must only ever act on the one that owns the register category.
+func (h *Handler) inHomeGuild(guildID string) bool {
+	return guildID != "" && guildID == h.guildID()
 }
 
 // goLoop runs fn on a ticker until shutdown, invoking it once immediately.

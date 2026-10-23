@@ -5,16 +5,19 @@ import (
 )
 
 // onMessage screens guild messages for blacklisted links and drives the
-// registration flow inside register channels. Direct messages are ignored.
+// registration flow inside the Steki guild's register channels. Direct
+// messages are ignored.
 func (h *Handler) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if m.Author == nil || m.Author.Bot || m.GuildID == "" {
 		return
 	}
-	h.setGuildID(m.GuildID)
 	h.processed.Add(1)
 
 	if h.linkChk.Check(s, m.Message) {
 		h.blocked.Add(1)
+		return
+	}
+	if !h.inHomeGuild(m.GuildID) {
 		return
 	}
 

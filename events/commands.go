@@ -167,10 +167,9 @@ var commandRoutes = map[string]commandFunc{
 
 // onInteractionCreate dispatches moderator slash commands.
 func (h *Handler) onInteractionCreate(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	if i.Type != discordgo.InteractionApplicationCommand {
+	if i.Type != discordgo.InteractionApplicationCommand || !h.inHomeGuild(i.GuildID) {
 		return
 	}
-	h.setGuildID(i.GuildID)
 
 	// The Discord-level permission can be overridden by a server
 	// administrator, so the role check is repeated here.

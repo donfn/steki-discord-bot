@@ -7,10 +7,9 @@ import (
 // onReactionAdd implements the restart control and the interest-role picker.
 // Both only apply inside the reacting member's own registration channel.
 func (h *Handler) onReactionAdd(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
-	if r.GuildID == "" || (s.State.User != nil && r.UserID == s.State.User.ID) {
+	if !h.inHomeGuild(r.GuildID) || (s.State.User != nil && r.UserID == s.State.User.ID) {
 		return
 	}
-	h.setGuildID(r.GuildID)
 
 	ctx, cancel := h.ctx()
 	defer cancel()

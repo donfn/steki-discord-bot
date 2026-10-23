@@ -2,21 +2,17 @@ package events
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
+
+	"steki-bot/config"
 )
 
-// onReady runs on every fresh gateway session (not on resumes).
-//
-// Background loops are started exactly once, but the reconciler is invoked on
-// every Ready: a new session is precisely when GUILD_MEMBER_ADD events may
-// have been missed, and the sweep is what recovers them.
+// onReady runs on every fresh gateway session (not on resumes) and starts the
+// background loops exactly once. The loops idle until the Steki guild is known.
 func (h *Handler) onReady(s *discordgo.Session, r *discordgo.Ready) {
-	for _, g := range r.Guilds {
-		h.setGuildID(g.ID)
-	}
-
 	h.log.Info("gateway ready",
 		"user", r.User.Username, "guilds", len(r.Guilds), "session", r.SessionID)
 
@@ -24,8 +20,22 @@ func (h *Handler) onReady(s *discordgo.Session, r *discordgo.Ready) {
 		h.goLoop("status", 30*time.Second, func() { h.updateStatus(s) })
 		h.startMaintenance(s)
 	})
+}
 
-	go h.safely("reconcile_on_ready", func() {
+// onGuildCreate fires for every guild after each new gateway session. The
+// Steki guild is recognised by owning the register category: the bot is in
+// more than one server, so the ID cannot simply be taken from the first event.
+//
+// A new session is also exactly when joins may have been missed, so this is
+// where the catch-up runs.
+func (h *Handler) onGuildCreate(s *discordgo.Session, g *discordgo.GuildCreate) {
+	if !isHomeGuild(g.Guild) {
+		return
+	}
+	h.guild.Store(g.ID)
+	h.log.Info("home guild available", "guild_id", g.ID, "name", g.Name)
+
+	go h.safely("catch_up", func() {
 		if err := h.registerCommands(s); err != nil {
 			h.log.Error("register slash commands failed", "error", err)
 		}
@@ -33,9 +43,11 @@ func (h *Handler) onReady(s *discordgo.Session, r *discordgo.Ready) {
 	})
 }
 
-// onGuildCreate learns the guild ID, which the bot is otherwise never told.
-func (h *Handler) onGuildCreate(_ *discordgo.Session, g *discordgo.GuildCreate) {
-	h.setGuildID(g.ID)
+// isHomeGuild reports whether g is the Steki guild.
+func isHomeGuild(g *discordgo.Guild) bool {
+	return g != nil && slices.ContainsFunc(g.Channels, func(c *discordgo.Channel) bool {
+		return c.ID == config.RegisterCategoryID
+	})
 }
 
 // onDisconnect and onResumed make gateway health visible in the logs, since

@@ -14,10 +14,9 @@ import (
 // onMemberAdd records a join, greets the member and gives them a registration
 // channel.
 func (h *Handler) onMemberAdd(s *discordgo.Session, m *discordgo.GuildMemberAdd) {
-	if m.User == nil || m.User.Bot {
+	if m.User == nil || m.User.Bot || !h.inHomeGuild(m.GuildID) {
 		return
 	}
-	h.setGuildID(m.GuildID)
 
 	ctx, cancel := h.ctx()
 	err := h.st.UpsertMemberJoin(ctx, m.User.ID, m.User.Username)

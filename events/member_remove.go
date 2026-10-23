@@ -16,10 +16,9 @@ import (
 // every channel in the guild, which is both cheaper and correct when the
 // channel sits in an overflow category.
 func (h *Handler) onMemberRemove(s *discordgo.Session, m *discordgo.GuildMemberRemove) {
-	if m.User == nil {
+	if m.User == nil || !h.inHomeGuild(m.GuildID) {
 		return
 	}
-	h.setGuildID(m.GuildID)
 
 	defer h.lockUser(m.User.ID)()
 

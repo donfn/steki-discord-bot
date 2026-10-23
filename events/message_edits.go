@@ -10,11 +10,11 @@ import (
 // attributed to a given deletion.
 const auditLogWindow = 20 * time.Second
 
-// onMessageUpdate logs edits to guild messages for moderators. The previous
+// onMessageUpdate logs edits to Steki messages for moderators. The previous
 // content comes from the state cache, so edits to messages sent before the bot
 // started, or evicted from the cache, are not reported.
 func (h *Handler) onMessageUpdate(s *discordgo.Session, m *discordgo.MessageUpdate) {
-	if m.GuildID == "" || m.Author == nil || m.Author.Bot {
+	if !h.inHomeGuild(m.GuildID) || m.Author == nil || m.Author.Bot {
 		return
 	}
 	if m.BeforeUpdate == nil || m.BeforeUpdate.Content == "" || m.Content == "" {
@@ -29,11 +29,11 @@ func (h *Handler) onMessageUpdate(s *discordgo.Session, m *discordgo.MessageUpda
 		m.Author.ID, m.ChannelID, quote(m.BeforeUpdate.Content), quote(m.Content))
 }
 
-// onMessageDelete logs deleted guild messages for moderators, attributing the
+// onMessageDelete logs deleted Steki messages for moderators, attributing the
 // deletion to whoever the audit log says removed it. Deletions by staff are
 // not reported, and, as with edits, only cached messages can be.
 func (h *Handler) onMessageDelete(s *discordgo.Session, m *discordgo.MessageDelete) {
-	if m.GuildID == "" || m.BeforeDelete == nil || m.BeforeDelete.Author == nil {
+	if !h.inHomeGuild(m.GuildID) || m.BeforeDelete == nil || m.BeforeDelete.Author == nil {
 		return
 	}
 	author := m.BeforeDelete.Author
