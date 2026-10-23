@@ -256,7 +256,7 @@ func (h *Handler) reconcile(s *discordgo.Session) {
 		}
 	}
 
-	var closed, recreated, deleted, adopted int
+	var closed, recreated, deleted, duplicates, adopted int
 	budget := maxOnboardPerSweep
 
 	// 1. Open rows whose member or channel no longer makes sense.
@@ -301,6 +301,10 @@ func (h *Handler) reconcile(s *discordgo.Session) {
 		h.log.Error("reconcile: list channels failed", "error", err)
 		return
 	}
+	live := make(map[string]bool, len(channels))
+	for _, ch := range channels {
+		live[ch.ID] = true
+	}
 	for _, ch := range channels {
 		userID, ok := userIDFromChannelName(ch.Name)
 		if !ok || createdAfter(ch.ID, listedAt) {
@@ -308,28 +312,30 @@ func (h *Handler) reconcile(s *discordgo.Session) {
 			// pass cannot see yet; it is not an orphan.
 			continue
 		}
-		if reg, has := openByUser[userID]; has && reg.ChannelID != nil && *reg.ChannelID == ch.ID {
-			continue
-		}
-		member, present := byID[userID]
-		if !present || hasAnyRole(member, verifiedRoleIDs) {
+
+		switch fate := registerChannelFate(ch.ID, openByUser[userID], byID[userID], live); fate {
+		case fateKeep:
+		case fateDelete, fateDeleteDuplicate:
 			if err := h.deleteChannel(ctx, s, ch.ID); err != nil {
-				h.log.Warn("reconcile: delete orphan channel failed", "channel_id", ch.ID, "error", err)
+				h.log.Warn("reconcile: delete register channel failed", "channel_id", ch.ID, "error", err)
 				continue
 			}
-			deleted++
-			continue
+			if fate == fateDeleteDuplicate {
+				duplicates++
+			} else {
+				deleted++
+			}
+		case fateAdopt:
+			unlock := h.lockUser(userID)
+			_, err := h.adoptChannel(ctx, guildID, userID, ch.ID)
+			unlock()
+			if err != nil {
+				h.log.Warn("reconcile: adopt channel failed", "channel_id", ch.ID, "error", err)
+				continue
+			}
+			openByUser[userID] = &store.Registration{UserID: userID, ChannelID: &ch.ID}
+			adopted++
 		}
-		// Present and unverified, but the row lost the channel: adopt it.
-		unlock := h.lockUser(userID)
-		_, err := h.adoptChannel(ctx, guildID, userID, ch.ID)
-		unlock()
-		if err != nil {
-			h.log.Warn("reconcile: adopt channel failed", "channel_id", ch.ID, "error", err)
-			continue
-		}
-		openByUser[userID] = &store.Registration{UserID: userID, ChannelID: &ch.ID}
-		adopted++
 	}
 
 	// 3. Recent joins with neither a row nor a channel: the joins dropped
@@ -354,7 +360,42 @@ func (h *Handler) reconcile(s *discordgo.Session) {
 
 	h.log.Info("reconcile finished",
 		"members", len(byID), "closed", closed, "recreated", recreated,
-		"orphan_channels_deleted", deleted, "channels_adopted", adopted)
+		"orphan_channels_deleted", deleted, "duplicate_channels_deleted", duplicates,
+		"channels_adopted", adopted)
+}
+
+// channelFate is what the reconciler does with one register channel.
+type channelFate int
+
+const (
+	fateKeep            channelFate = iota // the member's open registration points at it
+	fateDelete                             // the member left or is already verified
+	fateDeleteDuplicate                    // the member's registration already has another live channel
+	fateAdopt                              // the member is here, unverified, and has no live channel
+)
+
+// registerChannelFate decides what to do with a register channel, given the
+// owner's open registration and guild membership (nil when absent) and the
+// set of channels that currently exist.
+//
+// A member can own two register channels — the old bot made one per join, so
+// a rejoin left a second. Only the one their registration points at is kept;
+// adopting the other would move the registration back and forth between the
+// two on every pass, resetting the member's idle clock each time.
+func registerChannelFate(channelID string, reg *store.Registration, member *discordgo.Member,
+	live map[string]bool) channelFate {
+
+	hasChannel := reg != nil && reg.ChannelID != nil
+	switch {
+	case hasChannel && *reg.ChannelID == channelID:
+		return fateKeep
+	case member == nil || hasAnyRole(member, verifiedRoleIDs):
+		return fateDelete
+	case hasChannel && live[*reg.ChannelID]:
+		return fateDeleteDuplicate
+	default:
+		return fateAdopt
+	}
 }
 
 // createdAfter reports whether a Discord object was created after t, judging by
