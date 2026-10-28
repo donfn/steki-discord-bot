@@ -88,6 +88,23 @@ func TestMediaGuardFlow(t *testing.T) {
 		}
 	}
 
+	// A moderator can end the exemption early, once.
+	if g, err := s.GuardStatus(ctx, "u1"); err != nil || g.ExemptUntil == nil || g.LinkPending {
+		t.Fatalf("status during exemption = %+v, %v", g, err)
+	}
+	if cleared, err := s.ClearExemption(ctx, "u1"); err != nil || !cleared {
+		t.Fatalf("clear exemption = %v, %v", cleared, err)
+	}
+	if cleared, _ := s.ClearExemption(ctx, "u1"); cleared {
+		t.Fatal("cleared an exemption that was already gone")
+	}
+	if post("u1", "b2", t0.Add(90*time.Minute)) {
+		t.Fatal("first post after clearing tripped")
+	}
+	if _, err := s.GuardStatus(ctx, "nobody"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("status for unseen member = %v", err)
+	}
+
 	// A forced restriction applies even during the exemption.
 	if err := s.ForceRestriction(ctx, "u1", "g1", "forced", t0.Add(2*time.Hour)); err != nil {
 		t.Fatal(err)

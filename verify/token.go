@@ -22,6 +22,7 @@ const issuer = "steki-bot"
 const (
 	ReasonMedia     = "media"
 	ReasonDuplicate = "duplicate"
+	ReasonManual    = "manual"
 )
 
 // Claims identify one restriction: the member (Subject), the guild they were

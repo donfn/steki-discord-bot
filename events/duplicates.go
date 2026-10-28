@@ -142,6 +142,6 @@ func (h *Handler) screenDuplicates(s *discordgo.Session, m *discordgo.MessageCre
 		h.log.Error("duplicate: record restriction", "user_id", m.Author.ID, "error", err)
 		return true
 	}
-	h.restrict(s, m.Author.ID, m.GuildID, m.ChannelID, verify.ReasonDuplicate, tokenID)
+	_, _ = h.restrict(s, m.Author.ID, m.GuildID, m.ChannelID, verify.ReasonDuplicate, tokenID, "")
 	return true
 }

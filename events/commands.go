@@ -119,6 +119,40 @@ var commandDefs = []*discordgo.ApplicationCommand{
 		},
 	},
 	{
+		Name:                     "guard",
+		Description:              "Προστασία από παραβιασμένους λογαριασμούς (captcha)",
+		DefaultMemberPermissions: &staffOnly,
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Name:        "status",
+				Description: "Κατάσταση προστασίας ενός χρήστη",
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Options: []*discordgo.ApplicationCommandOption{{
+					Name: "user", Description: "Ο χρήστης",
+					Type: discordgo.ApplicationCommandOptionUser, Required: true,
+				}},
+			},
+			{
+				Name:        "restrict",
+				Description: "Timeout 24 ωρών που αφαιρείται όταν ο χρήστης λύσει captcha",
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Options: []*discordgo.ApplicationCommandOption{{
+					Name: "user", Description: "Ο χρήστης",
+					Type: discordgo.ApplicationCommandOptionUser, Required: true,
+				}},
+			},
+			{
+				Name:        "ungrace",
+				Description: "Αφαίρεση της περιόδου χάριτος 24 ωρών μετά το captcha",
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Options: []*discordgo.ApplicationCommandOption{{
+					Name: "user", Description: "Ο χρήστης",
+					Type: discordgo.ApplicationCommandOptionUser, Required: true,
+				}},
+			},
+		},
+	},
+	{
 		Name:                     "bot",
 		Description:              "Κατάσταση του bot",
 		DefaultMemberPermissions: &staffOnly,
@@ -154,15 +188,18 @@ type commandFunc func(h *Handler, s *discordgo.Session, i *discordgo.Interaction
 
 // commandRoutes maps "command subcommand" to its handler.
 var commandRoutes = map[string]commandFunc{
-	"reg status":   (*Handler).cmdRegStatus,
-	"reg history":  (*Handler).cmdRegHistory,
-	"reg stuck":    (*Handler).cmdRegStuck,
-	"reg restart":  (*Handler).cmdRegRestart,
-	"reg verify":   (*Handler).cmdRegVerify,
-	"email whois":  (*Handler).cmdEmailWhois,
-	"email add":    (*Handler).cmdEmailAdd,
-	"email remove": (*Handler).cmdEmailRemove,
-	"bot stats":    (*Handler).cmdBotStats,
+	"reg status":     (*Handler).cmdRegStatus,
+	"reg history":    (*Handler).cmdRegHistory,
+	"reg stuck":      (*Handler).cmdRegStuck,
+	"reg restart":    (*Handler).cmdRegRestart,
+	"reg verify":     (*Handler).cmdRegVerify,
+	"email whois":    (*Handler).cmdEmailWhois,
+	"email add":      (*Handler).cmdEmailAdd,
+	"email remove":   (*Handler).cmdEmailRemove,
+	"bot stats":      (*Handler).cmdBotStats,
+	"guard status":   (*Handler).cmdGuardStatus,
+	"guard restrict": (*Handler).cmdGuardRestrict,
+	"guard ungrace":  (*Handler).cmdGuardUngrace,
 }
 
 // onInteractionCreate dispatches moderator slash commands.

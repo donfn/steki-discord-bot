@@ -133,3 +133,37 @@ func (s *Store) ForceRestriction(ctx context.Context, userID, guildID, tokenID s
 			updated_at    = now()`, userID, guildID, tokenID, now)
 	return err
 }
+
+// GuardState is a member's media guard row, for the /guard status command.
+type GuardState struct {
+	WindowStart  *time.Time
+	ExemptUntil  *time.Time
+	RestrictedAt *time.Time
+	LinkPending  bool
+}
+
+// GuardStatus returns a member's media guard state, or ErrNotFound when they
+// have never posted an attachment or a link.
+func (s *Store) GuardStatus(ctx context.Context, userID string) (*GuardState, error) {
+	var g GuardState
+	err := s.pool.QueryRow(ctx, `
+		select window_start, exempt_until, restricted_at, token_id is not null
+		from media_guard where user_id = $1`, userID).
+		Scan(&g.WindowStart, &g.ExemptUntil, &g.RestrictedAt, &g.LinkPending)
+	if err != nil {
+		return nil, noRows(err)
+	}
+	return &g, nil
+}
+
+// ClearExemption ends a member's post-captcha grace period early, reporting
+// whether one was running.
+func (s *Store) ClearExemption(ctx context.Context, userID string) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `
+		update media_guard set exempt_until = null, updated_at = now()
+		where user_id = $1 and exempt_until > now()`, userID)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}

@@ -1,9 +1,12 @@
 package events
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/bwmarrin/discordgo"
+
+	"steki-bot/verify"
 )
 
 func TestFlaggedPost(t *testing.T) {
@@ -34,5 +37,18 @@ func TestGuardMessageButton(t *testing.T) {
 		if btn.Disabled != disabled {
 			t.Fatalf("disabled = %v, want %v", btn.Disabled, disabled)
 		}
+	}
+}
+
+func TestRestrictionWordingPerReason(t *testing.T) {
+	embed, _ := guardMessage(verify.ReasonManual, "https://x", false)
+	if !strings.Contains(embed.Description, "Ομάδα Διαχείρισης") {
+		t.Error("manual DM does not say the moderators applied it")
+	}
+	if got := restrictionSubject("u", "c", verify.ReasonManual, "mod"); !strings.Contains(got, "<@mod>") || !strings.Contains(got, "<@u>") {
+		t.Errorf("manual mod-log subject = %q", got)
+	}
+	if got := restrictionSubject("u", "c", verify.ReasonDuplicate, ""); !strings.Contains(got, "<#c>") {
+		t.Errorf("duplicate mod-log subject = %q", got)
 	}
 }

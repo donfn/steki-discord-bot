@@ -57,7 +57,7 @@ func (h *Handler) screenMedia(s *discordgo.Session, m *discordgo.MessageCreate) 
 	if !tripped {
 		return false
 	}
-	h.restrict(s, m.Author.ID, m.GuildID, m.ChannelID, verify.ReasonMedia, tokenID)
+	_, _ = h.restrict(s, m.Author.ID, m.GuildID, m.ChannelID, verify.ReasonMedia, tokenID, "")
 	return true
 }
 
@@ -74,18 +74,33 @@ func (h *Handler) isModerator(s *discordgo.Session, m *discordgo.MessageCreate) 
 	return perms&(discordgo.PermissionAdministrator|discordgo.PermissionManageMessages) != 0
 }
 
-// reasonSummary is how the mod log describes each restriction reason.
-func reasonSummary(reason string) string {
-	if reason == verify.ReasonDuplicate {
-		return "έστειλε το ίδιο μήνυμα σε πολλά κανάλια μέσα σε ένα λεπτό (τα μηνύματα διαγράφηκαν)"
+// restrictionSubject opens the mod log line for a restriction: who, and why.
+func restrictionSubject(userID, channelID, reason, actorID string) string {
+	switch reason {
+	case verify.ReasonManual:
+		return fmt.Sprintf("Ο <@%s> έβαλε τον χρήστη <@%s> σε έλεγχο captcha", actorID, userID)
+	case verify.ReasonDuplicate:
+		return fmt.Sprintf("Ο χρήστης <@%s> έστειλε το ίδιο μήνυμα σε πολλά κανάλια μέσα σε ένα λεπτό "+
+			"(τελευταίο στο <#%s>, τα μηνύματα διαγράφηκαν)", userID, channelID)
+	default:
+		return fmt.Sprintf("Ο χρήστης <@%s> έστειλε δύο μηνύματα με συνημμένα ή συνδέσμους μέσα σε μία ώρα "+
+			"(τελευταίο στο <#%s>)", userID, channelID)
 	}
-	return "έστειλε δύο μηνύματα με συνημμένα ή συνδέσμους μέσα σε μία ώρα"
+}
+
+// restrictResult reports how a restriction went, for callers that answer a
+// moderator.
+type restrictResult struct {
+	Link   string
+	DMSent bool
 }
 
 // restrict times the member out and DMs them the verification button. The
 // caller has already recorded tokenID as the member's outstanding link.
-func (h *Handler) restrict(s *discordgo.Session, userID, guildID, channelID, reason, tokenID string) {
+// actorID is the moderator for a manual restriction, otherwise empty.
+func (h *Handler) restrict(s *discordgo.Session, userID, guildID, channelID, reason, tokenID, actorID string) (restrictResult, error) {
 	until := time.Now().Add(guardTimeout)
+	subject := restrictionSubject(userID, channelID, reason, actorID)
 
 	ctx, cancel := h.ctx()
 	defer cancel()
@@ -95,37 +110,36 @@ func (h *Handler) restrict(s *discordgo.Session, userID, guildID, channelID, rea
 	})
 	if err != nil {
 		h.log.Warn("media guard: timeout failed", "user_id", userID, "error", err)
-		h.alertMods(s, "⚠️ Ο χρήστης <@%s> %s, αλλά το timeout απέτυχε: `%v`",
-			userID, reasonSummary(reason), err)
-		return
+		h.alertMods(s, "⚠️ %s, αλλά το timeout απέτυχε: `%v`", subject, err)
+		return restrictResult{}, fmt.Errorf("timeout: %w", err)
 	}
 
 	token, err := h.guardTokens.Issue(userID, guildID, reason, tokenID, until)
 	if err != nil {
 		h.log.Error("media guard: issue token", "user_id", userID, "error", err)
-		return
+		return restrictResult{}, fmt.Errorf("issue link: %w", err)
 	}
-	link := h.cfg.PublicURL + "/verify?t=" + url.QueryEscape(token)
+	res := restrictResult{Link: h.cfg.PublicURL + "/verify?t=" + url.QueryEscape(token)}
 
 	h.audit(userID, "", store.EventMediaRestricted, map[string]any{
 		"channel_id": channelID, "reason": reason, "until": until,
-	}, "")
+	}, actorID)
 	h.log.Info("media guard: restricted", "user_id", userID, "channel_id", channelID, "reason", reason)
 
-	dm, err := h.sendGuardDM(s, userID, reason, link)
+	dm, err := h.sendGuardDM(s, userID, reason, res.Link)
 	if err != nil {
 		h.log.Info("media guard: DM failed", "user_id", userID, "error", err)
-		h.alertMods(s, "🛡️ Ο χρήστης <@%s> %s (τελευταίο στο <#%s>) και μπήκε σε timeout 24 ωρών. "+
-			"**Δεν δέχεται DM**, οπότε δεν πήρε τον σύνδεσμο επιβεβαίωσης. Μπορείτε να του τον στείλετε "+
-			"ή να αφαιρέσετε το timeout χειροκίνητα:\n<%s>",
-			userID, reasonSummary(reason), channelID, link)
-		return
+		h.alertMods(s, "🛡️ %s. Timeout 24 ωρών, αλλά **δεν δέχεται DM**, οπότε δεν πήρε τον σύνδεσμο "+
+			"επιβεβαίωσης. Μπορείτε να του τον στείλετε ή να αφαιρέσετε το timeout χειροκίνητα:\n<%s>",
+			subject, res.Link)
+		return res, nil
 	}
+	res.DMSent = true
 	if err := h.st.SetGuardDM(ctx, userID, tokenID, dm); err != nil {
 		h.log.Warn("media guard: save DM", "user_id", userID, "error", err)
 	}
-	h.alertMods(s, "🛡️ Ο χρήστης <@%s> %s (τελευταίο στο <#%s>) και μπήκε σε timeout 24 ωρών, "+
-		"μέχρι να λύσει το captcha που του στάλθηκε σε DM.", userID, reasonSummary(reason), channelID)
+	h.alertMods(s, "🛡️ %s. Timeout 24 ωρών, μέχρι να λύσει το captcha που του στάλθηκε σε DM.", subject)
+	return res, nil
 }
 
 // guardMessage is the DM explaining the timeout. With disabled set it is the
@@ -133,9 +147,13 @@ func (h *Handler) restrict(s *discordgo.Session, userID, guildID, channelID, rea
 func guardMessage(reason, link string, disabled bool) (*discordgo.MessageEmbed, []discordgo.MessageComponent) {
 	what := "Ο λογαριασμός σου έστειλε **δύο μηνύματα με συνημμένα ή συνδέσμους μέσα σε μία ώρα**, " +
 		"οπότε μπήκε αυτόματα σε timeout για 24 ώρες."
-	if reason == verify.ReasonDuplicate {
+	switch reason {
+	case verify.ReasonDuplicate:
 		what = "Ο λογαριασμός σου έστειλε **το ίδιο μήνυμα σε πολλά κανάλια μέσα σε ένα λεπτό**, " +
 			"οπότε τα μηνύματα διαγράφηκαν και μπήκε αυτόματα σε timeout για 24 ώρες."
+	case verify.ReasonManual:
+		what = "**Η Ομάδα Διαχείρισης έβαλε τον λογαριασμό σου σε timeout για 24 ώρες**, επειδή " +
+			"η δραστηριότητά του μοιάζει με λογαριασμό που έχει παραβιαστεί."
 	}
 	embed := &discordgo.MessageEmbed{
 		Title: "Προσωρινός περιορισμός στο στέκι",
