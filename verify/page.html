@@ -127,6 +127,20 @@
     line-height: 1.5;
   }
 
+  .credit {
+    margin: 0.75rem 0 0;
+    font-size: 0.75rem;
+    line-height: 1.45;
+  }
+  .credit a {
+    color: inherit;
+    font-weight: 700;
+    text-decoration: underline;
+    text-decoration-color: var(--hairline);
+    text-underline-offset: 0.15em;
+  }
+  .credit a:hover { text-decoration-color: currentColor; }
+
   /* Results replace the form in place, with a short cross-fade, so the page
      never jumps to a new screen. */
   .view[hidden] { display: none; }
@@ -190,6 +204,7 @@
     <p class="status" id="status" role="status"></p>
 
     <p class="footnote"><strong>Δεν έστειλες εσύ αυτά τα μηνύματα;</strong> Άλλαξε άμεσα τον κωδικό σου στο Discord και ενεργοποίησε τον έλεγχο ταυτότητας δύο παραγόντων (2FA).</p>
+    <p class="credit">Ο έλεγχος γίνεται με το <a href="https://altcha.org" target="_blank" rel="noopener noreferrer">ALTCHA</a>, ένα captcha ανοιχτού κώδικα χωρίς cookies και χωρίς παρακολούθηση.</p>
   </section>
   {{end}}
 
@@ -271,7 +286,7 @@
   widget.addEventListener('statechange', (ev) => {
     const { state, payload } = ev.detail;
     if (state === 'verified' && payload) lift(payload);
-    else if (state === 'verifying') say('');
+    else if (state === 'verifying') say('Μπορεί να χρειαστούν μερικά δευτερόλεπτα, κράτα τη σελίδα ανοιχτή.');
   });
 </script>
 {{end}}

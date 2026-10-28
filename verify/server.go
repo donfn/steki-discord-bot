@@ -29,10 +29,14 @@ type Lifter interface {
 }
 
 const (
-	// challengeMaxNumber sets the proof-of-work difficulty: about a second
-	// of work on a phone, which is nothing to a person and real cost to a
-	// script working through many hijacked accounts.
-	challengeMaxNumber = 200_000
+	// challengeMaxNumber sets the proof-of-work difficulty: the solver
+	// hashes up to this many candidates, half on average. A browser does
+	// about 0.4M SHA-256 per second per worker and the widget runs one worker
+	// per core, so this is about a second on a laptop and a few seconds on a
+	// mid-range phone. A native script does roughly 6M per second per core,
+	// so this raises the cost of solving many links at once rather than
+	// stopping a determined attacker outright.
+	challengeMaxNumber = 5_000_000
 	challengeTTL       = 10 * time.Minute
 	requestTimeout     = 15 * time.Second
 	maxBodyBytes       = 8 << 10
