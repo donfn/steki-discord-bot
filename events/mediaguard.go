@@ -57,7 +57,7 @@ func (h *Handler) screenMedia(s *discordgo.Session, m *discordgo.MessageCreate) 
 	if !tripped {
 		return false
 	}
-	h.restrict(s, m, tokenID)
+	h.restrict(s, m.Author.ID, m.GuildID, m.ChannelID, verify.ReasonMedia, tokenID)
 	return true
 }
 
@@ -74,9 +74,17 @@ func (h *Handler) isModerator(s *discordgo.Session, m *discordgo.MessageCreate) 
 	return perms&(discordgo.PermissionAdministrator|discordgo.PermissionManageMessages) != 0
 }
 
-// restrict times the member out and DMs them the verification button.
-func (h *Handler) restrict(s *discordgo.Session, m *discordgo.MessageCreate, tokenID string) {
-	userID, guildID := m.Author.ID, m.GuildID
+// reasonSummary is how the mod log describes each restriction reason.
+func reasonSummary(reason string) string {
+	if reason == verify.ReasonDuplicate {
+		return "έστειλε το ίδιο μήνυμα σε πολλά κανάλια μέσα σε ένα λεπτό (τα μηνύματα διαγράφηκαν)"
+	}
+	return "έστειλε δύο μηνύματα με συνημμένα ή συνδέσμους μέσα σε μία ώρα"
+}
+
+// restrict times the member out and DMs them the verification button. The
+// caller has already recorded tokenID as the member's outstanding link.
+func (h *Handler) restrict(s *discordgo.Session, userID, guildID, channelID, reason, tokenID string) {
 	until := time.Now().Add(guardTimeout)
 
 	ctx, cancel := h.ctx()
@@ -87,12 +95,12 @@ func (h *Handler) restrict(s *discordgo.Session, m *discordgo.MessageCreate, tok
 	})
 	if err != nil {
 		h.log.Warn("media guard: timeout failed", "user_id", userID, "error", err)
-		h.alertMods(s, "⚠️ Ο χρήστης <@%s> έστειλε δύο μηνύματα με συνημμένα ή συνδέσμους μέσα σε μία ώρα, "+
-			"αλλά το timeout απέτυχε: `%v`", userID, err)
+		h.alertMods(s, "⚠️ Ο χρήστης <@%s> %s, αλλά το timeout απέτυχε: `%v`",
+			userID, reasonSummary(reason), err)
 		return
 	}
 
-	token, err := h.guardTokens.Issue(userID, guildID, tokenID, until)
+	token, err := h.guardTokens.Issue(userID, guildID, reason, tokenID, until)
 	if err != nil {
 		h.log.Error("media guard: issue token", "user_id", userID, "error", err)
 		return
@@ -100,37 +108,41 @@ func (h *Handler) restrict(s *discordgo.Session, m *discordgo.MessageCreate, tok
 	link := h.cfg.PublicURL + "/verify?t=" + url.QueryEscape(token)
 
 	h.audit(userID, "", store.EventMediaRestricted, map[string]any{
-		"channel_id": m.ChannelID, "message_id": m.ID, "until": until,
+		"channel_id": channelID, "reason": reason, "until": until,
 	}, "")
-	h.log.Info("media guard: restricted", "user_id", userID, "channel_id", m.ChannelID)
+	h.log.Info("media guard: restricted", "user_id", userID, "channel_id", channelID, "reason", reason)
 
-	dm, err := h.sendGuardDM(s, userID, link)
+	dm, err := h.sendGuardDM(s, userID, reason, link)
 	if err != nil {
 		h.log.Info("media guard: DM failed", "user_id", userID, "error", err)
-		h.alertMods(s, "🛡️ Ο χρήστης <@%s> έστειλε δύο μηνύματα με συνημμένα ή συνδέσμους μέσα σε μία ώρα "+
-			"(τελευταίο στο <#%s>) και μπήκε σε timeout 24 ωρών. **Δεν δέχεται DM**, οπότε δεν πήρε τον σύνδεσμο "+
-			"επιβεβαίωσης. Μπορείτε να του τον στείλετε ή να αφαιρέσετε το timeout χειροκίνητα:\n<%s>",
-			userID, m.ChannelID, link)
+		h.alertMods(s, "🛡️ Ο χρήστης <@%s> %s (τελευταίο στο <#%s>) και μπήκε σε timeout 24 ωρών. "+
+			"**Δεν δέχεται DM**, οπότε δεν πήρε τον σύνδεσμο επιβεβαίωσης. Μπορείτε να του τον στείλετε "+
+			"ή να αφαιρέσετε το timeout χειροκίνητα:\n<%s>",
+			userID, reasonSummary(reason), channelID, link)
 		return
 	}
 	if err := h.st.SetGuardDM(ctx, userID, tokenID, dm); err != nil {
 		h.log.Warn("media guard: save DM", "user_id", userID, "error", err)
 	}
-	h.alertMods(s, "🛡️ Ο χρήστης <@%s> έστειλε δύο μηνύματα με συνημμένα ή συνδέσμους μέσα σε μία ώρα "+
-		"(τελευταίο στο <#%s>) και μπήκε σε timeout 24 ωρών, μέχρι να λύσει το captcha που του στάλθηκε σε DM.",
-		userID, m.ChannelID)
+	h.alertMods(s, "🛡️ Ο χρήστης <@%s> %s (τελευταίο στο <#%s>) και μπήκε σε timeout 24 ωρών, "+
+		"μέχρι να λύσει το captcha που του στάλθηκε σε DM.", userID, reasonSummary(reason), channelID)
 }
 
 // guardMessage is the DM explaining the timeout. With disabled set it is the
 // same message after the member has verified, its button greyed out.
-func guardMessage(link string, disabled bool) (*discordgo.MessageEmbed, []discordgo.MessageComponent) {
+func guardMessage(reason, link string, disabled bool) (*discordgo.MessageEmbed, []discordgo.MessageComponent) {
+	what := "Ο λογαριασμός σου έστειλε **δύο μηνύματα με συνημμένα ή συνδέσμους μέσα σε μία ώρα**, " +
+		"οπότε μπήκε αυτόματα σε timeout για 24 ώρες."
+	if reason == verify.ReasonDuplicate {
+		what = "Ο λογαριασμός σου έστειλε **το ίδιο μήνυμα σε πολλά κανάλια μέσα σε ένα λεπτό**, " +
+			"οπότε τα μηνύματα διαγράφηκαν και μπήκε αυτόματα σε timeout για 24 ώρες."
+	}
 	embed := &discordgo.MessageEmbed{
 		Title: "Προσωρινός περιορισμός στο στέκι",
 		Color: guardColor,
-		Description: "Ο λογαριασμός σου έστειλε **δύο μηνύματα με συνημμένα ή συνδέσμους μέσα σε μία ώρα**, " +
-			"οπότε μπήκε αυτόματα σε timeout για 24 ώρες.\n\n" +
-			"**Γιατί;** Όταν κάποιος παραβιάσει έναν λογαριασμό Discord, συνήθως στέλνει αμέσως εικόνες και " +
-			"συνδέσμους απάτης σε όλα τα κανάλια. Αυτός ο έλεγχος σταματά τέτοιες επιθέσεις πριν φτάσουν στα μέλη.\n\n" +
+		Description: what + "\n\n" +
+			"**Γιατί;** Όταν κάποιος παραβιάσει έναν λογαριασμό Discord, συνήθως στέλνει αμέσως μηνύματα, " +
+			"εικόνες και συνδέσμους απάτης σε όλα τα κανάλια. Αυτός ο έλεγχος σταματά τέτοιες επιθέσεις πριν φτάσουν στα μέλη.\n\n" +
 			"Αν ήσουν εσύ, πάτα το κουμπί και λύσε έναν σύντομο έλεγχο για να αφαιρεθεί ο περιορισμός αμέσως.\n\n" +
 			"**Δεν έστειλες εσύ αυτά τα μηνύματα;** Άλλαξε άμεσα τον κωδικό σου και ενεργοποίησε το 2FA.",
 	}
@@ -151,12 +163,12 @@ func guardMessage(link string, disabled bool) (*discordgo.MessageEmbed, []discor
 	return embed, components
 }
 
-func (h *Handler) sendGuardDM(s *discordgo.Session, userID, link string) (store.GuardDM, error) {
+func (h *Handler) sendGuardDM(s *discordgo.Session, userID, reason, link string) (store.GuardDM, error) {
 	ch, err := s.UserChannelCreate(userID)
 	if err != nil {
 		return store.GuardDM{}, err
 	}
-	embed, components := guardMessage(link, false)
+	embed, components := guardMessage(reason, link, false)
 	msg, err := s.ChannelMessageSendComplex(ch.ID, &discordgo.MessageSend{
 		Embeds:     []*discordgo.MessageEmbed{embed},
 		Components: components,
@@ -213,7 +225,7 @@ func (g guardLifter) Lift(ctx context.Context, c *verify.Claims) error {
 	}
 
 	if dm.ChannelID != "" && dm.MessageID != "" {
-		embed, components := guardMessage(h.cfg.PublicURL+"/verify", true)
+		embed, components := guardMessage(c.Reason, h.cfg.PublicURL+"/verify", true)
 		embeds := []*discordgo.MessageEmbed{embed}
 		if _, err := s.ChannelMessageEditComplex(&discordgo.MessageEdit{
 			Channel:    dm.ChannelID,

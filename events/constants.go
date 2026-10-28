@@ -120,3 +120,6 @@ const (
 
 	msgKickReason = "Η εγγραφή δεν ολοκληρώθηκε μέσα σε 6 ώρες (αυτόματη εκκαθάριση)."
 )
+
+// phishRefreshEvery is how often the phishing domain feeds are re-downloaded.
+const phishRefreshEvery = 6 * time.Hour

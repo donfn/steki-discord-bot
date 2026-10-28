@@ -4,10 +4,13 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-// onMessage screens guild messages for blacklisted links and for the media
-// guard's attachment-and-link bursts, and drives the
-// registration flow inside the Steki guild's register channels. Direct
-// messages are ignored.
+// onMessage screens guild messages, then drives the registration flow inside
+// the Steki guild's register channels. Direct messages are ignored.
+//
+// Screening runs strongest signal first: blacklisted and phishing links
+// (every guild), then in Steki the same message across channels, invites to
+// other servers, and the media guard. A removed invite still counts towards
+// the media guard, since it is a link.
 func (h *Handler) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if m.Author == nil || m.Author.Bot || m.GuildID == "" {
 		return
@@ -21,7 +24,15 @@ func (h *Handler) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if !h.inHomeGuild(m.GuildID) {
 		return
 	}
-	if h.screenMedia(s, m) {
+	if h.screenDuplicates(s, m) {
+		h.blocked.Add(1)
+		return
+	}
+	removed := h.screenInvites(s, m)
+	if removed {
+		h.blocked.Add(1)
+	}
+	if h.screenMedia(s, m) || removed {
 		return
 	}
 

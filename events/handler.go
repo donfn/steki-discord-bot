@@ -30,11 +30,17 @@ type Handler struct {
 	log    *slog.Logger
 
 	linkChk *moderation.LinkChecker
+	phish   *moderation.PhishFeed
 	modlog  *moderation.Log
 	placer  *dc.Placer
 
 	// guardTokens signs media guard links; nil when the guard is off.
 	guardTokens *verify.Tokens
+	// dups tracks recent messages for cross-channel duplicate detection.
+	dups *dupTracker
+	// invites caches whether an invite code points at the Steki guild.
+	invitesMu sync.Mutex
+	invites   map[string]bool
 
 	// users serialises all registration work for one member, so concurrent
 	// events (a join racing the reconciler, two quick messages) cannot
@@ -59,6 +65,7 @@ type Handler struct {
 func NewHandler(cfg *config.Config, st *store.Store, logger *slog.Logger) *Handler {
 	modlog := moderation.NewLog(config.LogChannelID, logger)
 	base, cancel := context.WithCancel(context.Background())
+	phish := moderation.NewPhishFeed(logger)
 	var guardTokens *verify.Tokens
 	if cfg.MediaGuardEnabled() {
 		guardTokens = verify.NewTokens(cfg.JWTSecret)
@@ -69,7 +76,10 @@ func NewHandler(cfg *config.Config, st *store.Store, logger *slog.Logger) *Handl
 		st:          st,
 		mailer:      mail.New(cfg.ResendAPIKey, cfg.EmailFrom, logger),
 		log:         logger,
-		linkChk:     moderation.NewLinkChecker(cfg.URLBlacklist, modlog, logger),
+		linkChk:     moderation.NewLinkChecker(cfg.URLBlacklist, phish, modlog, logger),
+		phish:       phish,
+		dups:        newDupTracker(),
+		invites:     map[string]bool{},
 		modlog:      modlog,
 		placer:      dc.NewPlacer(config.RegisterCategoryID, logger),
 		bootTime:    time.Now(),
@@ -192,4 +202,14 @@ func (h *Handler) audit(userID, regID, kind string, detail map[string]any, actor
 // retry is a convenience wrapper so handlers do not each import dc.
 func (h *Handler) retry(ctx context.Context, op string, fn func() error) error {
 	return dc.Do(ctx, h.log, op, fn)
+}
+
+// refreshPhishFeed reloads the phishing domain feeds, keeping the previous
+// list when the download fails.
+func (h *Handler) refreshPhishFeed() {
+	ctx, cancel := h.ctxTimeout(2 * time.Minute)
+	defer cancel()
+	if err := h.phish.Refresh(ctx); err != nil {
+		h.log.Warn("phishing feed refresh failed", "error", err)
+	}
 }

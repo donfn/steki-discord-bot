@@ -16,11 +16,20 @@ import (
 
 const issuer = "steki-bot"
 
+// Reasons a member can be restricted, carried in the link so the page can
+// explain which one applied. An empty reason is a media burst, which is what
+// links issued before reasons existed were for.
+const (
+	ReasonMedia     = "media"
+	ReasonDuplicate = "duplicate"
+)
+
 // Claims identify one restriction: the member (Subject), the guild they were
-// timed out in, and the link's own ID, which the database checks so each link
-// works once.
+// timed out in, why, and the link's own ID, which the database checks so each
+// link works once.
 type Claims struct {
 	GuildID string `json:"gid"`
+	Reason  string `json:"rsn,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -35,9 +44,10 @@ func NewTokens(secret string) *Tokens {
 }
 
 // Issue signs a link for one restriction that stops working at expires.
-func (t *Tokens) Issue(userID, guildID, tokenID string, expires time.Time) (string, error) {
+func (t *Tokens) Issue(userID, guildID, reason, tokenID string, expires time.Time) (string, error) {
 	claims := Claims{
 		GuildID: guildID,
+		Reason:  reason,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    issuer,
 			Subject:   userID,

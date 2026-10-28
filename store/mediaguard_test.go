@@ -88,6 +88,17 @@ func TestMediaGuardFlow(t *testing.T) {
 		}
 	}
 
+	// A forced restriction applies even during the exemption.
+	if err := s.ForceRestriction(ctx, "u1", "g1", "forced", t0.Add(2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if !active("u1", "forced") {
+		t.Fatal("forced restriction did not record its link")
+	}
+	if err := s.ForceRestriction(ctx, "new-user", "g1", "f2", t0); err != nil || !active("new-user", "f2") {
+		t.Fatalf("forced restriction for an unseen member: %v", err)
+	}
+
 	// Posts an hour apart never trip.
 	if post("u2", "x", t0) || post("u2", "x", t0.Add(61*time.Minute)) {
 		t.Fatal("posts more than an hour apart tripped")

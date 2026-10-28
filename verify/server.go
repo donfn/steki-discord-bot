@@ -109,12 +109,16 @@ func (v *Server) page(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	raw := r.URL.Query().Get("t")
-	_, state := v.active(ctx, raw)
+	c, state := v.active(ctx, raw)
+	reason := ""
 	if state != stateReady {
 		raw = ""
+	} else {
+		reason = c.Reason
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := pageTmpl.Execute(w, map[string]string{"State": state, "Token": raw}); err != nil {
+	data := map[string]string{"State": state, "Token": raw, "Reason": reason}
+	if err := pageTmpl.Execute(w, data); err != nil {
 		v.log.Warn("verify: render page", "error", err)
 	}
 }

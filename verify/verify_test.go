@@ -21,7 +21,7 @@ import (
 
 func TestTokenRoundTrip(t *testing.T) {
 	tk := NewTokens("secret")
-	raw, err := tk.Issue("u1", "g1", "jti1", time.Now().Add(time.Hour))
+	raw, err := tk.Issue("u1", "g1", "", "jti1", time.Now().Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,12 +37,12 @@ func TestTokenRoundTrip(t *testing.T) {
 func TestTokenRejectsForgedExpiredAndNone(t *testing.T) {
 	tk := NewTokens("secret")
 
-	forged, _ := NewTokens("other").Issue("u1", "g1", "j", time.Now().Add(time.Hour))
+	forged, _ := NewTokens("other").Issue("u1", "g1", "", "j", time.Now().Add(time.Hour))
 	if _, err := tk.Parse(forged); err == nil {
 		t.Error("accepted a token signed with another secret")
 	}
 
-	expired, _ := tk.Issue("u1", "g1", "j", time.Now().Add(-time.Minute))
+	expired, _ := tk.Issue("u1", "g1", "", "j", time.Now().Add(-time.Minute))
 	if _, err := tk.Parse(expired); err == nil {
 		t.Error("accepted an expired token")
 	}
@@ -133,7 +133,7 @@ func postSolve(t *testing.T, srv *httptest.Server, token, payload string) (int, 
 
 func TestSolveLiftsOnceThenLinkIsSpent(t *testing.T) {
 	srv, tk, fl := newTestServer(t)
-	token, _ := tk.Issue("u1", "g1", "jti1", time.Now().Add(time.Hour))
+	token, _ := tk.Issue("u1", "g1", "", "jti1", time.Now().Add(time.Hour))
 
 	payload := solvePayload(t, srv, token)
 	if code, body := postSolve(t, srv, token, payload); code != http.StatusOK {
@@ -159,7 +159,7 @@ func TestSolveLiftsOnceThenLinkIsSpent(t *testing.T) {
 
 func TestSolveRejectsBadCaptcha(t *testing.T) {
 	srv, tk, fl := newTestServer(t)
-	token, _ := tk.Issue("u1", "g1", "jti1", time.Now().Add(time.Hour))
+	token, _ := tk.Issue("u1", "g1", "", "jti1", time.Now().Add(time.Hour))
 
 	bogus := base64.StdEncoding.EncodeToString([]byte(`{"algorithm":"SHA-256","challenge":"x","number":1,"salt":"s","signature":"x"}`))
 	if code, _ := postSolve(t, srv, token, bogus); code != http.StatusUnprocessableEntity {
@@ -172,7 +172,7 @@ func TestSolveRejectsBadCaptcha(t *testing.T) {
 
 func TestPageAndChallengeRequireLiveToken(t *testing.T) {
 	srv, tk, _ := newTestServer(t)
-	stale, _ := tk.Issue("u1", "g1", "old", time.Now().Add(time.Hour))
+	stale, _ := tk.Issue("u1", "g1", "", "old", time.Now().Add(time.Hour))
 
 	res, _ := http.Get(srv.URL + "/verify/challenge?t=" + url.QueryEscape(stale))
 	res.Body.Close()

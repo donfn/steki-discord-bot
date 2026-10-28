@@ -18,6 +18,8 @@ func (h *Handler) onReady(s *discordgo.Session, r *discordgo.Ready) {
 
 	h.startOnce.Do(func() {
 		h.goLoop("status", 30*time.Second, func() { h.updateStatus(s) })
+		h.goLoop("phishing_feed", phishRefreshEvery, h.refreshPhishFeed)
+		h.goLoop("duplicate_sweep", dupWindow, func() { h.dups.sweep(time.Now()) })
 		h.startMaintenance(s)
 	})
 }

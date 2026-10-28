@@ -115,3 +115,21 @@ func (s *Store) ConsumeGuardToken(ctx context.Context, userID, tokenID string, e
 	}
 	return dm, nil
 }
+
+// ForceRestriction records an outstanding verification link without counting
+// a post, for detections strong enough to restrict on their own (the same
+// message across many channels). It ignores any post-captcha exemption.
+func (s *Store) ForceRestriction(ctx context.Context, userID, guildID, tokenID string, now time.Time) error {
+	_, err := s.pool.Exec(ctx, `
+		insert into media_guard (user_id, guild_id, token_id, restricted_at)
+		values ($1, $2, $3, $4)
+		on conflict (user_id) do update set
+			guild_id      = excluded.guild_id,
+			window_start  = null,
+			token_id      = excluded.token_id,
+			restricted_at = excluded.restricted_at,
+			dm_channel_id = null,
+			dm_message_id = null,
+			updated_at    = now()`, userID, guildID, tokenID, now)
+	return err
+}

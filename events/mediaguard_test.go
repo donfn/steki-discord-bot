@@ -26,7 +26,7 @@ func TestFlaggedPost(t *testing.T) {
 
 func TestGuardMessageButton(t *testing.T) {
 	for _, disabled := range []bool{false, true} {
-		_, comps := guardMessage("https://x/verify?t=abc", disabled)
+		_, comps := guardMessage("", "https://x/verify?t=abc", disabled)
 		btn := comps[0].(discordgo.ActionsRow).Components[0].(discordgo.Button)
 		if btn.Label != "Αφαίρεση περιορισμών" || btn.Style != discordgo.LinkButton {
 			t.Fatalf("button = %+v", btn)
