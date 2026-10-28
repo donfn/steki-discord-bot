@@ -35,6 +35,17 @@ type Config struct {
 	URLBlacklist []string
 	LogLevel     slog.Level
 	Port         string
+
+	// JWTSecret signs the media guard's verification links and keys its
+	// captcha. PublicURL is where those links point. The media guard stays
+	// off unless both are set.
+	JWTSecret string
+	PublicURL string
+}
+
+// MediaGuardEnabled reports whether the media guard has what it needs to run.
+func (c *Config) MediaGuardEnabled() bool {
+	return c.JWTSecret != "" && c.PublicURL != ""
 }
 
 // Load reads configuration from the environment, falling back to a .env file
@@ -51,6 +62,8 @@ func Load() (*Config, error) {
 		EmailFrom:    envOr("EMAIL_FROM", "Steki <steki@poiw.org>"),
 		LogLevel:     parseLevel(os.Getenv("LOG_LEVEL")),
 		Port:         envOr("PORT", "8080"),
+		JWTSecret:    strings.TrimSpace(os.Getenv("JWT_SECRET")),
+		PublicURL:    publicURL(),
 	}
 
 	for _, entry := range strings.Split(os.Getenv("URL_BLACKLIST"), ",") {
@@ -74,6 +87,18 @@ func Load() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// publicURL is PUBLIC_URL when set, otherwise the domain Railway injects for
+// a service with a public domain.
+func publicURL() string {
+	if v := strings.TrimSpace(os.Getenv("PUBLIC_URL")); v != "" {
+		return strings.TrimRight(v, "/")
+	}
+	if d := strings.TrimSpace(os.Getenv("RAILWAY_PUBLIC_DOMAIN")); d != "" {
+		return "https://" + d
+	}
+	return ""
 }
 
 func envOr(key, fallback string) string {

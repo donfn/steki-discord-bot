@@ -3,7 +3,9 @@ module steki-bot
 go 1.25.0
 
 require (
+	github.com/altcha-org/altcha-lib-go v1.0.0
 	github.com/bwmarrin/discordgo v0.29.0
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/joho/godotenv v1.5.1
 	github.com/resend/resend-go/v2 v2.28.0

@@ -20,6 +20,11 @@ var urlRegex = regexp.MustCompile(
 		`|https?://[a-zA-Z0-9]+\.[^\s]{2,}` +
 		`|www\.[a-zA-Z0-9]+\.[^\s]{2,}`)
 
+// ContainsURL reports whether text contains anything that looks like a link.
+func ContainsURL(text string) bool {
+	return urlRegex.MatchString(text)
+}
+
 // LinkChecker deletes messages containing blacklisted link fragments.
 //
 // Google Web Risk scanning was removed: it required application default

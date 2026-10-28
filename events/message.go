@@ -4,7 +4,8 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-// onMessage screens guild messages for blacklisted links and drives the
+// onMessage screens guild messages for blacklisted links and for the media
+// guard's attachment-and-link bursts, and drives the
 // registration flow inside the Steki guild's register channels. Direct
 // messages are ignored.
 func (h *Handler) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -18,6 +19,9 @@ func (h *Handler) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 	if !h.inHomeGuild(m.GuildID) {
+		return
+	}
+	if h.screenMedia(s, m) {
 		return
 	}
 

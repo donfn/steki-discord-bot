@@ -16,6 +16,7 @@ import (
 	"steki-bot/config"
 	"steki-bot/events"
 	"steki-bot/store"
+	"steki-bot/verify"
 )
 
 // messageCacheSize is how many recent messages per channel discordgo keeps,
@@ -72,7 +73,14 @@ func run() error {
 		return err
 	}
 
-	srv := startHealthServer(cfg.Port, st, logger)
+	var guard *verify.Server
+	if cfg.MediaGuardEnabled() {
+		guard = verify.NewServer(verify.NewTokens(cfg.JWTSecret), h.GuardLifter(sess), logger)
+		logger.Info("media guard enabled", "public_url", cfg.PublicURL)
+	} else {
+		logger.Warn("media guard disabled: set JWT_SECRET and a public domain (or PUBLIC_URL) to enable it")
+	}
+	srv := startHTTPServer(cfg.Port, st, guard, logger)
 
 	logger.Info("bot is running")
 	stop := make(chan os.Signal, 1)
@@ -91,15 +99,18 @@ func run() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		logger.Warn("health server shutdown", "error", err)
+		logger.Warn("http server shutdown", "error", err)
 	}
 	return nil
 }
 
-// startHealthServer exposes /healthz so the platform can tell a wedged
-// process from a healthy one.
-func startHealthServer(port string, st *store.Store, logger *slog.Logger) *http.Server {
+// startHTTPServer exposes /healthz, so the platform can tell a wedged process
+// from a healthy one, and the media guard's verification page when enabled.
+func startHTTPServer(port string, st *store.Store, guard *verify.Server, logger *slog.Logger) *http.Server {
 	mux := http.NewServeMux()
+	if guard != nil {
+		guard.Register(mux)
+	}
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 		defer cancel()
@@ -118,7 +129,7 @@ func startHealthServer(port string, st *store.Store, logger *slog.Logger) *http.
 	}
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("health server failed", "error", err)
+			logger.Error("http server failed", "error", err)
 		}
 	}()
 	return srv

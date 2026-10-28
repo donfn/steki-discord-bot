@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#FFC900" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E0E0F" media="(prefers-color-scheme: dark)">
+<title>στέκι · Επιβεβαίωση</title>
+<link rel="icon" href="/verify/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap">
+<style>
+  :root {
+    --brand: #FFC900;
+    --ink: #0B0B0C;
+    --bg: var(--brand);
+    --card: #FFFFFF;
+    --text: var(--ink);
+    --muted: rgba(11, 11, 12, 0.62);
+    --hairline: rgba(11, 11, 12, 0.10);
+    --note-bg: #FFF6CC;
+    --note-text: #4A3B00;
+    --warn: #B42318;
+    --shadow: 0 1px 2px rgba(60, 45, 0, 0.08), 0 12px 40px -12px rgba(60, 45, 0, 0.35);
+    --radius: 28px;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0E0E0F;
+      --card: #1A1A1C;
+      --text: #F5F5F7;
+      --muted: rgba(245, 245, 247, 0.62);
+      --hairline: rgba(255, 255, 255, 0.10);
+      --note-bg: rgba(255, 201, 0, 0.10);
+      --note-text: #FFDF66;
+      --warn: #FF8A80;
+      --shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 20px 60px -20px rgba(0, 0, 0, 0.8);
+      color-scheme: dark;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    display: grid;
+    place-items: center;
+    padding: max(24px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+    background: var(--bg);
+    color: var(--text);
+    font: 500 1rem/1.55 Manrope, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  main {
+    width: 100%;
+    max-width: 26rem;
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 2rem 1.75rem 1.75rem;
+    animation: arrive 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  @keyframes arrive {
+    from { opacity: 0; transform: translateY(12px) scale(0.985); }
+  }
+
+  /* The source image carries a dark matte at its corners; clip past it. */
+  .logo-wrap { width: 64px; height: 64px; border-radius: 16px; overflow: hidden; margin-bottom: 1.5rem; }
+  .logo { display: block; width: 100%; height: 100%; transform: scale(1.08); }
+
+  h1 {
+    margin: 0 0 0.6rem;
+    font-size: clamp(1.6rem, 6vw, 1.875rem);
+    line-height: 1.12;
+    font-weight: 800;
+    letter-spacing: -0.025em;
+    text-wrap: balance;
+  }
+  p { margin: 0 0 1rem; color: var(--muted); text-wrap: pretty; }
+  p strong { color: var(--text); font-weight: 700; }
+
+  .note {
+    margin: 1.25rem 0 1.5rem;
+    padding: 0.9rem 1rem;
+    border-radius: 16px;
+    background: var(--note-bg);
+    color: var(--note-text);
+    font-size: 0.9375rem;
+    line-height: 1.5;
+  }
+  .note b { display: block; font-weight: 800; margin-bottom: 0.15rem; }
+
+  altcha-widget {
+    display: block;
+    --altcha-max-width: 100%;
+    --altcha-border-radius: 16px;
+    --altcha-border-width: 1px;
+    --altcha-color-base: var(--card);
+    --altcha-color-border: var(--hairline);
+    --altcha-color-border-focus: var(--text);
+    --altcha-color-text: var(--text);
+    --altcha-color-active: var(--text);
+    --altcha-color-error-text: var(--warn);
+    font: 600 0.9375rem/1.4 Manrope, system-ui, sans-serif;
+  }
+
+  .status {
+    min-height: 1.4rem;
+    margin: 0.75rem 0 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .status[data-tone="error"] { color: var(--warn); }
+
+  .footnote {
+    margin: 1.25rem 0 0;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--hairline);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+  }
+
+  /* Results replace the form in place, with a short cross-fade, so the page
+     never jumps to a new screen. */
+  .view[hidden] { display: none; }
+  .view.entering { animation: swap 360ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+  @keyframes swap {
+    from { opacity: 0; transform: scale(0.98); }
+  }
+
+  .badge {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    margin-bottom: 1.5rem;
+    background: var(--brand);
+    color: var(--ink);
+  }
+  .badge.muted { background: var(--hairline); color: var(--text); }
+  .badge svg { width: 30px; height: 30px; }
+  .tick { stroke-dasharray: 30; stroke-dashoffset: 30; }
+  .entering .tick { animation: draw 420ms 140ms cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+
+  @media (prefers-reduced-motion: reduce) {
+    main, .view.entering { animation: fade 200ms ease both; }
+    .tick, .entering .tick { animation: none; stroke-dashoffset: 0; }
+    @keyframes fade { from { opacity: 0; } }
+  }
+  @media (prefers-contrast: more) {
+    :root { --muted: var(--text); --hairline: currentColor; }
+    main { outline: 2px solid var(--text); }
+  }
+</style>
+</head>
+<body>
+<main data-token="{{.Token}}" aria-live="polite">
+  {{if eq .State "ready"}}
+  <section class="view" id="form">
+    <div class="logo-wrap"><img class="logo" src="/verify/logo.png" alt="στέκι" width="64" height="64"></div>
+    <h1>Επιβεβαίωσε ότι είσαι εσύ</h1>
+    <p>Ο λογαριασμός σου έστειλε <strong>δύο μηνύματα με συνημμένα ή συνδέσμους μέσα σε μία ώρα</strong>, οπότε μπήκε αυτόματα σε timeout για 24 ώρες.</p>
+
+    <div class="note">
+      <b>Γιατί;</b>
+      Όταν κάποιος παραβιάσει έναν λογαριασμό Discord, συνήθως στέλνει αμέσως εικόνες και συνδέσμους απάτης σε όλα τα κανάλια. Αυτός ο έλεγχος σταματά τέτοιες επιθέσεις πριν φτάσουν στα μέλη του στεκιού.
+    </div>
+
+    <altcha-widget
+      challengeurl="/verify/challenge?t={{.Token}}"
+      hidelogo
+      hidefooter
+      strings='{"label":"Δεν είμαι ρομπότ","verifying":"Γίνεται έλεγχος…","verified":"Επιβεβαιώθηκε","error":"Ο έλεγχος απέτυχε. Δοκίμασε ξανά.","expired":"Ο έλεγχος έληξε. Δοκίμασε ξανά.","loading":"Φόρτωση…","reload":"Ξανά","verificationRequired":"Απαιτείται επιβεβαίωση","waitAlert":"Γίνεται έλεγχος… περίμενε λίγο.","ariaLinkLabel":"ALTCHA","footer":""}'
+    ></altcha-widget>
+    <p class="status" id="status" role="status"></p>
+
+    <p class="footnote"><strong>Δεν έστειλες εσύ αυτά τα μηνύματα;</strong> Άλλαξε άμεσα τον κωδικό σου στο Discord και ενεργοποίησε τον έλεγχο ταυτότητας δύο παραγόντων (2FA).</p>
+  </section>
+  {{end}}
+
+  <section class="view" id="done" hidden>
+    <div class="badge" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path class="tick" d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+    </div>
+    <h1>Ο περιορισμός αφαιρέθηκε</h1>
+    <p>Μπορείς να γυρίσεις στο Discord και να γράφεις κανονικά. Για τις επόμενες 24 ώρες δεν θα σου ξαναζητηθεί αυτός ο έλεγχος.</p>
+    <p class="footnote">Ευχαριστούμε που βοηθάς να μένει το στέκι ασφαλές.</p>
+  </section>
+
+  <section class="view" id="invalid" {{if ne .State "invalid"}}hidden{{end}}>
+    <div class="badge muted" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 7v6M12 17h.01"/></svg>
+    </div>
+    <h1>Ο σύνδεσμος δεν ισχύει πια</h1>
+    <p>Μπορεί να έχει ήδη χρησιμοποιηθεί, να έχει λήξει ή να έχει αντικατασταθεί από νεότερο. Αν είσαι ακόμα σε timeout, άνοιξε το πιο πρόσφατο μήνυμα του bot ή επικοινώνησε με την Ομάδα Διαχείρισης.</p>
+  </section>
+
+  <section class="view" id="error" {{if ne .State "error"}}hidden{{end}}>
+    <div class="badge muted" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 7v6M12 17h.01"/></svg>
+    </div>
+    <h1>Κάτι πήγε στραβά</h1>
+    <p>Δεν μπορέσαμε να ολοκληρώσουμε τον έλεγχο αυτή τη στιγμή. Ανανέωσε τη σελίδα σε λίγο ή επικοινώνησε με την Ομάδα Διαχείρισης.</p>
+  </section>
+</main>
+
+{{if eq .State "ready"}}
+<script type="module" src="https://cdn.jsdelivr.net/npm/altcha@2.3.0/dist/altcha.js"
+  integrity="sha384-limAVlzOo9wt5kLfw2FGNdVBhupA1qOb2QCe7AOe/gPj50oMuGtBuhH1ROGqDJpi"
+  crossorigin="anonymous"></script>
+<script>
+  const main = document.querySelector('main');
+  const token = main.dataset.token;
+  const status = document.getElementById('status');
+  const widget = document.querySelector('altcha-widget');
+  let lifting = false;
+
+  function say(text, tone) {
+    status.textContent = text;
+    status.dataset.tone = tone || '';
+  }
+
+  function show(id) {
+    for (const v of main.querySelectorAll('.view')) {
+      const on = v.id === id;
+      v.hidden = !on;
+      v.classList.toggle('entering', on);
+    }
+  }
+
+  async function lift(payload) {
+    if (lifting) return;
+    lifting = true;
+    say('Αφαίρεση περιορισμών…');
+    try {
+      const res = await fetch('/verify/solve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, payload }),
+      });
+      if (res.ok) { show('done'); return; }
+      const body = await res.json().catch(() => ({}));
+      if (body.error === 'invalid') { show('invalid'); return; }
+      say(body.error === 'captcha'
+        ? 'Ο έλεγχος δεν έγινε δεκτός. Δοκίμασε ξανά.'
+        : 'Δεν ήταν δυνατή η αφαίρεση των περιορισμών. Δοκίμασε ξανά σε λίγο.', 'error');
+      widget.reset?.();
+    } catch {
+      say('Δεν υπάρχει σύνδεση. Έλεγξε το δίκτυό σου και δοκίμασε ξανά.', 'error');
+      widget.reset?.();
+    } finally {
+      lifting = false;
+    }
+  }
+
+  widget.addEventListener('statechange', (ev) => {
+    const { state, payload } = ev.detail;
+    if (state === 'verified' && payload) lift(payload);
+    else if (state === 'verifying') say('');
+  });
+</script>
+{{end}}
+</body>
+</html>

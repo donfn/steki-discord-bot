@@ -19,6 +19,7 @@ import (
 	"steki-bot/mail"
 	"steki-bot/moderation"
 	"steki-bot/store"
+	"steki-bot/verify"
 )
 
 // Handler carries the dependencies shared by every Discord event handler.
@@ -31,6 +32,9 @@ type Handler struct {
 	linkChk *moderation.LinkChecker
 	modlog  *moderation.Log
 	placer  *dc.Placer
+
+	// guardTokens signs media guard links; nil when the guard is off.
+	guardTokens *verify.Tokens
 
 	// users serialises all registration work for one member, so concurrent
 	// events (a join racing the reconciler, two quick messages) cannot
@@ -55,17 +59,22 @@ type Handler struct {
 func NewHandler(cfg *config.Config, st *store.Store, logger *slog.Logger) *Handler {
 	modlog := moderation.NewLog(config.LogChannelID, logger)
 	base, cancel := context.WithCancel(context.Background())
+	var guardTokens *verify.Tokens
+	if cfg.MediaGuardEnabled() {
+		guardTokens = verify.NewTokens(cfg.JWTSecret)
+	}
 	return &Handler{
-		cfg:      cfg,
-		st:       st,
-		mailer:   mail.New(cfg.ResendAPIKey, cfg.EmailFrom, logger),
-		log:      logger,
-		linkChk:  moderation.NewLinkChecker(cfg.URLBlacklist, modlog, logger),
-		modlog:   modlog,
-		placer:   dc.NewPlacer(config.RegisterCategoryID, logger),
-		bootTime: time.Now(),
-		base:     base,
-		cancel:   cancel,
+		guardTokens: guardTokens,
+		cfg:         cfg,
+		st:          st,
+		mailer:      mail.New(cfg.ResendAPIKey, cfg.EmailFrom, logger),
+		log:         logger,
+		linkChk:     moderation.NewLinkChecker(cfg.URLBlacklist, modlog, logger),
+		modlog:      modlog,
+		placer:      dc.NewPlacer(config.RegisterCategoryID, logger),
+		bootTime:    time.Now(),
+		base:        base,
+		cancel:      cancel,
 	}
 }
 
