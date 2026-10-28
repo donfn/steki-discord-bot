@@ -13,6 +13,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"steki-bot/dc"
+	"steki-bot/moderation"
 )
 
 var (
@@ -154,7 +155,9 @@ func (h *Handler) grantRole(ctx context.Context, s *discordgo.Session, guildID, 
 // send posts a message, logging failures rather than propagating them: a
 // member-facing message that fails should not abort the surrounding flow.
 func (h *Handler) send(s *discordgo.Session, channelID, content string) *discordgo.Message {
-	msg, err := s.ChannelMessageSend(channelID, content)
+	msg, err := s.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
+		Content: content, AllowedMentions: moderation.SafeMentions,
+	})
 	if err != nil {
 		if !dc.IsMissingResource(err) {
 			h.log.Warn("send message failed", "channel_id", channelID, "error", err)

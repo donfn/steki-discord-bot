@@ -28,7 +28,7 @@ func (h *Handler) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		h.blocked.Add(1)
 		return
 	}
-	removed := h.screenInvites(s, m)
+	removed := h.screenInvites(s, m.Message)
 	if removed {
 		h.blocked.Add(1)
 	}

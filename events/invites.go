@@ -7,6 +7,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"steki-bot/dc"
+	"steki-bot/moderation"
 )
 
 // inviteRegex matches Discord invite links. Group 2 is the code when the host
@@ -19,8 +20,9 @@ var inviteRegex = regexp.MustCompile(
 // screenInvites deletes invites to other servers, a common lure from hijacked
 // accounts. Moderators may post any invite; anyone may post one to Steki.
 // It reports whether the message was removed.
-func (h *Handler) screenInvites(s *discordgo.Session, m *discordgo.MessageCreate) bool {
-	matches := inviteRegex.FindAllStringSubmatch(m.Content, -1)
+func (h *Handler) screenInvites(s *discordgo.Session, m *discordgo.Message) bool {
+	text := moderation.Text(m)
+	matches := inviteRegex.FindAllStringSubmatch(text, -1)
 	if len(matches) == 0 {
 		return false
 	}
@@ -31,7 +33,7 @@ func (h *Handler) screenInvites(s *discordgo.Session, m *discordgo.MessageCreate
 			break
 		}
 	}
-	if !foreign || h.isModerator(s, m) {
+	if !foreign || h.isModerator(s, m.Author.ID, m.ChannelID) {
 		return false
 	}
 
@@ -51,7 +53,7 @@ func (h *Handler) screenInvites(s *discordgo.Session, m *discordgo.MessageCreate
 			"**Αν δεν το έστειλες εσύ, άλλαξε άμεσα τον κωδικό σου και ενεργοποίησε το 2FA.**")
 	}
 	h.alertMods(s, "🔗 Διαγράφτηκε πρόσκληση σε άλλον server από <@%s> στο <#%s>:```%s```",
-		m.Author.ID, m.ChannelID, truncate(quote(m.Content), 1500))
+		m.Author.ID, m.ChannelID, truncate(quote(text), 1500))
 	h.log.Info("invite: removed foreign invite", "user_id", m.Author.ID, "channel_id", m.ChannelID)
 	return true
 }

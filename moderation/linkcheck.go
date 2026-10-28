@@ -14,15 +14,51 @@ import (
 // link.
 const timeoutDuration = 24 * time.Hour
 
-var urlRegex = regexp.MustCompile(
-	`https?://[a-zA-Z0-9][a-zA-Z0-9\-]+[a-zA-Z0-9]\.[^\s]{2,}` +
-		`|www\.[a-zA-Z0-9][a-zA-Z0-9\-]+[a-zA-Z0-9]\.[^\s]{2,}` +
-		`|https?://[a-zA-Z0-9]+\.[^\s]{2,}` +
-		`|www\.[a-zA-Z0-9]+\.[^\s]{2,}`)
+// urlRegex matches anything Discord would turn into a link. It is
+// deliberately loose: hosts may contain any letters, so lookalike domains
+// written in Greek or Cyrillic ("dіscord.gift") are links too, and are checked
+// against the phishing feed in their punycode form.
+var urlRegex = regexp.MustCompile("(?i)\\bhttps?://[^\\s<>\"'`]+|\\bwww\\.[^\\s<>\"'`]+")
 
 // ContainsURL reports whether text contains anything that looks like a link.
 func ContainsURL(text string) bool {
 	return urlRegex.MatchString(text)
+}
+
+// SafeMentions lets the bot's messages ping the users they name but never
+// @everyone, @here or a role, whatever member-written text they quote.
+var SafeMentions = &discordgo.MessageAllowedMentions{
+	Parse: []discordgo.AllowedMentionType{discordgo.AllowedMentionTypeUsers},
+}
+
+// Quote makes member text safe to embed in a ``` code block, where a stray
+// backtick run would otherwise end the block early.
+func Quote(s string) string {
+	return strings.ReplaceAll(s, "`", "ˋ")
+}
+
+// Text is everything a member authored in a message: its content and, for a
+// forwarded message, the forwarded content, which Discord carries separately
+// and which would otherwise slip past every check.
+func Text(m *discordgo.Message) string {
+	parts := []string{m.Content}
+	for _, snap := range m.MessageSnapshots {
+		if snap.Message != nil && snap.Message.Content != "" {
+			parts = append(parts, snap.Message.Content)
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
+// Attachments returns a message's attachments, including forwarded ones.
+func Attachments(m *discordgo.Message) []*discordgo.MessageAttachment {
+	out := m.Attachments
+	for _, snap := range m.MessageSnapshots {
+		if snap.Message != nil {
+			out = append(out[:len(out):len(out)], snap.Message.Attachments...)
+		}
+	}
+	return out
 }
 
 // LinkChecker deletes messages containing blacklisted link fragments or
@@ -50,7 +86,8 @@ func (l *LinkChecker) Check(s *discordgo.Session, m *discordgo.Message) bool {
 		return false
 	}
 
-	links := urlRegex.FindAllString(m.Content, -1)
+	text := Text(m)
+	links := urlRegex.FindAllString(text, -1)
 	if len(links) == 0 {
 		return false
 	}
@@ -59,13 +96,13 @@ func (l *LinkChecker) Check(s *discordgo.Session, m *discordgo.Message) bool {
 		lower := strings.ToLower(link)
 		for _, banned := range l.blacklist {
 			if strings.Contains(lower, banned) {
-				l.punish(s, m, blacklistHit, banned)
+				l.punish(s, m, text, blacklistHit, banned)
 				return true
 			}
 		}
 		if l.feed != nil {
 			if domain, ok := l.feed.Match(linkHost(link)); ok {
-				l.punish(s, m, phishingHit, domain)
+				l.punish(s, m, text, phishingHit, domain)
 				return true
 			}
 		}
@@ -81,7 +118,8 @@ const (
 )
 
 // punish warns the member, times them out and removes the message.
-func (l *LinkChecker) punish(s *discordgo.Session, m *discordgo.Message, kind hitKind, matched string) {
+func (l *LinkChecker) punish(s *discordgo.Session, m *discordgo.Message, text string, kind hitKind, matched string) {
+	quoted := Quote(text)
 	reason, modReason := "περιέχει συνδέσμους με μη επιτρεπτές λέξεις",
 		fmt.Sprintf("σύνδεσμο με μη επιτρεπτή λέξη (`%s`)", matched)
 	if kind == phishingHit {
@@ -94,17 +132,19 @@ func (l *LinkChecker) punish(s *discordgo.Session, m *discordgo.Message, kind hi
 			"Γι' αυτό, το μήνυμά σου διαγράφτηκε και έγινε καταγραφή από την Ομάδα Διαχείρισης. "+
 			"Λόγω εξάρσεων επιθέσεων spam σε servers του Discord, σου εφαρμόστηκε προσωρινά timeout.\n"+
 			"**Αν δεν έστειλες εσύ το μήνυμα, άλλαξε κωδικό άμεσα και ενεργοποίησε 2FA!**",
-		m.Author.ID, m.Content, reason)
+		m.Author.ID, quoted, reason)
 
 	if dm, err := s.UserChannelCreate(m.Author.ID); err == nil {
-		if _, err := s.ChannelMessageSend(dm.ID, warning); err != nil {
+		if _, err := s.ChannelMessageSendComplex(dm.ID, &discordgo.MessageSend{
+			Content: warning, AllowedMentions: SafeMentions,
+		}); err != nil {
 			l.log.Debug("link warning DM failed", "user_id", m.Author.ID, "error", err)
 		}
 	}
 
 	l.modlog.Post(s, fmt.Sprintf(
 		"Στο κανάλι <#%s>, ο χρήστης <@%s> έστειλε %s: ``` %s```",
-		m.ChannelID, m.Author.ID, modReason, m.Content))
+		m.ChannelID, m.Author.ID, modReason, quoted))
 
 	until := time.Now().Add(timeoutDuration)
 	if err := s.GuildMemberTimeout(m.GuildID, m.Author.ID, &until); err != nil {

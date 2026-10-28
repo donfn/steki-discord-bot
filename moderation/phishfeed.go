@@ -8,10 +8,12 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode"
+
+	"golang.org/x/net/idna"
 )
 
 // phishFeeds are public, community-maintained lists of Discord phishing and
@@ -139,16 +141,28 @@ func normalizeDomain(d string) string {
 }
 
 // linkHost extracts the host from a link matched by urlRegex, which may lack
-// a scheme ("www.example.com/x").
+// a scheme ("www.example.com/x") and may end in punctuation from the
+// surrounding text. Internationalised hosts are returned in punycode, the form
+// the phishing feeds list them in.
 func linkHost(link string) string {
 	if !strings.Contains(link, "://") {
 		link = "https://" + link
 	}
-	u, err := url.Parse(link)
+	rest := link[strings.Index(link, "://")+3:]
+	if at := strings.LastIndex(strings.SplitN(rest, "/", 2)[0], "@"); at >= 0 {
+		rest = rest[at+1:] // userinfo: "https://discord.com@evil.com" opens evil.com
+	}
+	end := strings.IndexFunc(rest, func(r rune) bool {
+		return !(unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.Is(unicode.Mn, r) || r == '.' || r == '-')
+	})
+	if end >= 0 {
+		rest = rest[:end]
+	}
+	host, err := idna.Punycode.ToASCII(strings.ToLower(strings.Trim(rest, ".")))
 	if err != nil {
 		return ""
 	}
-	return u.Hostname()
+	return host
 }
 
 func parseLines(r io.Reader) ([]string, error) {

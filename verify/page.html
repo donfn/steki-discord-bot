@@ -220,10 +220,10 @@
 </main>
 
 {{if eq .State "ready"}}
-<script type="module" src="https://cdn.jsdelivr.net/npm/altcha@2.3.0/dist/altcha.js"
+<script nonce="{{.Nonce}}" type="module" src="https://cdn.jsdelivr.net/npm/altcha@2.3.0/dist/altcha.js"
   integrity="sha384-limAVlzOo9wt5kLfw2FGNdVBhupA1qOb2QCe7AOe/gPj50oMuGtBuhH1ROGqDJpi"
   crossorigin="anonymous"></script>
-<script>
+<script nonce="{{.Nonce}}">
   const main = document.querySelector('main');
   const token = main.dataset.token;
   const status = document.getElementById('status');

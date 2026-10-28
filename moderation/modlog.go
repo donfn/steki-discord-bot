@@ -30,7 +30,9 @@ func NewLog(channelID string, logger *slog.Logger) *Log {
 // long error dump is truncated rather than dropped entirely.
 func (b *Log) Post(s *discordgo.Session, message string) {
 	for _, chunk := range splitMessage(message) {
-		if _, err := s.ChannelMessageSend(b.channelID, chunk); err != nil {
+		if _, err := s.ChannelMessageSendComplex(b.channelID, &discordgo.MessageSend{
+			Content: chunk, AllowedMentions: SafeMentions,
+		}); err != nil {
 			b.log.Error("mod log delivery failed",
 				"channel_id", b.channelID, "error", err)
 			return

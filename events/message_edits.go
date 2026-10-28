@@ -10,11 +10,32 @@ import (
 // attributed to a given deletion.
 const auditLogWindow = 20 * time.Second
 
-// onMessageUpdate logs edits to Steki messages for moderators. The previous
-// content comes from the state cache, so edits to messages sent before the bot
-// started, or evicted from the cache, are not reported.
+// onMessageUpdate screens edited messages and logs edits to Steki messages
+// for moderators.
+//
+// Screening runs on every edit, cached or not: otherwise a member could post
+// something harmless and then edit a phishing link or a foreign invite into
+// it. Edits are not counted towards the media guard or duplicate detection,
+// which would count the same message twice.
+//
+// The previous content for the log comes from the state cache, so edits to
+// messages sent before the bot started, or evicted from the cache, are not
+// reported.
 func (h *Handler) onMessageUpdate(s *discordgo.Session, m *discordgo.MessageUpdate) {
-	if !h.inHomeGuild(m.GuildID) || m.Author == nil || m.Author.Bot {
+	if m.Message == nil || m.Author == nil || m.Author.Bot || m.GuildID == "" {
+		return
+	}
+	if m.Content != "" && (m.BeforeUpdate == nil || m.BeforeUpdate.Content != m.Content) {
+		if h.linkChk.Check(s, m.Message) {
+			h.blocked.Add(1)
+			return
+		}
+		if h.inHomeGuild(m.GuildID) && h.screenInvites(s, m.Message) {
+			h.blocked.Add(1)
+			return
+		}
+	}
+	if !h.inHomeGuild(m.GuildID) {
 		return
 	}
 	if m.BeforeUpdate == nil || m.BeforeUpdate.Content == "" || m.Content == "" {

@@ -122,10 +122,16 @@ func startHTTPServer(port string, st *store.Store, guard *verify.Server, logger 
 		_, _ = w.Write([]byte("ok"))
 	})
 
+	// The verification page is public, so every phase of a request is
+	// bounded: a client that trickles bytes cannot hold connections open.
 	srv := &http.Server{
 		Addr:              ":" + port,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    16 << 10,
 	}
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

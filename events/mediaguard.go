@@ -31,13 +31,13 @@ const (
 
 // flaggedPost reports whether a message carries an attachment or a link.
 func flaggedPost(m *discordgo.Message) bool {
-	return len(m.Attachments) > 0 || moderation.ContainsURL(m.Content)
+	return len(moderation.Attachments(m)) > 0 || moderation.ContainsURL(moderation.Text(m))
 }
 
 // screenMedia counts a flagged post and restricts the member on the second
 // one within the window. It reports whether the member was restricted.
 func (h *Handler) screenMedia(s *discordgo.Session, m *discordgo.MessageCreate) bool {
-	if h.guardTokens == nil || !flaggedPost(m.Message) || h.isModerator(s, m) {
+	if h.guardTokens == nil || !flaggedPost(m.Message) || h.isModerator(s, m.Author.ID, m.ChannelID) {
 		return false
 	}
 
@@ -63,10 +63,10 @@ func (h *Handler) screenMedia(s *discordgo.Session, m *discordgo.MessageCreate) 
 
 // isModerator exempts members who can moderate the channel anyway; Discord
 // would refuse to time out an administrator in any case.
-func (h *Handler) isModerator(s *discordgo.Session, m *discordgo.MessageCreate) bool {
-	perms, err := s.State.UserChannelPermissions(m.Author.ID, m.ChannelID)
+func (h *Handler) isModerator(s *discordgo.Session, userID, channelID string) bool {
+	perms, err := s.State.UserChannelPermissions(userID, channelID)
 	if err != nil {
-		perms, err = s.UserChannelPermissions(m.Author.ID, m.ChannelID)
+		perms, err = s.UserChannelPermissions(userID, channelID)
 		if err != nil {
 			return false
 		}
@@ -188,8 +188,9 @@ func (h *Handler) sendGuardDM(s *discordgo.Session, userID, reason, link string)
 	}
 	embed, components := guardMessage(reason, link, false)
 	msg, err := s.ChannelMessageSendComplex(ch.ID, &discordgo.MessageSend{
-		Embeds:     []*discordgo.MessageEmbed{embed},
-		Components: components,
+		Embeds:          []*discordgo.MessageEmbed{embed},
+		Components:      components,
+		AllowedMentions: moderation.SafeMentions,
 	})
 	if err != nil {
 		return store.GuardDM{}, err

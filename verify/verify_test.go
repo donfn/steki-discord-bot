@@ -186,3 +186,44 @@ func TestPageAndChallengeRequireLiveToken(t *testing.T) {
 		t.Fatalf("missing security headers: %v", res.Header)
 	}
 }
+
+// A solution fetched for one link must not unlock another.
+func TestSolutionIsBoundToItsLink(t *testing.T) {
+	srv, tk, fl := newTestServer(t)
+	mine, _ := tk.Issue("u1", "g1", "", "jti1", time.Now().Add(time.Hour))
+	other, _ := tk.Issue("u2", "g1", "", "jti2", time.Now().Add(time.Hour))
+	fl.active = "jti1"
+
+	payload := solvePayload(t, srv, mine)
+	fl.active = "jti2"
+	if code, _ := postSolve(t, srv, other, payload); code != http.StatusUnprocessableEntity {
+		t.Fatalf("cross-link solve = %d, want 422", code)
+	}
+	if fl.lifted != 0 {
+		t.Fatal("lifted with another link's solution")
+	}
+}
+
+func TestPageCSPNonceMatchesScripts(t *testing.T) {
+	srv, tk, _ := newTestServer(t)
+	token, _ := tk.Issue("u1", "g1", "", "jti1", time.Now().Add(time.Hour))
+	res, err := http.Get(srv.URL + "/verify?t=" + url.QueryEscape(token))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+
+	csp := res.Header.Get("Content-Security-Policy")
+	_, after, ok := strings.Cut(csp, "'nonce-")
+	if !ok {
+		t.Fatalf("no nonce in CSP %q", csp)
+	}
+	nonce, _, _ := strings.Cut(after, "'")
+	if n := strings.Count(string(body), `nonce="`+nonce+`"`); n != 2 {
+		t.Fatalf("scripts carrying the CSP nonce = %d, want 2", n)
+	}
+	if !strings.Contains(csp, "frame-ancestors 'none'") || res.Header.Get("Strict-Transport-Security") == "" {
+		t.Fatalf("missing hardening headers: %v", res.Header)
+	}
+}

@@ -12,6 +12,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"steki-bot/dc"
+	"steki-bot/moderation"
 	"steki-bot/verify"
 )
 
@@ -89,13 +90,14 @@ func (t *dupTracker) sweep(now time.Time) {
 // dupKey fingerprints a message by its normalised text and its attachments'
 // names and sizes. It returns "" for messages too short to judge.
 func dupKey(m *discordgo.Message) string {
-	text := strings.Join(strings.Fields(strings.ToLower(m.Content)), " ")
-	if len([]rune(text)) < dupMinLen && len(m.Attachments) == 0 {
+	text := strings.Join(strings.Fields(strings.ToLower(moderation.Text(m))), " ")
+	attachments := moderation.Attachments(m)
+	if len([]rune(text)) < dupMinLen && len(attachments) == 0 {
 		return ""
 	}
 	h := sha256.New()
 	h.Write([]byte(text))
-	for _, a := range m.Attachments {
+	for _, a := range attachments {
 		fmt.Fprintf(h, "\x00%s:%d", strings.ToLower(a.Filename), a.Size)
 	}
 	return hex.EncodeToString(h.Sum(nil)[:16])
@@ -109,7 +111,7 @@ func (h *Handler) screenDuplicates(s *discordgo.Session, m *discordgo.MessageCre
 		return false
 	}
 	copies := h.dups.add(m.Author.ID, dupPost{key: key, channelID: m.ChannelID, messageID: m.ID, at: time.Now()})
-	if copies == nil || h.isModerator(s, m) {
+	if copies == nil || h.isModerator(s, m.Author.ID, m.ChannelID) {
 		return false
 	}
 
@@ -129,7 +131,7 @@ func (h *Handler) screenDuplicates(s *discordgo.Session, m *discordgo.MessageCre
 		// Without the captcha flow, deleting the copies and telling the
 		// moderators is the most that can be done.
 		h.alertMods(s, "🛡️ Ο χρήστης <@%s> έστειλε το ίδιο μήνυμα σε %d κανάλια μέσα σε ένα λεπτό· "+
-			"τα μηνύματα διαγράφηκαν:```%s```", m.Author.ID, len(copies), truncate(quote(m.Content), 1500))
+			"τα μηνύματα διαγράφηκαν:```%s```", m.Author.ID, len(copies), truncate(quote(moderation.Text(m.Message)), 1500))
 		return true
 	}
 

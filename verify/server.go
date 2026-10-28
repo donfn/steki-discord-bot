@@ -2,12 +2,16 @@ package verify
 
 import (
 	"context"
+	"crypto/rand"
 	_ "embed"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html/template"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/altcha-org/altcha-lib-go"
@@ -83,6 +87,22 @@ func secure(w http.ResponseWriter) {
 	h.Set("Referrer-Policy", "no-referrer")
 	h.Set("X-Frame-Options", "DENY")
 	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Strict-Transport-Security", "max-age=31536000")
+	h.Set("Cross-Origin-Opener-Policy", "same-origin")
+}
+
+// pageCSP allows exactly what the page loads: the pinned ALTCHA script and
+// the page's own inline script (by nonce), Google Fonts, the logo, and
+// fetches to this origin. ALTCHA runs its proof of work in blob: workers.
+const pageCSP = "default-src 'none'; script-src 'nonce-%s' https://cdn.jsdelivr.net; " +
+	"style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; " +
+	"img-src 'self' data:; connect-src 'self'; worker-src blob:; " +
+	"base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+
+func newNonce() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return base64.RawURLEncoding.EncodeToString(b)
 }
 
 // active parses a token and checks it is still the member's outstanding link.
@@ -116,8 +136,10 @@ func (v *Server) page(w http.ResponseWriter, r *http.Request) {
 	} else {
 		reason = c.Reason
 	}
+	nonce := newNonce()
+	w.Header().Set("Content-Security-Policy", fmt.Sprintf(pageCSP, nonce))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	data := map[string]string{"State": state, "Token": raw, "Reason": reason}
+	data := map[string]string{"State": state, "Token": raw, "Reason": reason, "Nonce": nonce}
 	if err := pageTmpl.Execute(w, data); err != nil {
 		v.log.Warn("verify: render page", "error", err)
 	}
@@ -128,15 +150,19 @@ func (v *Server) challenge(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()
 
-	if _, state := v.active(ctx, r.URL.Query().Get("t")); state != stateReady {
+	c, state := v.active(ctx, r.URL.Query().Get("t"))
+	if state != stateReady {
 		writeJSON(w, statusFor(state), map[string]string{"error": state})
 		return
 	}
+	// The link's ID is signed into the challenge, so a solution only ever
+	// unlocks the link it was fetched for.
 	expires := time.Now().Add(challengeTTL)
 	ch, err := altcha.CreateChallenge(altcha.ChallengeOptions{
 		HMACKey:   v.tokens.altchaKey(),
 		MaxNumber: challengeMaxNumber,
 		Expires:   &expires,
+		Params:    url.Values{"jti": {c.ID}},
 	})
 	if err != nil {
 		v.log.Error("verify: create challenge", "error", err)
@@ -167,6 +193,9 @@ func (v *Server) solve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ok, err := altcha.VerifySolutionSafe(req.Payload, v.tokens.altchaKey(), true)
+	if err == nil && ok && payloadLinkID(req.Payload) != c.ID {
+		ok = false
+	}
 	if err != nil || !ok {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "captcha"})
 		return
@@ -181,6 +210,19 @@ func (v *Server) solve(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	}
+}
+
+// payloadLinkID returns the link ID signed into a solved challenge.
+func payloadLinkID(payload string) string {
+	raw, err := base64.StdEncoding.DecodeString(payload)
+	if err != nil {
+		return ""
+	}
+	var p altcha.Payload
+	if json.Unmarshal(raw, &p) != nil {
+		return ""
+	}
+	return altcha.ExtractParams(p).Get("jti")
 }
 
 func statusFor(state string) int {
