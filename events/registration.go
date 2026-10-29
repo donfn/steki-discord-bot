@@ -2,7 +2,6 @@ package events
 
 import (
 	"context"
-	"crypto/subtle"
 	"errors"
 	"fmt"
 	"strings"
@@ -58,7 +57,7 @@ func (h *Handler) handleRegistration(s *discordgo.Session, m *discordgo.MessageC
 	case store.StepAwaitingEmail:
 		h.stepSendEmail(ctx, s, m, reg)
 	case store.StepAwaitingCode:
-		h.stepVerifyCode(ctx, s, m, reg)
+		h.stepAwaitingLink(ctx, s, m, reg)
 	}
 }
 
@@ -99,16 +98,23 @@ func (h *Handler) stepSendEmail(ctx context.Context, s *discordgo.Session, m *di
 	h.audit(reg.UserID, reg.ID, store.EventEmailSubmitted, map[string]any{"email": email}, "")
 	h.send(s, m.ChannelID, "Δώσε μου μισό λεπτάκι...")
 
-	code, err := generateCode()
+	linkID, err := newTokenID()
 	if err != nil {
-		h.log.Error("generate code failed", "error", err)
+		h.log.Error("generate link id failed", "error", err)
+		h.send(s, m.ChannelID, msgGenericError)
+		return
+	}
+	expires := time.Now().Add(linkTTL)
+	token, err := h.tokens.IssueLink(reg.UserID, reg.GuildID, linkID, expires)
+	if err != nil {
+		h.log.Error("sign link failed", "error", err)
 		h.send(s, m.ChannelID, msgGenericError)
 		return
 	}
 
 	// Send before persisting: if the send fails, the member is still on the
 	// email step and can simply try again.
-	if err := h.mailer.SendVerificationCode(ctx, email, code); err != nil {
+	if err := h.mailer.SendVerificationLink(ctx, h.linkEmail(m.Author, email, token)); err != nil {
 		h.log.Error("send verification email failed", "user_id", reg.UserID, "error", err)
 		h.audit(reg.UserID, reg.ID, store.EventCodeSendFailed,
 			map[string]any{"email": email, "error": err.Error()}, "")
@@ -118,8 +124,10 @@ func (h *Handler) stepSendEmail(ctx context.Context, s *discordgo.Session, m *di
 		return
 	}
 
-	if err := h.st.BeginCodeStep(ctx, reg.ID, email, code, time.Now().Add(codeTTL)); err != nil {
-		h.log.Error("persist code failed", "user_id", reg.UserID, "error", err)
+	// The link's ID takes the place of the old code: only the newest link
+	// sent for a registration works, and only until it expires.
+	if err := h.st.BeginCodeStep(ctx, reg.ID, email, linkID, expires); err != nil {
+		h.log.Error("persist link failed", "user_id", reg.UserID, "error", err)
 		h.send(s, m.ChannelID, msgGenericError)
 		return
 	}
@@ -134,7 +142,9 @@ func (h *Handler) stepSendEmail(ctx context.Context, s *discordgo.Session, m *di
 			"Το email που έστειλες αντιστοιχεί σε εξωτερικό τμήμα. "+
 				"Γι' αυτό, θα γραφτείς ως Verified Outsider. Τσέκαρε το ακαδημαϊκό σου email.")
 	}
-	h.send(s, m.ChannelID, "Όταν το λάβεις, στείλε μου τον κωδικό εγγραφής εδώ. Ισχύει για 15 λεπτά.")
+	h.send(s, m.ChannelID, fmt.Sprintf(
+		"Πάτα το κουμπί **Σύνδεση λογαριασμού** στο email και μετά **Αποδοχή** στη σελίδα που θα ανοίξει. "+
+			"Θα μπεις αυτόματα. Ο σύνδεσμος ισχύει για %d λεπτά.", int(linkTTL.Minutes())))
 }
 
 // rejectUsedEmail tells the member an address is taken and tells moderators who
@@ -156,59 +166,37 @@ func (h *Handler) rejectUsedEmail(s *discordgo.Session, channelID string, reg *s
 		config.SupportChannelID))
 }
 
-// stepVerifyCode checks the submitted code and, on success, grants the role.
-func (h *Handler) stepVerifyCode(ctx context.Context, s *discordgo.Session, m *discordgo.MessageCreate, reg *store.Registration) {
-	input := strings.TrimSpace(m.Content)
-
+// stepAwaitingLink answers a member who writes in their channel while a link
+// is out. A new address replaces the pending one; anything else gets a
+// reminder of where the link is.
+func (h *Handler) stepAwaitingLink(ctx context.Context, s *discordgo.Session, m *discordgo.MessageCreate, reg *store.Registration) {
+	if strings.Contains(m.Content, "@") {
+		h.stepSendEmail(ctx, s, m, reg)
+		return
+	}
 	if !reg.CodeValid(time.Now()) {
 		h.audit(reg.UserID, reg.ID, store.EventCodeExpired, nil, "")
 		if err := h.st.ResetToEmailStep(ctx, reg.ID); err != nil {
 			h.log.Error("reset after expiry failed", "reg_id", reg.ID, "error", err)
 		}
 		h.send(s, m.ChannelID,
-			"⌛ Ο κωδικός σου έληξε. Στείλε μου ξανά το ακαδημαϊκό σου email για να σου στείλω καινούριο.")
+			"⌛ Ο σύνδεσμος που σου έστειλα έληξε. Στείλε μου ξανά το ακαδημαϊκό σου email για να σου στείλω καινούριο.")
 		return
 	}
-
-	if subtle.ConstantTimeCompare([]byte(input), []byte(*reg.Code)) == 1 {
-		h.completeVerification(ctx, s, m.GuildID, m.ChannelID, reg)
-		return
-	}
-
-	attempts, err := h.st.IncrementFailedAttempts(ctx, reg.ID)
-	if err != nil {
-		h.log.Error("increment attempts failed", "reg_id", reg.ID, "error", err)
-		h.send(s, m.ChannelID, msgGenericError)
-		return
-	}
-	h.audit(reg.UserID, reg.ID, store.EventCodeWrong, map[string]any{"attempts": attempts}, "")
-
-	if attempts >= maxFailedAttempts {
-		if err := h.st.ResetToEmailStep(ctx, reg.ID); err != nil {
-			h.log.Error("reset after failures failed", "reg_id", reg.ID, "error", err)
-		}
-		h.alertMods(s, "⚠️ Ο χρήστης <@%s> έβαλε %d φορές λάθος κωδικό. Η διαδικασία επανεκκινήθηκε.",
-			reg.UserID, attempts)
-		h.send(s, m.ChannelID,
-			"Για λόγους ασφαλείας ο κωδικός εγγραφής σου έχει καταστραφεί. "+
-				"Στείλε μου ξανά το ακαδημαϊκό σου email για να ξεκινήσουμε από την αρχή.")
-		return
-	}
-
 	h.send(s, m.ChannelID, fmt.Sprintf(
-		"Χμμμ... Αυτή δεν ήταν η απάντηση που περίμενα. "+
-			"Χρειάζομαι *μόνο* τον 6-ψήφιο κωδικό εγγραφής που αναγράφει το mail :woozy_face:. "+
-			"(προσπάθεια %d από %d)", attempts, maxFailedAttempts))
+		"Σου έστειλα ήδη έναν σύνδεσμο στο **%s**. Πάτα **Σύνδεση λογαριασμού** στο email για να μπεις. "+
+			"Αν έκανες λάθος στη διεύθυνση, στείλε μου εδώ τη σωστή.", *reg.Email))
 }
 
-// completeVerification finishes a registration whose code was correct and
-// removes its channel.
+// completeVerification finishes a registration whose link was accepted and
+// removes its channel. Failures are explained in the channel and returned, so
+// the link page can say what happened too.
 func (h *Handler) completeVerification(ctx context.Context, s *discordgo.Session,
-	guildID, channelID string, reg *store.Registration) {
+	guildID, channelID string, reg *store.Registration) error {
 
 	if reg.Email == nil {
-		h.alertMods(s, "⚠️ Ο <@%s> πέρασε τον κωδικό αλλά δεν υπάρχει email στη βάση. Χρειάζεται έλεγχος.", reg.UserID)
-		return
+		h.alertMods(s, "⚠️ Ο <@%s> αποδέχτηκε τον σύνδεσμο αλλά δεν υπάρχει email στη βάση. Χρειάζεται έλεγχος.", reg.UserID)
+		return errIneligibleEmail
 	}
 	email := *reg.Email
 
@@ -222,12 +210,12 @@ func (h *Handler) completeVerification(ctx context.Context, s *discordgo.Session
 			h.log.Error("reset after email race failed", "reg_id", reg.ID, "error", rerr)
 		}
 		h.rejectUsedEmail(s, channelID, reg, email, store.EmailUse{InUse: true})
-		return
+		return err
 	case errors.Is(err, errIneligibleEmail):
 		h.alertMods(s, "⚠️ Κατά την εγγραφή του <@%s> το mail `%s` δεν πληροί τις προϋποθέσεις. Please check.",
 			reg.UserID, email)
 		h.send(s, channelID, "Κάτι πήγε στραβά. Δώσε λίγη ώρα για την Ομάδα Διαχείρισης να το ελέγξει...")
-		return
+		return err
 	case errors.Is(err, errRoleNotGranted):
 		// The address is recorded; only the role is missing. Keep the channel
 		// so the member is not left with nothing while a moderator steps in.
@@ -235,21 +223,23 @@ func (h *Handler) completeVerification(ctx context.Context, s *discordgo.Session
 		h.alertMods(s, "🚨 <@&%s> Ο <@%s> επαληθεύτηκε αλλά δεν μπόρεσα να του δώσω ρόλο. "+
 			"Χρειάζεται χειροκίνητα: ```%v```", staffRoleID, reg.UserID, err)
 		h.send(s, channelID, "Κάτι πήγε στραβά. Δώσε λίγη ώρα για την Ομάδα Διαχείρισης να το ελέγξει...")
-		return
+		return err
 	default:
-		// Nothing was written; the code is still valid, so the member can
-		// simply send it again.
+		// Nothing was written; the link is still valid, so the member can
+		// simply accept again.
 		h.log.Error("mark verified failed", "user_id", reg.UserID, "error", err)
-		h.send(s, channelID, msgGenericError)
-		return
+		return err
 	}
 
 	h.audit(reg.UserID, reg.ID, store.EventVerified, map[string]any{"email": email}, "")
 	h.alertMods(s, "✅ Ο χρήστης <@%s> ολοκλήρωσε με επιτυχία την εγγραφή του με `%s`.", reg.UserID, email)
 
-	if err := h.deleteChannel(ctx, s, channelID); err != nil {
-		h.log.Warn("delete register channel failed", "channel_id", channelID, "error", err)
+	if channelID != "" {
+		if err := h.deleteChannel(ctx, s, channelID); err != nil {
+			h.log.Warn("delete register channel failed", "channel_id", channelID, "error", err)
+		}
 	}
+	return nil
 }
 
 // grantVerification binds an address to the member and grants the role it

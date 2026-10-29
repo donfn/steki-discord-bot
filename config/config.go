@@ -36,16 +36,11 @@ type Config struct {
 	LogLevel     slog.Level
 	Port         string
 
-	// JWTSecret signs the media guard's verification links and keys its
-	// captcha. PublicURL is where those links point. The media guard stays
-	// off unless both are set.
+	// JWTSecret signs the registration and media guard links and keys their
+	// captcha. PublicURL is where those links point. Registration depends on
+	// both, so both are required.
 	JWTSecret string
 	PublicURL string
-}
-
-// MediaGuardEnabled reports whether the media guard has what it needs to run.
-func (c *Config) MediaGuardEnabled() bool {
-	return c.JWTSecret != "" && c.PublicURL != ""
 }
 
 // Load reads configuration from the environment, falling back to a .env file
@@ -81,6 +76,12 @@ func Load() (*Config, error) {
 	}
 	if cfg.ResendAPIKey == "" {
 		missing = append(missing, "RESEND_API_KEY")
+	}
+	if cfg.JWTSecret == "" {
+		missing = append(missing, "JWT_SECRET")
+	}
+	if cfg.PublicURL == "" {
+		missing = append(missing, "PUBLIC_URL (or a Railway public domain)")
 	}
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("missing required environment variables: %s", strings.Join(missing, ", "))

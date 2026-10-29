@@ -37,7 +37,7 @@ func flaggedPost(m *discordgo.Message) bool {
 // screenMedia counts a flagged post and restricts the member on the second
 // one within the window. It reports whether the member was restricted.
 func (h *Handler) screenMedia(s *discordgo.Session, m *discordgo.MessageCreate) bool {
-	if h.guardTokens == nil || !flaggedPost(m.Message) || h.isModerator(s, m.Author.ID, m.ChannelID) {
+	if !flaggedPost(m.Message) || h.isModerator(s, m.Author.ID, m.ChannelID) {
 		return false
 	}
 
@@ -114,7 +114,7 @@ func (h *Handler) restrict(s *discordgo.Session, userID, guildID, channelID, rea
 		return restrictResult{}, fmt.Errorf("timeout: %w", err)
 	}
 
-	token, err := h.guardTokens.Issue(userID, guildID, reason, tokenID, until)
+	token, err := h.tokens.Issue(userID, guildID, reason, tokenID, until)
 	if err != nil {
 		h.log.Error("media guard: issue token", "user_id", userID, "error", err)
 		return restrictResult{}, fmt.Errorf("issue link: %w", err)

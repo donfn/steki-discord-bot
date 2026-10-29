@@ -73,14 +73,9 @@ func run() error {
 		return err
 	}
 
-	var guard *verify.Server
-	if cfg.MediaGuardEnabled() {
-		guard = verify.NewServer(verify.NewTokens(cfg.JWTSecret), h.GuardLifter(sess), logger)
-		logger.Info("media guard enabled", "public_url", cfg.PublicURL)
-	} else {
-		logger.Warn("media guard disabled: set JWT_SECRET and a public domain (or PUBLIC_URL) to enable it")
-	}
-	srv := startHTTPServer(cfg.Port, st, guard, logger)
+	pages := verify.NewServer(verify.NewTokens(cfg.JWTSecret), h.GuardLifter(sess), h.LinkConsenter(sess), logger)
+	logger.Info("verification pages enabled", "public_url", cfg.PublicURL)
+	srv := startHTTPServer(cfg.Port, st, pages, logger)
 
 	logger.Info("bot is running")
 	stop := make(chan os.Signal, 1)
@@ -105,12 +100,10 @@ func run() error {
 }
 
 // startHTTPServer exposes /healthz, so the platform can tell a wedged process
-// from a healthy one, and the media guard's verification page when enabled.
-func startHTTPServer(port string, st *store.Store, guard *verify.Server, logger *slog.Logger) *http.Server {
+// from a healthy one, and the registration and media guard pages.
+func startHTTPServer(port string, st *store.Store, pages *verify.Server, logger *slog.Logger) *http.Server {
 	mux := http.NewServeMux()
-	if guard != nil {
-		guard.Register(mux)
-	}
+	pages.Register(mux)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 		defer cancel()

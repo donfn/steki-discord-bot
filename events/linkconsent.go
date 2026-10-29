@@ -1,0 +1,122 @@
+package events
+
+import (
+	"context"
+	"errors"
+	"net/url"
+	"time"
+
+	"github.com/bwmarrin/discordgo"
+
+	"steki-bot/mail"
+	"steki-bot/store"
+	"steki-bot/verify"
+)
+
+// universityFor maps an eligible address to its key in verify.Universities.
+func universityFor(email string) string {
+	if csdEmailRegex.MatchString(email) {
+		return "uoc"
+	}
+	return "hmu"
+}
+
+// displayName is the name a member recognises as theirs: the global display
+// name when they set one, otherwise the username.
+func displayName(u *discordgo.User) string {
+	if u.GlobalName != "" {
+		return u.GlobalName
+	}
+	return u.Username
+}
+
+// linkEmail describes the registration email for one link.
+func (h *Handler) linkEmail(u *discordgo.User, email, token string) mail.Link {
+	uni := verify.Universities[universityFor(email)]
+	return mail.Link{
+		URL:        h.cfg.PublicURL + "/link?t=" + url.QueryEscape(token),
+		Username:   displayName(u),
+		AvatarURL:  u.AvatarURL("128"),
+		Email:      email,
+		UniName:    uni.Name,
+		UniLogoURL: h.cfg.PublicURL + "/verify/uni/" + uni.Logo,
+		LogoURL:    h.cfg.PublicURL + "/verify/logo.png",
+		ValidFor:   linkTTL,
+	}
+}
+
+// LinkConsenter returns the verify.Consenter that completes registrations
+// through s.
+func (h *Handler) LinkConsenter(s *discordgo.Session) verify.Consenter {
+	return linkConsenter{h: h, s: s}
+}
+
+type linkConsenter struct {
+	h *Handler
+	s *discordgo.Session
+}
+
+// pendingRegistration returns the member's open registration when c is the
+// link it is waiting on: the newest one sent, not yet expired.
+func (l linkConsenter) pendingRegistration(ctx context.Context, c *verify.Claims) (*store.Registration, error) {
+	reg, err := l.h.st.OpenRegistration(ctx, c.Subject)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, verify.ErrLinkUsed
+	}
+	if err != nil {
+		return nil, err
+	}
+	if reg.Step != store.StepAwaitingCode || reg.Email == nil ||
+		!reg.CodeValid(time.Now()) || *reg.Code != c.ID {
+		return nil, verify.ErrLinkUsed
+	}
+	return reg, nil
+}
+
+func (l linkConsenter) Pending(ctx context.Context, c *verify.Claims) (*verify.Consent, error) {
+	reg, err := l.pendingRegistration(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	user, err := l.user(ctx, reg)
+	if err != nil {
+		return nil, err
+	}
+	return &verify.Consent{
+		Username:   displayName(user),
+		AvatarURL:  user.AvatarURL("128"),
+		Email:      *reg.Email,
+		University: universityFor(*reg.Email),
+	}, nil
+}
+
+// user looks the member up in the gateway cache, falling back to the API.
+func (l linkConsenter) user(ctx context.Context, reg *store.Registration) (*discordgo.User, error) {
+	if m, err := l.s.State.Member(reg.GuildID, reg.UserID); err == nil && m.User != nil {
+		return m.User, nil
+	}
+	return l.s.User(reg.UserID, discordgo.WithContext(ctx))
+}
+
+// Accept binds the address and grants the role, exactly as a correct code
+// used to. The member's lock is held throughout, so a second tab accepting
+// the same link, or a message in the channel, waits and then finds the
+// registration already closed.
+func (l linkConsenter) Accept(ctx context.Context, c *verify.Claims) error {
+	h := l.h
+	defer h.lockUser(c.Subject)()
+
+	reg, err := l.pendingRegistration(ctx, c)
+	if err != nil {
+		return err
+	}
+	channelID := ""
+	if reg.ChannelID != nil {
+		channelID = *reg.ChannelID
+	}
+	err = h.completeVerification(ctx, l.s, reg.GuildID, channelID, reg)
+	if errors.Is(err, store.ErrEmailTaken) {
+		return verify.ErrEmailTaken
+	}
+	return err
+}

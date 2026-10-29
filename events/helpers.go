@@ -2,9 +2,6 @@ package events
 
 import (
 	"context"
-	"crypto/rand"
-	"fmt"
-	"math/big"
 	"regexp"
 	"slices"
 	"strings"
@@ -20,17 +17,6 @@ var (
 	hmuEmailRegex = regexp.MustCompile(`^th[0-9]+@edu\.hmu\.gr$`)
 	csdEmailRegex = regexp.MustCompile(`^csd[0-9]+@csd\.uoc\.gr$`)
 )
-
-// generateCode returns a six-digit verification code from a cryptographically
-// secure source. The previous implementation used math/rand, whose output is
-// predictable from a few observed codes.
-func generateCode() (string, error) {
-	n, err := rand.Int(rand.Reader, big.NewInt(1_000_000))
-	if err != nil {
-		return "", fmt.Errorf("generate code: %w", err)
-	}
-	return fmt.Sprintf("%06d", n.Int64()), nil
-}
 
 // classifyEmail maps a submitted address to the role it earns, reporting
 // whether the address is acceptable at all.

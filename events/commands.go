@@ -9,6 +9,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"steki-bot/dc"
 	"steki-bot/store"
 )
 
@@ -60,6 +61,22 @@ var commandDefs = []*discordgo.ApplicationCommand{
 					Name: "user", Description: "Ο χρήστης",
 					Type: discordgo.ApplicationCommandOptionUser, Required: true,
 				}},
+			},
+			{
+				Name:        "reregister",
+				Description: "Αφαίρεση επαλήθευσης: ο χρήστης πρέπει να ξαναγραφτεί από την αρχή",
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Options: []*discordgo.ApplicationCommandOption{
+					{
+						Name: "user", Description: "Ο χρήστης",
+						Type: discordgo.ApplicationCommandOptionUser, Required: true,
+					},
+					{
+						Name:        "release_email",
+						Description: "Αποδέσμευση του email του, ώστε να μπορεί να γραφτεί με άλλο (προεπιλογή: όχι)",
+						Type:        discordgo.ApplicationCommandOptionBoolean,
+					},
+				},
 			},
 			{
 				Name:        "verify",
@@ -193,6 +210,7 @@ var commandRoutes = map[string]commandFunc{
 	"reg stuck":      (*Handler).cmdRegStuck,
 	"reg restart":    (*Handler).cmdRegRestart,
 	"reg verify":     (*Handler).cmdRegVerify,
+	"reg reregister": (*Handler).cmdRegReregister,
 	"email whois":    (*Handler).cmdEmailWhois,
 	"email add":      (*Handler).cmdEmailAdd,
 	"email remove":   (*Handler).cmdEmailRemove,
@@ -491,6 +509,80 @@ func (h *Handler) cmdRegRestart(s *discordgo.Session, i *discordgo.InteractionCr
 	}
 	h.audit(user.ID, reg.ID, store.EventModAction, map[string]any{"action": "restart"}, actorID(i))
 	h.reply(s, i, fmt.Sprintf("🔄 Η εγγραφή του <@%s> επανεκκινήθηκε.", user.ID))
+}
+
+// cmdRegReregister sends a verified member back to the start: the database
+// forgets their verification, the verified roles come off, and they get a
+// fresh registration channel. Unless release_email is set they keep the claim
+// on their address, so they can re-register with it but nobody else can.
+func (h *Handler) cmdRegReregister(s *discordgo.Session, i *discordgo.InteractionCreate, sub *discordgo.ApplicationCommandInteractionDataOption) {
+	user := optUser(i, sub.Options, "user")
+	release := false
+	if o := findOpt(sub.Options, "release_email"); o != nil {
+		release = o.BoolValue()
+	}
+	if user.Bot {
+		h.reply(s, i, "Δεν γίνεται επανεγγραφή σε bot.")
+		return
+	}
+
+	ctx, cancel := h.ctxTimeout(flowTimeout)
+	defer cancel()
+
+	if _, err := h.guildMember(ctx, s, i.GuildID, user.ID); err != nil {
+		h.reply(s, i, fmt.Sprintf("Ο <@%s> δεν είναι μέλος του server.", user.ID))
+		return
+	}
+
+	released, err := func() (int64, error) {
+		defer h.lockUser(user.ID)()
+		open, err := h.st.OpenRegistration(ctx, user.ID)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return 0, err
+		}
+		n, err := h.st.ClearVerification(ctx, user.ID, release)
+		if err != nil {
+			return 0, err
+		}
+		// Any half-finished registration is replaced by the fresh one below.
+		if open != nil && open.ChannelID != nil {
+			if err := h.deleteChannel(ctx, s, *open.ChannelID); err != nil {
+				h.log.Warn("reregister: delete old channel failed", "channel_id", *open.ChannelID, "error", err)
+			}
+		}
+		return n, nil
+	}()
+	if err != nil {
+		h.dbError(s, i, err)
+		return
+	}
+
+	var kept []string
+	for _, roleID := range verifiedRoleIDs {
+		err := h.retry(ctx, "member.role.remove", func() error {
+			return s.GuildMemberRoleRemove(i.GuildID, user.ID, roleID, discordgo.WithContext(ctx))
+		})
+		if err != nil && !dc.IsMissingResource(err) {
+			h.log.Warn("reregister: remove role failed", "user_id", user.ID, "role_id", roleID, "error", err)
+			kept = append(kept, "<@&"+roleID+">")
+		}
+	}
+
+	h.ensureRegisterChannel(s, i.GuildID, user)
+
+	h.audit(user.ID, "", store.EventModAction,
+		map[string]any{"action": "reregister", "release_email": release, "released": released}, actorID(i))
+	note := "Κράτησε το email του, οπότε μπορεί να ξαναγραφτεί μόνο με αυτό."
+	if release {
+		note = fmt.Sprintf("Αποδεσμεύτηκαν %d email.", released)
+	}
+	h.alertMods(s, "🔁 Ο <@%s> έστειλε τον <@%s> να ξαναγραφτεί. %s", actorID(i), user.ID, note)
+
+	msg := fmt.Sprintf("🔁 Ο <@%s> πρέπει πλέον να ξαναγραφτεί και πήρε νέο κανάλι εγγραφής. %s", user.ID, note)
+	if len(kept) > 0 {
+		msg += fmt.Sprintf("\n⚠️ Δεν μπόρεσα να αφαιρέσω: %s. Αφαίρεσέ τους χειροκίνητα.", strings.Join(kept, ", "))
+	}
+	h.reply(s, i, msg)
 }
 
 func (h *Handler) cmdRegVerify(s *discordgo.Session, i *discordgo.InteractionCreate, sub *discordgo.ApplicationCommandInteractionDataOption) {

@@ -208,6 +208,48 @@ func (s *Store) CloseOpenForUser(ctx context.Context, userID, outcome string) er
 	return err
 }
 
+// ClearVerification forgets that a member verified, so that nothing, the
+// reaper's role restore included, treats them as verified until they register
+// again. With release, the addresses bound to them are freed as well, which
+// lets the member register with a different one or someone else with theirs;
+// without it, the member keeps their claim and can re-register with it. It
+// returns how many addresses were released.
+func (s *Store) ClearVerification(ctx context.Context, userID string, release bool) (int64, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, `
+		update members set verified_at = null, verified_email = null
+		where user_id = $1`, userID); err != nil {
+		return 0, err
+	}
+
+	var released int64
+	if release {
+		for _, q := range []string{
+			`delete from verified_emails where user_id = $1`,
+			`delete from legacy_email_hashes where user_id = $1`,
+		} {
+			tag, err := tx.Exec(ctx, q, userID)
+			if err != nil {
+				return 0, err
+			}
+			released += tag.RowsAffected()
+		}
+	}
+
+	if _, err := tx.Exec(ctx, `
+		update registrations
+		set outcome = $2, completed_at = now()
+		where user_id = $1 and outcome is null`, userID, OutcomeModerator); err != nil {
+		return 0, err
+	}
+	return released, tx.Commit(ctx)
+}
+
 // MarkNudged stamps the 1h in-channel nudge so it is sent only once.
 func (s *Store) MarkNudged(ctx context.Context, regID string) error {
 	_, err := s.pool.Exec(ctx,

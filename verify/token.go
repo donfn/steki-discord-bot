@@ -1,13 +1,12 @@
-// Package verify serves the media guard's verification page: a member who was
-// timed out for posting attachments or links in quick succession opens the
-// link from their DM, solves an ALTCHA proof-of-work challenge, and the bot
-// lifts the timeout.
+// Package verify serves the bot's two public pages. The media guard page lets
+// a member who was timed out for posting attachments or links in quick
+// succession solve an ALTCHA proof-of-work challenge and have the timeout
+// lifted. The link page is where the registration email points: the member
+// confirms that their Discord account and academic address belong together,
+// and the bot lets them in.
 package verify
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"time"
 
@@ -23,6 +22,10 @@ const (
 	ReasonMedia     = "media"
 	ReasonDuplicate = "duplicate"
 	ReasonManual    = "manual"
+
+	// ReasonLink marks a registration email link rather than a restriction.
+	// The two pages each refuse the other's tokens.
+	ReasonLink = "link"
 )
 
 // Claims identify one restriction: the member (Subject), the guild they were
@@ -75,12 +78,4 @@ func (t *Tokens) Parse(raw string) (*Claims, error) {
 		return nil, errors.New("verify: token is missing claims")
 	}
 	return &c, nil
-}
-
-// altchaKey derives the captcha's HMAC key from the JWT secret, so the
-// deployment needs only one secret and the two never share a key.
-func (t *Tokens) altchaKey() string {
-	mac := hmac.New(sha256.New, t.secret)
-	mac.Write([]byte("altcha"))
-	return hex.EncodeToString(mac.Sum(nil))
 }

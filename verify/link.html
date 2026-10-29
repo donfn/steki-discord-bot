@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#FFC900" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E0E0F" media="(prefers-color-scheme: dark)">
+<title>στέκι · Σύνδεση λογαριασμού</title>
+<link rel="icon" href="/verify/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap">
+<style>
+  :root {
+    --brand: #FFC900;
+    --ink: #0B0B0C;
+    --bg: var(--brand);
+    --card: #FFFFFF;
+    --tile: #F6F5F1;
+    --text: var(--ink);
+    --muted: rgba(11, 11, 12, 0.62);
+    --hairline: rgba(11, 11, 12, 0.10);
+    --button: var(--ink);
+    --button-text: #FFFFFF;
+    --warn: #B42318;
+    --shadow: 0 1px 2px rgba(60, 45, 0, 0.08), 0 12px 40px -12px rgba(60, 45, 0, 0.35);
+    --radius: 28px;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0E0E0F;
+      --card: #1A1A1C;
+      --tile: #232326;
+      --text: #F5F5F7;
+      --muted: rgba(245, 245, 247, 0.62);
+      --hairline: rgba(255, 255, 255, 0.10);
+      --button: var(--brand);
+      --button-text: var(--ink);
+      --warn: #FF8A80;
+      --shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 20px 60px -20px rgba(0, 0, 0, 0.8);
+      color-scheme: dark;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    display: grid;
+    place-items: center;
+    padding: max(24px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+    background: var(--bg);
+    color: var(--text);
+    font: 500 1rem/1.55 Manrope, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  main {
+    width: 100%;
+    max-width: 27rem;
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 2rem 1.75rem 1.75rem;
+    animation: arrive 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  @keyframes arrive {
+    from { opacity: 0; transform: translateY(12px) scale(0.985); }
+  }
+
+  .brand { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem; }
+  /* The source image carries a dark matte at its corners; clip past it. */
+  .logo-wrap { width: 36px; height: 36px; border-radius: 10px; overflow: hidden; flex: none; }
+  .logo { display: block; width: 100%; height: 100%; transform: scale(1.08); }
+  .brand span { font-weight: 800; letter-spacing: -0.01em; }
+
+  h1 {
+    margin: 0 0 0.6rem;
+    font-size: clamp(1.6rem, 6vw, 1.875rem);
+    line-height: 1.12;
+    font-weight: 800;
+    letter-spacing: -0.025em;
+    text-wrap: balance;
+  }
+  p { margin: 0 0 1rem; color: var(--muted); text-wrap: pretty; }
+  p strong { color: var(--text); font-weight: 700; }
+
+  /* The connection: the Discord account on the left, the academic address on
+     the right, and the link between them drawn as a dotted bridge. */
+  .bridge {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: stretch;
+    gap: 0.5rem;
+    margin: 1.5rem 0;
+  }
+  .party {
+    min-width: 0;
+    display: grid;
+    justify-items: center;
+    align-content: start;
+    gap: 0.6rem;
+    padding: 1.1rem 0.6rem 0.9rem;
+    border-radius: 20px;
+    background: var(--tile);
+    text-align: center;
+  }
+  .party img {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: var(--hairline);
+    box-shadow: 0 0 0 3px var(--card), 0 0 0 4px var(--hairline);
+  }
+  .party .uni { border-radius: 50%; background: #fff; }
+  .party > div { width: 100%; min-width: 0; }
+  .party b {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 700;
+    line-height: 1.3;
+    color: var(--text);
+    overflow-wrap: break-word;
+  }
+  @media (max-width: 400px) {
+    main { padding: 1.75rem 1.25rem 1.5rem; }
+    .party { padding: 1rem 0.5rem 0.8rem; }
+    .party b { font-size: 0.8125rem; }
+  }
+  .party small {
+    display: block;
+    max-width: 100%;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--muted);
+    overflow-wrap: anywhere;
+    line-height: 1.3;
+  }
+  .link {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--brand);
+    color: var(--ink);
+    position: relative;
+    align-self: center;
+  }
+  .link svg { width: 20px; height: 20px; }
+  .link::before, .link::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    width: 10px;
+    border-top: 2px dotted var(--muted);
+  }
+  .link::before { right: 100%; }
+  .link::after { left: 100%; }
+  .link.joined { animation: pulse 520ms cubic-bezier(0.22, 1, 0.36, 1); }
+  @keyframes pulse { 40% { transform: scale(1.15); } }
+
+  .what {
+    margin: 0 0 1.25rem;
+    padding: 0;
+    list-style: none;
+    font-size: 0.9375rem;
+    color: var(--muted);
+  }
+  .what li { display: flex; gap: 0.6rem; margin-bottom: 0.45rem; }
+  .what li::before {
+    content: "";
+    flex: none;
+    width: 6px;
+    height: 6px;
+    margin-top: 0.6em;
+    border-radius: 50%;
+    background: var(--brand);
+    box-shadow: 0 0 0 1px var(--hairline);
+  }
+
+  button {
+    width: 100%;
+    min-height: 52px;
+    border: 0;
+    border-radius: 16px;
+    background: var(--button);
+    color: var(--button-text);
+    font: 800 1rem/1 Manrope, system-ui, sans-serif;
+    letter-spacing: -0.01em;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    transition: transform 100ms ease-out, opacity 160ms ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:active { transform: scale(0.97); }
+  button:focus-visible { outline: 3px solid var(--brand); outline-offset: 3px; }
+  button[disabled] { cursor: default; opacity: 0.72; }
+  button[disabled]:active { transform: none; }
+  .spinner {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    animation: spin 700ms linear infinite;
+  }
+  .spinner[hidden] { display: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .status {
+    min-height: 1.4rem;
+    margin: 0.75rem 0 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--muted);
+    text-align: center;
+  }
+  .status[data-tone="error"] { color: var(--warn); }
+
+  /* The proof of work runs out of sight; the widget only needs to exist. */
+  altcha-widget { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+
+  .footnote {
+    margin: 1.25rem 0 0;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--hairline);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+  }
+  .credit { margin: 0.75rem 0 0; font-size: 0.75rem; line-height: 1.45; }
+  .credit a, .footnote a {
+    color: inherit;
+    font-weight: 700;
+    text-decoration: underline;
+    text-decoration-color: var(--hairline);
+    text-underline-offset: 0.15em;
+  }
+  .credit a:hover, .footnote a:hover { text-decoration-color: currentColor; }
+
+  .view[hidden] { display: none; }
+  .view.entering { animation: swap 360ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+  @keyframes swap { from { opacity: 0; transform: scale(0.98); } }
+
+  .badge {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    margin-bottom: 1.5rem;
+    background: var(--brand);
+    color: var(--ink);
+  }
+  .badge.muted { background: var(--hairline); color: var(--text); }
+  .badge svg { width: 30px; height: 30px; }
+  .tick { stroke-dasharray: 30; stroke-dashoffset: 30; }
+  .entering .tick { animation: draw 420ms 140ms cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+  .cta {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 52px;
+    margin-top: 0.5rem;
+    border-radius: 16px;
+    background: var(--button);
+    color: var(--button-text);
+    font-weight: 800;
+    text-decoration: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    main, .view.entering { animation: fade 200ms ease both; }
+    .tick, .entering .tick { animation: none; stroke-dashoffset: 0; }
+    .link.joined { animation: none; }
+    .spinner { animation-duration: 1.6s; }
+    @keyframes fade { from { opacity: 0; } }
+  }
+  @media (prefers-contrast: more) {
+    :root { --muted: var(--text); --hairline: currentColor; }
+    main { outline: 2px solid var(--text); }
+  }
+</style>
+</head>
+<body>
+<main data-token="{{.Token}}" aria-live="polite">
+  {{if eq .State "ready"}}
+  <section class="view" id="form">
+    <div class="brand">
+      <div class="logo-wrap"><img class="logo" src="/verify/logo.png" alt="" width="36" height="36"></div>
+      <span>στέκι</span>
+    </div>
+    <h1>Σύνδεσε τον λογαριασμό σου</h1>
+    <p>Επιβεβαίωσε ότι αυτός ο λογαριασμός Discord ανήκει σε φοιτητή με το παρακάτω ακαδημαϊκό email.</p>
+
+    <div class="bridge" role="img" aria-label="Ο λογαριασμός {{.Username}} συνδέεται με το {{.Email}}">
+      <div class="party">
+        <img src="{{.AvatarURL}}" alt="" width="64" height="64">
+        <div><b>{{.Username}}</b><small>Discord</small></div>
+      </div>
+      <div class="link" id="link" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5"/></svg>
+      </div>
+      <div class="party">
+        <img class="uni" src="/verify/uni/{{.UniLogo}}" alt="" width="64" height="64">
+        <div><b>{{.EmailUser}}<wbr>@{{.EmailDomain}}</b><small>{{.UniName}}</small></div>
+      </div>
+    </div>
+
+    <ul class="what">
+      <li>Θα μπεις αμέσως στο στέκι, με πρόσβαση σε όλα τα κανάλια.</li>
+      <li>Το email θα συνδεθεί μόνιμα με αυτόν τον λογαριασμό και δεν θα μπορεί να χρησιμοποιηθεί από άλλον.</li>
+      <li>Θα το βλέπει μόνο η Ομάδα Διαχείρισης, για την ασφάλεια του server.</li>
+    </ul>
+
+    <button type="button" id="accept">
+      <span class="spinner" id="spinner" hidden></span>
+      <span id="label">Αποδοχή και είσοδος</span>
+    </button>
+    <p class="status" id="status" role="status"></p>
+
+    <altcha-widget
+      challenge="/link/challenge?t={{.Token}}"
+      language="el"
+      auto="onload"
+      display="invisible"
+      configuration='{"hideLogo":true,"hideFooter":true}'
+    ></altcha-widget>
+
+    <p class="footnote"><strong>Δεν ζήτησες εσύ αυτή τη σύνδεση;</strong> Απλώς κλείσε τη σελίδα. Κανείς δεν θα μπει στο στέκι με το email σου χωρίς να πατήσεις αποδοχή.</p>
+    <p class="credit">Ένας αόρατος έλεγχος <a href="https://altcha.org" target="_blank" rel="noopener noreferrer">ALTCHA</a> τρέχει στο παρασκήνιο για να κρατά μακριά τα bots. Είναι ανοιχτού κώδικα, χωρίς cookies και χωρίς παρακολούθηση.</p>
+  </section>
+  {{end}}
+
+  <section class="view" id="done" hidden>
+    <div class="badge" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path class="tick" d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+    </div>
+    <h1>Καλώς ήρθες στο στέκι!</h1>
+    <p>Ο λογαριασμός σου συνδέθηκε και έχεις πλέον πρόσβαση σε όλα τα κανάλια. Μπορείς να κλείσεις αυτή τη σελίδα.</p>
+    <a class="cta" href="https://discord.com/channels/@me">Άνοιγμα του Discord</a>
+  </section>
+
+  <section class="view" id="taken" hidden>
+    <div class="badge muted" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 7v6M12 17h.01"/></svg>
+    </div>
+    <h1>Το email χρησιμοποιείται ήδη</h1>
+    <p>Αυτή η διεύθυνση συνδέθηκε με άλλον λογαριασμό στο μεταξύ. Αν πιστεύεις ότι είναι λάθος, γράψε στο κανάλι υποστήριξης του στεκιού.</p>
+  </section>
+
+  <section class="view" id="invalid" {{if ne .State "invalid"}}hidden{{end}}>
+    <div class="badge muted" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 7v6M12 17h.01"/></svg>
+    </div>
+    <h1>Ο σύνδεσμος δεν ισχύει πια</h1>
+    <p>Μπορεί να έχει ήδη χρησιμοποιηθεί, να έχει λήξει ή να έχει αντικατασταθεί από νεότερο email. Γύρνα στο κανάλι εγγραφής σου στο Discord και στείλε ξανά το ακαδημαϊκό σου email για να λάβεις καινούριο σύνδεσμο.</p>
+  </section>
+
+  <section class="view" id="error" {{if ne .State "error"}}hidden{{end}}>
+    <div class="badge muted" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 7v6M12 17h.01"/></svg>
+    </div>
+    <h1>Κάτι πήγε στραβά</h1>
+    <p>Δεν μπορέσαμε να ολοκληρώσουμε τη σύνδεση αυτή τη στιγμή. Ανανέωσε τη σελίδα σε λίγο ή γράψε στο κανάλι υποστήριξης του στεκιού.</p>
+  </section>
+</main>
+
+{{if eq .State "ready"}}
+<script nonce="{{.Nonce}}" type="module" src="https://cdn.jsdelivr.net/npm/altcha@3.3.0/dist/main/altcha.i18n.min.js"
+  integrity="sha384-0Krq/S5zXHBeNssopqXEi88IwrdS4xoXSyYrKr6KdRZFhhDHIpSuyHkkcERLXegU"
+  crossorigin="anonymous"></script>
+<script nonce="{{.Nonce}}">
+  const main = document.querySelector('main');
+  const token = main.dataset.token;
+  const status = document.getElementById('status');
+  const button = document.getElementById('accept');
+  const spinner = document.getElementById('spinner');
+  const label = document.getElementById('label');
+  const widget = document.querySelector('altcha-widget');
+
+  // The check starts as soon as the page loads, so it is usually done before
+  // the member has read the page. If they accept first, the accept waits for it.
+  let payload = null;
+  let wantsAccept = false;
+  let sending = false;
+
+  function say(text, tone) {
+    status.textContent = text;
+    status.dataset.tone = tone || '';
+  }
+
+  function busy(on, text) {
+    button.disabled = on;
+    spinner.hidden = !on;
+    label.textContent = text;
+  }
+
+  function show(id) {
+    for (const v of main.querySelectorAll('.view')) {
+      const on = v.id === id;
+      v.hidden = !on;
+      v.classList.toggle('entering', on);
+    }
+  }
+
+  function retry() {
+    payload = null;
+    widget.reset?.();
+    widget.verify?.();
+  }
+
+  async function accept() {
+    if (sending) return;
+    if (!payload) {
+      wantsAccept = true;
+      busy(true, 'Γίνεται έλεγχος…');
+      return;
+    }
+    sending = true;
+    busy(true, 'Σύνδεση…');
+    say('');
+    try {
+      const res = await fetch('/link/accept', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, payload }),
+      });
+      if (res.ok) {
+        document.getElementById('link').classList.add('joined');
+        show('done');
+        return;
+      }
+      const body = await res.json().catch(() => ({}));
+      if (body.error === 'invalid') { show('invalid'); return; }
+      if (body.error === 'taken') { show('taken'); return; }
+      say(body.error === 'captcha'
+        ? 'Ο έλεγχος δεν έγινε δεκτός. Πάτα ξανά αποδοχή.'
+        : 'Δεν ήταν δυνατή η σύνδεση. Δοκίμασε ξανά σε λίγο.', 'error');
+      busy(false, 'Αποδοχή και είσοδος');
+      retry();
+    } catch {
+      say('Δεν υπάρχει σύνδεση. Έλεγξε το δίκτυό σου και δοκίμασε ξανά.', 'error');
+      busy(false, 'Αποδοχή και είσοδος');
+    } finally {
+      sending = false;
+    }
+  }
+
+  button.addEventListener('click', accept);
+
+  widget.addEventListener('statechange', (ev) => {
+    const { state, payload: p } = ev.detail;
+    if (state === 'verified' && p) {
+      payload = p;
+      if (wantsAccept) accept();
+    } else if (state === 'error' || state === 'expired') {
+      payload = null;
+      if (wantsAccept) {
+        wantsAccept = false;
+        busy(false, 'Αποδοχή και είσοδος');
+        say('Ο έλεγχος απέτυχε. Πάτα ξανά αποδοχή.', 'error');
+      }
+      retry();
+    }
+  });
+</script>
+{{end}}
+</body>
+</html>

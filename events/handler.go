@@ -34,8 +34,8 @@ type Handler struct {
 	modlog  *moderation.Log
 	placer  *dc.Placer
 
-	// guardTokens signs media guard links; nil when the guard is off.
-	guardTokens *verify.Tokens
+	// tokens signs registration and media guard links.
+	tokens *verify.Tokens
 	// dups tracks recent messages for cross-channel duplicate detection.
 	dups *dupTracker
 	// invites caches whether an invite code points at the Steki guild.
@@ -58,7 +58,9 @@ type Handler struct {
 	base      context.Context
 	cancel    context.CancelFunc
 	startOnce sync.Once
-	wg        sync.WaitGroup
+	// legacyOnce runs the log reconciliation once per process.
+	legacyOnce sync.Once
+	wg         sync.WaitGroup
 }
 
 // NewHandler wires the handler's dependencies.
@@ -66,25 +68,21 @@ func NewHandler(cfg *config.Config, st *store.Store, logger *slog.Logger) *Handl
 	modlog := moderation.NewLog(config.LogChannelID, logger)
 	base, cancel := context.WithCancel(context.Background())
 	phish := moderation.NewPhishFeed(logger)
-	var guardTokens *verify.Tokens
-	if cfg.MediaGuardEnabled() {
-		guardTokens = verify.NewTokens(cfg.JWTSecret)
-	}
 	return &Handler{
-		guardTokens: guardTokens,
-		cfg:         cfg,
-		st:          st,
-		mailer:      mail.New(cfg.ResendAPIKey, cfg.EmailFrom, logger),
-		log:         logger,
-		linkChk:     moderation.NewLinkChecker(cfg.URLBlacklist, phish, modlog, logger),
-		phish:       phish,
-		dups:        newDupTracker(),
-		invites:     map[string]bool{},
-		modlog:      modlog,
-		placer:      dc.NewPlacer(config.RegisterCategoryID, logger),
-		bootTime:    time.Now(),
-		base:        base,
-		cancel:      cancel,
+		tokens:   verify.NewTokens(cfg.JWTSecret),
+		cfg:      cfg,
+		st:       st,
+		mailer:   mail.New(cfg.ResendAPIKey, cfg.EmailFrom, logger),
+		log:      logger,
+		linkChk:  moderation.NewLinkChecker(cfg.URLBlacklist, phish, modlog, logger),
+		phish:    phish,
+		dups:     newDupTracker(),
+		invites:  map[string]bool{},
+		modlog:   modlog,
+		placer:   dc.NewPlacer(config.RegisterCategoryID, logger),
+		bootTime: time.Now(),
+		base:     base,
+		cancel:   cancel,
 	}
 }
 

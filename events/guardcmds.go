@@ -57,10 +57,6 @@ func (h *Handler) cmdGuardStatus(s *discordgo.Session, i *discordgo.InteractionC
 
 func (h *Handler) cmdGuardRestrict(s *discordgo.Session, i *discordgo.InteractionCreate, sub *discordgo.ApplicationCommandInteractionDataOption) {
 	user := optUser(i, sub.Options, "user")
-	if h.guardTokens == nil {
-		h.reply(s, i, "Η προστασία captcha είναι ανενεργή: λείπει το `JWT_SECRET` ή το δημόσιο domain.")
-		return
-	}
 	if user.Bot {
 		h.reply(s, i, "Δεν γίνεται περιορισμός σε bot.")
 		return

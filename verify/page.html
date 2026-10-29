@@ -196,10 +196,9 @@
     </div>
 
     <altcha-widget
-      challengeurl="/verify/challenge?t={{.Token}}"
-      hidelogo
-      hidefooter
-      strings='{"label":"Δεν είμαι ρομπότ","verifying":"Γίνεται έλεγχος…","verified":"Επιβεβαιώθηκε","error":"Ο έλεγχος απέτυχε. Δοκίμασε ξανά.","expired":"Ο έλεγχος έληξε. Δοκίμασε ξανά.","loading":"Φόρτωση…","reload":"Ξανά","verificationRequired":"Απαιτείται επιβεβαίωση","waitAlert":"Γίνεται έλεγχος… περίμενε λίγο.","ariaLinkLabel":"ALTCHA","footer":""}'
+      challenge="/verify/challenge?t={{.Token}}"
+      language="el"
+      configuration='{"hideLogo":true,"hideFooter":true}'
     ></altcha-widget>
     <p class="status" id="status" role="status"></p>
 
@@ -235,8 +234,8 @@
 </main>
 
 {{if eq .State "ready"}}
-<script nonce="{{.Nonce}}" type="module" src="https://cdn.jsdelivr.net/npm/altcha@2.3.0/dist/altcha.js"
-  integrity="sha384-limAVlzOo9wt5kLfw2FGNdVBhupA1qOb2QCe7AOe/gPj50oMuGtBuhH1ROGqDJpi"
+<script nonce="{{.Nonce}}" type="module" src="https://cdn.jsdelivr.net/npm/altcha@3.3.0/dist/main/altcha.i18n.min.js"
+  integrity="sha384-0Krq/S5zXHBeNssopqXEi88IwrdS4xoXSyYrKr6KdRZFhhDHIpSuyHkkcERLXegU"
   crossorigin="anonymous"></script>
 <script nonce="{{.Nonce}}">
   const main = document.querySelector('main');

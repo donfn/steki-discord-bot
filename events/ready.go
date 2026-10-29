@@ -42,6 +42,7 @@ func (h *Handler) onGuildCreate(s *discordgo.Session, g *discordgo.GuildCreate) 
 			h.log.Error("register slash commands failed", "error", err)
 		}
 		h.reconcile(s)
+		h.startLegacyScan(s)
 	})
 }
 

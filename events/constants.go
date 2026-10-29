@@ -19,15 +19,11 @@ var protectedRoleIDs = []string{staffRoleID, modRoleID, modViewRoleID, hmuRoleID
 
 // Registration lifecycle timings.
 const (
-	// codeTTL is how long a verification code stays valid. Previously codes
-	// never expired.
-	codeTTL = 15 * time.Minute
+	// linkTTL is how long a registration email link stays valid. Only the
+	// newest link sent for a registration works.
+	linkTTL = 30 * time.Minute
 
-	// maxFailedAttempts is the number of wrong codes a member may enter; the
-	// last of them destroys the code and sends the member back to step one.
-	maxFailedAttempts = 3
-
-	// maxCodeSends caps how many codes one registration may request, so the
+	// maxCodeSends caps how many emails one registration may request, so the
 	// Resend quota cannot be burned by a single member.
 	maxCodeSends = 5
 
@@ -100,7 +96,7 @@ const (
 	msgWelcome = "**Γειά σου <@%s>, καλωσόρισες στο Steki!** \n" +
 		"Θα χρειαστεί να επιβεβαιώσουμε την φοιτητική σου ιδιότητα.\n\n" +
 		"Είναι πολύ απλό: \n" +
-		"**Θα σου στείλω έναν κωδικό στο ακαδημαϊκό σου email και εσύ θα πρέπει να μου τον γράψεις εδώ.**"
+		"**Θα σου στείλω έναν σύνδεσμο στο ακαδημαϊκό σου email. Πατώντας τον και πατώντας αποδοχή, μπαίνεις αυτόματα.**"
 
 	msgRestartHint = "Αν κολλήσεις σε κάποιο από τα βήματα, μπορείς να κάνεις react με :arrows_counterclockwise: " +
 		"στο μήνυμα αυτό και θα αρχίσει η διαδικασία από την αρχή. Εναλλακτικά, στείλε στο <#%s>."

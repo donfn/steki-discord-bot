@@ -127,14 +127,6 @@ func (h *Handler) screenDuplicates(s *discordgo.Session, m *discordgo.MessageCre
 	}
 	h.log.Info("duplicate: cross-channel burst", "user_id", m.Author.ID, "copies", len(copies))
 
-	if h.guardTokens == nil {
-		// Without the captcha flow, deleting the copies and telling the
-		// moderators is the most that can be done.
-		h.alertMods(s, "🛡️ Ο χρήστης <@%s> έστειλε το ίδιο μήνυμα σε %d κανάλια μέσα σε ένα λεπτό· "+
-			"τα μηνύματα διαγράφηκαν:```%s```", m.Author.ID, len(copies), truncate(quote(moderation.Text(m.Message)), 1500))
-		return true
-	}
-
 	tokenID, err := newTokenID()
 	if err != nil {
 		h.log.Error("duplicate: token id", "error", err)

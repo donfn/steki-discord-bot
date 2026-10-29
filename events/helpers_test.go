@@ -49,23 +49,6 @@ func TestUserIDFromChannelName(t *testing.T) {
 	}
 }
 
-func TestGenerateCodeFormat(t *testing.T) {
-	for i := 0; i < 200; i++ {
-		code, err := generateCode()
-		if err != nil {
-			t.Fatalf("generateCode error: %v", err)
-		}
-		if len(code) != 6 {
-			t.Fatalf("code %q length %d, want 6", code, len(code))
-		}
-		for _, r := range code {
-			if r < '0' || r > '9' {
-				t.Fatalf("code %q has non-digit", code)
-			}
-		}
-	}
-}
-
 func TestTruncate(t *testing.T) {
 	if got := truncate("short", 100); got != "short" {
 		t.Errorf("truncate left a short string as %q", got)
