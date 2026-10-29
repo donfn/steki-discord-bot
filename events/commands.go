@@ -576,6 +576,7 @@ func (h *Handler) cmdRegReregister(s *discordgo.Session, i *discordgo.Interactio
 		}
 	}
 
+	h.revokeHelp(ctx, s, user.ID)
 	h.ensureRegisterChannel(s, i.GuildID, user)
 
 	h.audit(user.ID, "", store.EventModAction,
@@ -630,6 +631,7 @@ func (h *Handler) cmdRegVerify(s *discordgo.Session, i *discordgo.InteractionCre
 		return
 	}
 
+	h.revokeHelp(ctx, s, user.ID)
 	if reg.ChannelID != nil {
 		if err := h.deleteChannel(ctx, s, *reg.ChannelID); err != nil {
 			h.log.Warn("verify: delete channel failed", "channel_id", *reg.ChannelID, "error", err)

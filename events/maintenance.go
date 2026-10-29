@@ -8,7 +8,6 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/config"
 	"steki-bot/dc"
 	"steki-bot/store"
 )
@@ -48,7 +47,7 @@ func (h *Handler) reapNudges(ctx context.Context, s *discordgo.Session) {
 			continue // the kick pass owns anything this stale
 		}
 
-		msg := h.send(s, *reg.ChannelID, fmt.Sprintf(msgNudge, reg.UserID, config.SupportChannelID))
+		msg := h.send(s, *reg.ChannelID, fmt.Sprintf(msgNudge, reg.UserID))
 		if msg == nil {
 			continue // the channel is gone; the reconciler sorts the row out
 		}
@@ -207,6 +206,7 @@ func (h *Handler) restoreVerifiedRole(ctx context.Context, s *discordgo.Session,
 func (h *Handler) closeAndCleanup(ctx context.Context, s *discordgo.Session,
 	reg *store.Registration, outcome string) {
 
+	h.revokeHelp(ctx, s, reg.UserID)
 	if reg.ChannelID != nil {
 		if err := h.deleteChannel(ctx, s, *reg.ChannelID); err != nil {
 			h.log.Warn("cleanup: delete channel failed", "channel_id", *reg.ChannelID, "error", err)
@@ -357,6 +357,8 @@ func (h *Handler) reconcile(s *discordgo.Session) {
 		budget--
 		recreated++
 	}
+
+	h.sweepHelp(ctx, s)
 
 	h.log.Info("reconcile finished",
 		"members", len(byID), "closed", closed, "recreated", recreated,

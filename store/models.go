@@ -38,6 +38,7 @@ const (
 	EventModAction           = "mod_action"
 	EventMediaRestricted     = "media_restricted"
 	EventMediaLifted         = "media_lifted"
+	EventHelpRequested       = "help_requested"
 )
 
 // Provenance values for verified_emails.source.

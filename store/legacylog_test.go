@@ -118,3 +118,46 @@ func TestClearVerification(t *testing.T) {
 		t.Fatalf("address still claimed: %+v", use)
 	}
 }
+
+func TestHelpAccessGoesStaleWhenRegistrationCloses(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	const user = "900100000000000003"
+	if err := s.EnsureMember(ctx, user, "test"); err != nil {
+		t.Fatal(err)
+	}
+	reg, _, err := s.EnsureOpenRegistration(ctx, user, "g")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordHelpAccess(ctx, user); err != nil {
+		t.Fatal(err)
+	}
+	stale := func() bool {
+		ids, err := s.StaleHelpAccess(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, id := range ids {
+			if id == user {
+				return true
+			}
+		}
+		return false
+	}
+	if stale() {
+		t.Fatal("access stale while the registration is open")
+	}
+	if err := s.CloseRegistration(ctx, reg.ID, OutcomeVerified); err != nil {
+		t.Fatal(err)
+	}
+	if !stale() {
+		t.Fatal("access not stale after the registration closed")
+	}
+	if err := s.ForgetHelpAccess(ctx, user); err != nil {
+		t.Fatal(err)
+	}
+	if has, _ := s.HasHelpAccess(ctx, user); has {
+		t.Fatal("access still recorded after forgetting it")
+	}
+}

@@ -156,12 +156,9 @@ func (h *Handler) reportChannelFailure(s *discordgo.Session, user *discordgo.Use
 		staffRoleID, user.Username, user.ID, detail)
 }
 
-// sendWelcome announces the channel and posts the opening of the flow.
+// sendWelcome points the member at their channel and posts the card there.
 func (h *Handler) sendWelcome(s *discordgo.Session, channelID, userID string) {
-	announcement := fmt.Sprintf(
-		":wave: Γειά σου, <@%s>! Πάτα εδώ για να γραφτείς στο Steki → <#%s>.",
-		userID, channelID)
-
+	announcement := fmt.Sprintf("👋 Καλώς ήρθες, <@%s>! Για να μπεις στο Steki, πήγαινε εδώ: <#%s>", userID, channelID)
 	h.send(s, config.WelcomeChannelID, announcement)
 	if dm, err := s.UserChannelCreate(userID); err == nil {
 		h.send(s, dm.ID, announcement)
@@ -169,10 +166,8 @@ func (h *Handler) sendWelcome(s *discordgo.Session, channelID, userID string) {
 	h.postFlowIntro(s, channelID, userID)
 }
 
-// postFlowIntro posts the greeting, the restart button and the email button.
-// Shared by a fresh channel and a restarted one.
+// postFlowIntro posts the registration card. Shared by a fresh channel and a
+// restarted one.
 func (h *Handler) postFlowIntro(s *discordgo.Session, channelID, userID string) {
-	h.send(s, channelID, fmt.Sprintf(msgWelcome, userID))
-	h.sendWithButtons(s, channelID, fmt.Sprintf(msgRestartHint, config.SupportChannelID), restartButton())
-	h.sendWithEmailButton(s, channelID, msgAskEmail, labelEnterEmail)
+	h.postCard(s, channelID, card{userID: userID, state: cardAsk})
 }

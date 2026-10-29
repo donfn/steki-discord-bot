@@ -2,17 +2,16 @@ package events
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/moderation"
 	"steki-bot/store"
 )
 
 // Register channels are read-only for the member: they give their address
-// through a Discord form opened by a button, and restart with another button.
+// through a Discord form opened by the card's button, and restart with
+// another.
 // Free text can no longer be mistaken for an answer, and nobody can post
 // links or spam into their own channel.
 const (
@@ -20,52 +19,7 @@ const (
 	restartButtonID = "reg:restart"
 	emailFormID     = "reg:email_form"
 	emailInputID    = "email"
-
-	labelEnterEmail  = "Συμπλήρωσε το email σου"
-	labelChangeEmail = "Αλλαγή email"
-	labelRetryEmail  = "Ξαναγράψε το email"
 )
-
-// emailButton is the row that opens the email form.
-func emailButton(label string) []discordgo.MessageComponent {
-	return []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{
-		discordgo.Button{
-			Label:    label,
-			Style:    discordgo.PrimaryButton,
-			CustomID: emailButtonID,
-			Emoji:    &discordgo.ComponentEmoji{Name: "📧"},
-		},
-	}}}
-}
-
-// restartButton is the row that starts the registration over.
-func restartButton() []discordgo.MessageComponent {
-	return []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{
-		discordgo.Button{
-			Label:    "Ξεκίνα από την αρχή",
-			Style:    discordgo.SecondaryButton,
-			CustomID: restartButtonID,
-			Emoji:    &discordgo.ComponentEmoji{Name: "🔄"},
-		},
-	}}}
-}
-
-// sendWithButtons posts a message with button rows under it.
-func (h *Handler) sendWithButtons(s *discordgo.Session, channelID, content string, rows []discordgo.MessageComponent) {
-	_, err := s.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
-		Content:         content,
-		Components:      rows,
-		AllowedMentions: moderation.SafeMentions,
-	})
-	if err != nil {
-		h.log.Warn("send message with buttons failed", "channel_id", channelID, "error", err)
-	}
-}
-
-// sendWithEmailButton posts a message with the email form button under it.
-func (h *Handler) sendWithEmailButton(s *discordgo.Session, channelID, content, label string) {
-	h.sendWithButtons(s, channelID, content, emailButton(label))
-}
 
 // invisibles are characters that ride along when an address is copied from a
 // web page or a PDF; the full-width at sign comes from Greek and Asian
@@ -130,6 +84,10 @@ func (h *Handler) onComponent(s *discordgo.Session, i *discordgo.InteractionCrea
 			return
 		}
 		h.openEmailForm(s, i)
+	case helpButtonID:
+		if reg := h.ownRegistration(s, i); reg != nil {
+			h.onHelpButton(s, i, reg)
+		}
 	case restartButtonID:
 		reg := h.ownRegistration(s, i)
 		if reg == nil {
@@ -173,8 +131,8 @@ func (h *Handler) openEmailForm(s *discordgo.Session, i *discordgo.InteractionCr
 	}
 }
 
-// onEmailSubmit echoes the cleaned-up address back into the channel, then
-// carries on exactly as a typed address used to.
+// onEmailSubmit shows the cleaned-up address on the card, sends the email,
+// and redraws the card with the outcome.
 func (h *Handler) onEmailSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	data := i.ModalSubmitData()
 	if data.CustomID != emailFormID {
@@ -185,20 +143,21 @@ func (h *Handler) onEmailSubmit(s *discordgo.Session, i *discordgo.InteractionCr
 		return
 	}
 	raw := modalValue(data.Components, emailInputID)
-	email := cleanEmailInput(raw)
+	user := interactionUser(i)
 
+	// Redraw the card at once with the address echoed back, then again once
+	// the email has gone out. A form opened from a message may update it.
 	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Type: discordgo.InteractionResponseUpdateMessage,
 		Data: &discordgo.InteractionResponseData{
-			Content:         fmt.Sprintf("Έστειλες το `%s` για email.", moderation.Quote(email)),
-			AllowedMentions: &discordgo.MessageAllowedMentions{},
+			Components: card{userID: user.ID, state: cardSending, email: cleanEmailInput(raw)}.components(),
+			Flags:      discordgo.MessageFlagsIsComponentsV2,
 		},
 	})
 	if err != nil {
-		h.log.Warn("echo email failed", "error", err)
+		h.log.Warn("update registration card failed", "error", err)
 	}
 
-	user := interactionUser(i)
 	defer h.lockUser(user.ID)()
 	ctx, cancel := h.ctxTimeout(flowTimeout)
 	defer cancel()
@@ -212,7 +171,12 @@ func (h *Handler) onEmailSubmit(s *discordgo.Session, i *discordgo.InteractionCr
 	if err := h.st.Touch(ctx, reg.ID); err != nil {
 		h.log.Warn("touch registration failed", "reg_id", reg.ID, "error", err)
 	}
-	h.stepSendEmail(ctx, s, i.ChannelID, user, raw, reg)
+	result := h.stepSendEmail(ctx, s, user, raw, reg)
+	if i.Message != nil {
+		h.editCard(s, i.ChannelID, i.Message.ID, result)
+	} else {
+		h.postCard(s, i.ChannelID, result)
+	}
 }
 
 // modalValue finds a text input's value among a submitted form's rows.
