@@ -226,7 +226,15 @@ var commandRoutes = map[string]commandFunc{
 // command Discord shows as "didn't respond" is otherwise indistinguishable
 // from one that never reached the bot.
 func (h *Handler) onInteractionCreate(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	if i.Type != discordgo.InteractionApplicationCommand {
+	switch i.Type {
+	case discordgo.InteractionMessageComponent:
+		h.onComponent(s, i)
+		return
+	case discordgo.InteractionModalSubmit:
+		h.onEmailSubmit(s, i)
+		return
+	case discordgo.InteractionApplicationCommand:
+	default:
 		return
 	}
 	data := i.ApplicationCommandData()

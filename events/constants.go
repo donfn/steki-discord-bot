@@ -88,7 +88,9 @@ var reactionRoles = map[string]string{
 	"💸":  "887198782255661086",
 }
 
-// restartEmoji restarts the registration flow when reacted to.
+// restartEmoji restarts the registration flow when reacted to. New channels
+// use the restart button instead; this keeps the reaction under intros posted
+// before the button existed working.
 const restartEmoji = "🔄"
 
 // Greek copy shared by the welcome flow and the restart flow.
@@ -98,10 +100,10 @@ const (
 		"Είναι πολύ απλό: \n" +
 		"**Θα σου στείλω έναν σύνδεσμο στο ακαδημαϊκό σου email. Πατώντας τον και πατώντας αποδοχή, μπαίνεις αυτόματα.**"
 
-	msgRestartHint = "Αν κολλήσεις σε κάποιο από τα βήματα, μπορείς να κάνεις react με :arrows_counterclockwise: " +
-		"στο μήνυμα αυτό και θα αρχίσει η διαδικασία από την αρχή. Εναλλακτικά, στείλε στο <#%s>."
+	msgRestartHint = "Αν κολλήσεις σε κάποιο από τα βήματα, πάτα το κουμπί παρακάτω " +
+		"και η διαδικασία θα αρχίσει από την αρχή. Εναλλακτικά, στείλε στο <#%s>."
 
-	msgAskEmail = "**Για να συνεχίσουμε, στείλε μου εδώ το ακαδημαϊκό σου email. " +
+	msgAskEmail = "**Για να συνεχίσουμε, πάτα το κουμπί και γράψε το ακαδημαϊκό σου email. " +
 		"Θα πρέπει να είναι της μορφής *thXXXXXX@edu.hmu.gr* (αυτό που σου έδωσε η γραμματεία κατά την εγγραφή)**.\n\n" +
 		":new: Τώρα φοιτητές από εξωτερικά τμήματα (csd.uoc.gr) μπορούν να γραφτούν ως Verified Outsiders."
 

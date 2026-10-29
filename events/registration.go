@@ -55,30 +55,32 @@ func (h *Handler) handleRegistration(s *discordgo.Session, m *discordgo.MessageC
 
 	switch reg.Step {
 	case store.StepAwaitingEmail:
-		h.stepSendEmail(ctx, s, m, reg)
+		h.stepSendEmail(ctx, s, m.ChannelID, m.Author, m.Content, reg)
 	case store.StepAwaitingCode:
 		h.stepAwaitingLink(ctx, s, m, reg)
 	}
 }
 
 // stepSendEmail validates the submitted address and mails a fresh code.
-func (h *Handler) stepSendEmail(ctx context.Context, s *discordgo.Session, m *discordgo.MessageCreate, reg *store.Registration) {
-	email := store.NormalizeEmail(m.Content)
+func (h *Handler) stepSendEmail(ctx context.Context, s *discordgo.Session, channelID string,
+	author *discordgo.User, input string, reg *store.Registration) {
+	email := cleanEmailInput(input)
 
 	if _, ok := classifyEmail(email); !ok {
 		h.audit(reg.UserID, reg.ID, store.EventEmailRejected,
-			map[string]any{"input_length": len(m.Content)}, "")
-		h.send(s, m.ChannelID,
+			map[string]any{"input_length": len(input)}, "")
+		h.send(s, channelID,
 			":see_no_evil: Αυτό που μου έστειλες δεν μοιάζει με φοιτητικό email από το H.M.M.Y. ΕΛ.ΜΕ.ΠΑ.")
-		h.send(s, m.ChannelID,
-			"Ένα ακαδημαϊκό, φοιτητικό email έχει την μορφή thXXXXX@edu.hmu.gr.")
+		h.sendWithEmailButton(s, channelID,
+			"Ένα ακαδημαϊκό, φοιτητικό email έχει την μορφή thXXXXX@edu.hmu.gr. Πάτα το κουμπί για να το ξαναγράψεις.",
+			labelRetryEmail)
 		return
 	}
 
 	if reg.CodeSentCount >= maxCodeSends {
 		h.alertMods(s, "⚠️ Ο χρήστης <@%s> ζήτησε %d κωδικούς. Πιθανή κατάχρηση.",
 			reg.UserID, reg.CodeSentCount)
-		h.send(s, m.ChannelID, fmt.Sprintf(
+		h.send(s, channelID, fmt.Sprintf(
 			"Έχεις ζητήσει πολλούς κωδικούς. Στείλε μήνυμα στο <#%s> για βοήθεια.",
 			config.SupportChannelID))
 		return
@@ -87,38 +89,38 @@ func (h *Handler) stepSendEmail(ctx context.Context, s *discordgo.Session, m *di
 	use, err := h.st.CheckEmail(ctx, email)
 	if err != nil {
 		h.log.Error("email dedup check failed", "error", err)
-		h.send(s, m.ChannelID, msgGenericError)
+		h.send(s, channelID, msgGenericError)
 		return
 	}
 	if use.BlocksUser(reg.UserID) {
-		h.rejectUsedEmail(s, m.ChannelID, reg, email, use)
+		h.rejectUsedEmail(s, channelID, reg, email, use)
 		return
 	}
 
 	h.audit(reg.UserID, reg.ID, store.EventEmailSubmitted, map[string]any{"email": email}, "")
-	h.send(s, m.ChannelID, "Δώσε μου μισό λεπτάκι...")
+	h.send(s, channelID, "Δώσε μου μισό λεπτάκι...")
 
 	linkID, err := newTokenID()
 	if err != nil {
 		h.log.Error("generate link id failed", "error", err)
-		h.send(s, m.ChannelID, msgGenericError)
+		h.send(s, channelID, msgGenericError)
 		return
 	}
 	expires := time.Now().Add(linkTTL)
 	token, err := h.tokens.IssueLink(reg.UserID, reg.GuildID, linkID, expires)
 	if err != nil {
 		h.log.Error("sign link failed", "error", err)
-		h.send(s, m.ChannelID, msgGenericError)
+		h.send(s, channelID, msgGenericError)
 		return
 	}
 
 	// Send before persisting: if the send fails, the member is still on the
 	// email step and can simply try again.
-	if err := h.mailer.SendVerificationLink(ctx, h.linkEmail(m.Author, email, token)); err != nil {
+	if err := h.mailer.SendVerificationLink(ctx, h.linkEmail(author, email, token)); err != nil {
 		h.log.Error("send verification email failed", "user_id", reg.UserID, "error", err)
 		h.audit(reg.UserID, reg.ID, store.EventCodeSendFailed,
 			map[string]any{"email": email, "error": err.Error()}, "")
-		h.send(s, m.ChannelID, msgGenericError)
+		h.send(s, channelID, msgGenericError)
 		h.alertMods(s, "🚨 Απέτυχε η αποστολή email στον <@%s> (`%s`): ```%v```",
 			reg.UserID, email, err)
 		return
@@ -128,23 +130,25 @@ func (h *Handler) stepSendEmail(ctx context.Context, s *discordgo.Session, m *di
 	// sent for a registration works, and only until it expires.
 	if err := h.st.BeginCodeStep(ctx, reg.ID, email, linkID, expires); err != nil {
 		h.log.Error("persist link failed", "user_id", reg.UserID, "error", err)
-		h.send(s, m.ChannelID, msgGenericError)
+		h.send(s, channelID, msgGenericError)
 		return
 	}
 	h.audit(reg.UserID, reg.ID, store.EventCodeSent, map[string]any{"email": email}, "")
 
 	if hmuEmailRegex.MatchString(email) {
-		h.send(s, m.ChannelID,
+		h.send(s, channelID,
 			"Τέλεια! Τσέκαρε τα εισερχόμενά σου (https://webmail.edu.hmu.gr) "+
 				"για ένα μήνυμα με θέμα *\"Εγγραφή στο Steki\"*")
 	} else {
-		h.send(s, m.ChannelID,
+		h.send(s, channelID,
 			"Το email που έστειλες αντιστοιχεί σε εξωτερικό τμήμα. "+
 				"Γι' αυτό, θα γραφτείς ως Verified Outsider. Τσέκαρε το ακαδημαϊκό σου email.")
 	}
-	h.send(s, m.ChannelID, fmt.Sprintf(
+	h.sendWithEmailButton(s, channelID, fmt.Sprintf(
 		"Πάτα το κουμπί **Σύνδεση λογαριασμού** στο email και μετά **Αποδοχή** στη σελίδα που θα ανοίξει. "+
-			"Θα μπεις αυτόματα. Ο σύνδεσμος ισχύει για %d λεπτά.", int(linkTTL.Minutes())))
+			"Θα μπεις αυτόματα. Ο σύνδεσμος ισχύει για %d λεπτά.\n\n"+
+			"Έκανες λάθος στη διεύθυνση ή δεν ήρθε το email; Πάτα το κουμπί για να στείλεις άλλη.",
+		int(linkTTL.Minutes())), labelChangeEmail)
 }
 
 // rejectUsedEmail tells the member an address is taken and tells moderators who
@@ -171,7 +175,7 @@ func (h *Handler) rejectUsedEmail(s *discordgo.Session, channelID string, reg *s
 // reminder of where the link is.
 func (h *Handler) stepAwaitingLink(ctx context.Context, s *discordgo.Session, m *discordgo.MessageCreate, reg *store.Registration) {
 	if strings.Contains(m.Content, "@") {
-		h.stepSendEmail(ctx, s, m, reg)
+		h.stepSendEmail(ctx, s, m.ChannelID, m.Author, m.Content, reg)
 		return
 	}
 	if !reg.CodeValid(time.Now()) {
@@ -179,13 +183,14 @@ func (h *Handler) stepAwaitingLink(ctx context.Context, s *discordgo.Session, m 
 		if err := h.st.ResetToEmailStep(ctx, reg.ID); err != nil {
 			h.log.Error("reset after expiry failed", "reg_id", reg.ID, "error", err)
 		}
-		h.send(s, m.ChannelID,
-			"⌛ Ο σύνδεσμος που σου έστειλα έληξε. Στείλε μου ξανά το ακαδημαϊκό σου email για να σου στείλω καινούριο.")
+		h.sendWithEmailButton(s, m.ChannelID,
+			"⌛ Ο σύνδεσμος που σου έστειλα έληξε. Πάτα το κουμπί και γράψε ξανά το ακαδημαϊκό σου email για να σου στείλω καινούριο.",
+			labelRetryEmail)
 		return
 	}
-	h.send(s, m.ChannelID, fmt.Sprintf(
+	h.sendWithEmailButton(s, m.ChannelID, fmt.Sprintf(
 		"Σου έστειλα ήδη έναν σύνδεσμο στο **%s**. Πάτα **Σύνδεση λογαριασμού** στο email για να μπεις. "+
-			"Αν έκανες λάθος στη διεύθυνση, στείλε μου εδώ τη σωστή.", *reg.Email))
+			"Αν έκανες λάθος στη διεύθυνση, πάτα το κουμπί για να στείλεις τη σωστή.", *reg.Email), labelChangeEmail)
 }
 
 // completeVerification finishes a registration whose link was accepted and
@@ -285,6 +290,13 @@ func (h *Handler) restartRegistration(s *discordgo.Session, channelID, userID, g
 		return fmt.Errorf("reset registration: %w", err)
 	}
 	h.audit(userID, reg.ID, store.EventRestarted, nil, "")
+
+	// Channels opened before they became read-only switch over here.
+	ow := memberOverwrite(userID)
+	if err := s.ChannelPermissionSet(channelID, userID, ow.Type, ow.Allow, ow.Deny,
+		discordgo.WithContext(ctx)); err != nil {
+		h.log.Warn("restart: make channel read-only failed", "channel_id", channelID, "error", err)
+	}
 
 	h.purgeChannel(ctx, s, channelID)
 	h.postFlowIntro(s, channelID, userID)

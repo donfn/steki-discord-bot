@@ -101,17 +101,32 @@ func registerChannelData(guildID, userID string) discordgo.GuildChannelCreateDat
 				Type: discordgo.PermissionOverwriteTypeRole,
 				Deny: discordgo.PermissionViewChannel,
 			},
-			{
-				ID:    userID,
-				Type:  discordgo.PermissionOverwriteTypeMember,
-				Allow: discordgo.PermissionViewChannel,
-			},
+			memberOverwrite(userID),
 			{
 				ID:    modViewRoleID,
 				Type:  discordgo.PermissionOverwriteTypeRole,
 				Allow: discordgo.PermissionViewChannel,
 			},
 		},
+	}
+}
+
+// Members can read their register channel and react in it (the interest
+// roles are picked by reaction) but not write: they answer through the
+// buttons and the email form. Moderators keep whatever their roles give them.
+const (
+	registerMemberAllow = discordgo.PermissionViewChannel | discordgo.PermissionReadMessageHistory |
+		discordgo.PermissionAddReactions
+	registerMemberDeny = discordgo.PermissionSendMessages | discordgo.PermissionSendMessagesInThreads |
+		discordgo.PermissionCreatePublicThreads | discordgo.PermissionCreatePrivateThreads
+)
+
+func memberOverwrite(userID string) *discordgo.PermissionOverwrite {
+	return &discordgo.PermissionOverwrite{
+		ID:    userID,
+		Type:  discordgo.PermissionOverwriteTypeMember,
+		Allow: registerMemberAllow,
+		Deny:  registerMemberDeny,
 	}
 }
 
@@ -154,14 +169,10 @@ func (h *Handler) sendWelcome(s *discordgo.Session, channelID, userID string) {
 	h.postFlowIntro(s, channelID, userID)
 }
 
-// postFlowIntro posts the greeting, the restart control and the first
-// question. Shared by a fresh channel and a restarted one.
+// postFlowIntro posts the greeting, the restart button and the email button.
+// Shared by a fresh channel and a restarted one.
 func (h *Handler) postFlowIntro(s *discordgo.Session, channelID, userID string) {
 	h.send(s, channelID, fmt.Sprintf(msgWelcome, userID))
-	if msg := h.send(s, channelID, fmt.Sprintf(msgRestartHint, config.SupportChannelID)); msg != nil {
-		if err := s.MessageReactionAdd(channelID, msg.ID, restartEmoji); err != nil {
-			h.log.Warn("add restart reaction failed", "channel_id", channelID, "error", err)
-		}
-	}
-	h.send(s, channelID, msgAskEmail)
+	h.sendWithButtons(s, channelID, fmt.Sprintf(msgRestartHint, config.SupportChannelID), restartButton())
+	h.sendWithEmailButton(s, channelID, msgAskEmail, labelEnterEmail)
 }
