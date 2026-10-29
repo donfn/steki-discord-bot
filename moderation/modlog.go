@@ -4,6 +4,7 @@ package moderation
 
 import (
 	"log/slog"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/bwmarrin/discordgo"
@@ -11,6 +12,9 @@ import (
 
 // discordMessageLimit is the maximum length of a single Discord message.
 const discordMessageLimit = 2000
+
+// chunkLimit leaves room for the fence markers balanceFences may add.
+const chunkLimit = discordMessageLimit - 8
 
 // Log posts operational messages to the moderator log channel.
 //
@@ -48,16 +52,36 @@ func splitMessage(message string) []string {
 
 	var out []string
 	for len(message) > 0 {
-		if len(message) <= discordMessageLimit {
+		if len(message) <= chunkLimit {
 			out = append(out, message)
 			break
 		}
-		cut := discordMessageLimit
+		cut := chunkLimit
 		for cut > 0 && !utf8.RuneStart(message[cut]) {
 			cut--
 		}
 		out = append(out, message[:cut])
 		message = message[cut:]
 	}
-	return out
+	return balanceFences(out)
+}
+
+// balanceFences closes a ``` block left open at the end of a chunk and
+// reopens it at the start of the next, so member text that was quoted in a
+// code block never spills out as live markdown, mentions or links.
+func balanceFences(chunks []string) []string {
+	open := false
+	for i, c := range chunks {
+		if open {
+			c = "```" + c
+		}
+		if strings.Count(c, "```")%2 == 1 {
+			open = true
+			c += "```"
+		} else {
+			open = false
+		}
+		chunks[i] = c
+	}
+	return chunks
 }

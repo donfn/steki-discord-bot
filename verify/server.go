@@ -101,8 +101,10 @@ func secure(w http.ResponseWriter) {
 	h.Set("Referrer-Policy", "no-referrer")
 	h.Set("X-Frame-Options", "DENY")
 	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Strict-Transport-Security", "max-age=31536000")
+	h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 	h.Set("Cross-Origin-Opener-Policy", "same-origin")
+	h.Set("Cross-Origin-Resource-Policy", "same-origin")
+	h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
 }
 
 // pageCSP allows exactly what the pages load: the pinned ALTCHA script and
@@ -207,7 +209,9 @@ type solveRequest struct {
 // token's link. It writes the error response itself when either fails.
 func (v *Server) readSolve(w http.ResponseWriter, r *http.Request, parse func(string) (*Claims, bool)) (*Claims, bool) {
 	var req solveRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes)).Decode(&req); err != nil {
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil || dec.More() {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad_request"})
 		return nil, false
 	}

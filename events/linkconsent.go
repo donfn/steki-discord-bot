@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/bwmarrin/discordgo"
 
@@ -30,12 +32,40 @@ func displayName(u *discordgo.User) string {
 	return u.Username
 }
 
+// identity is how the email and the consent page name the account being
+// linked. The display name is chosen freely and can mimic someone else, so it
+// is shown with the account's unique @username, with control and bidi
+// characters stripped and the length capped.
+func identity(u *discordgo.User) string {
+	clean := func(s string) string {
+		return truncateRunes(strings.Map(func(r rune) rune {
+			if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+				return -1
+			}
+			return r
+		}, s), 32)
+	}
+	name, handle := clean(displayName(u)), clean(u.Username)
+	if name == handle {
+		return "@" + handle
+	}
+	return name + " (@" + handle + ")"
+}
+
+// truncateRunes cuts s to at most n runes.
+func truncateRunes(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return string(r[:n]) + "…"
+	}
+	return s
+}
+
 // linkEmail describes the registration email for one link.
 func (h *Handler) linkEmail(u *discordgo.User, email, token string) mail.Link {
 	uni := verify.Universities[universityFor(email)]
 	return mail.Link{
 		URL:        h.cfg.PublicURL + "/link?t=" + url.QueryEscape(token),
-		Username:   displayName(u),
+		Username:   identity(u),
 		AvatarURL:  u.AvatarURL("128"),
 		Email:      email,
 		UniName:    uni.Name,
@@ -83,7 +113,7 @@ func (l linkConsenter) Pending(ctx context.Context, c *verify.Claims) (*verify.C
 		return nil, err
 	}
 	return &verify.Consent{
-		Username:   displayName(user),
+		Username:   identity(user),
 		AvatarURL:  user.AvatarURL("128"),
 		Email:      *reg.Email,
 		University: universityFor(*reg.Email),

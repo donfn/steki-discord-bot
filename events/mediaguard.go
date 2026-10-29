@@ -217,6 +217,9 @@ func (g guardLifter) TokenActive(ctx context.Context, c *verify.Claims) (bool, e
 func (g guardLifter) Lift(ctx context.Context, c *verify.Claims) error {
 	h, s := g.h, g.s
 	userID := c.Subject
+	// One lift at a time per member, so duplicate requests queue behind the
+	// first and find the link spent instead of each calling Discord.
+	defer h.lockUser(userID)()
 
 	active, err := h.st.GuardTokenActive(ctx, userID, c.ID)
 	if err != nil {
@@ -226,11 +229,21 @@ func (g guardLifter) Lift(ctx context.Context, c *verify.Claims) error {
 		return verify.ErrLinkUsed
 	}
 
-	err = h.retry(ctx, "member.timeout.clear", func() error {
-		return s.GuildMemberTimeout(c.GuildID, userID, nil, discordgo.WithContext(ctx))
-	})
-	if err != nil && !dc.IsMissingResource(err) {
-		return fmt.Errorf("clear timeout: %w", err)
+	// A timeout that runs past this link's own belongs to a newer
+	// restriction or a moderator, and a captcha must not undo it.
+	foreign := false
+	if m, merr := s.GuildMember(c.GuildID, userID, discordgo.WithContext(ctx)); merr == nil &&
+		m.CommunicationDisabledUntil != nil && c.ExpiresAt != nil &&
+		m.CommunicationDisabledUntil.After(c.ExpiresAt.Add(time.Minute)) {
+		foreign = true
+	}
+	if !foreign {
+		err = h.retry(ctx, "member.timeout.clear", func() error {
+			return s.GuildMemberTimeout(c.GuildID, userID, nil, discordgo.WithContext(ctx))
+		})
+		if err != nil && !dc.IsMissingResource(err) {
+			return fmt.Errorf("clear timeout: %w", err)
+		}
 	}
 
 	dm, err := h.st.ConsumeGuardToken(ctx, userID, c.ID, time.Now().Add(guardExemption))

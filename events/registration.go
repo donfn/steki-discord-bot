@@ -72,9 +72,15 @@ func (h *Handler) stepSendEmail(ctx context.Context, s *discordgo.Session,
 		return result(cardInvalid)
 	}
 
-	if reg.CodeSentCount >= maxCodeSends {
-		h.alertMods(s, "⚠️ Ο χρήστης <@%s> ζήτησε %d email εγγραφής. Πιθανή κατάχρηση.",
+	if reg.CodeSentCount >= maxCodeSends ||
+		!h.gate.allow("mail-user:"+reg.UserID, maxMailsPerUserHour, time.Hour) {
+		h.alertModsOnce(s, "toomany:"+reg.UserID, "⚠️ Ο χρήστης <@%s> ζήτησε %d email εγγραφής. Πιθανή κατάχρηση.",
 			reg.UserID, reg.CodeSentCount)
+		return result(cardTooMany)
+	}
+
+	if !h.gate.allow("mail-addr:"+email, maxMailsPerAddrHour, time.Hour) ||
+		!h.gate.allow("mail-all", maxMailsPerHour, time.Hour) {
 		return result(cardTooMany)
 	}
 
@@ -132,7 +138,7 @@ func (h *Handler) reportUsedEmail(s *discordgo.Session, reg *store.Registration,
 	}
 	h.audit(reg.UserID, reg.ID, store.EventEmailInUse,
 		map[string]any{"email": email, "owner": owner, "legacy": use.Legacy}, "")
-	h.alertMods(s, "ℹ️ Ο <@%s> δοκίμασε το `%s`, που ανήκει ήδη σε %s.",
+	h.alertModsOnce(s, "inuse:"+reg.UserID+email, "ℹ️ Ο <@%s> δοκίμασε το `%s`, που ανήκει ήδη σε %s.",
 		reg.UserID, email, owner)
 }
 

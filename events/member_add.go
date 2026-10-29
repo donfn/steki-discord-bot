@@ -26,6 +26,10 @@ func (h *Handler) onMemberAdd(s *discordgo.Session, m *discordgo.GuildMemberAdd)
 		// registration channel.
 		h.log.Error("record member join failed", "user_id", m.User.ID, "error", err)
 	}
+	if !h.gate.allow("joins", joinsPerWindow, joinWindow) {
+		h.alertModsOnce(s, "raid", "🚨 Ασυνήθιστα πολλές εισόδους (>%d σε %d λεπτά). Πιθανή επίθεση raid· ελέγξτε τον server.",
+			joinsPerWindow, int(joinWindow.Minutes()))
+	}
 	h.audit(m.User.ID, "", store.EventJoined, map[string]any{"username": m.User.Username}, "")
 
 	h.ensureRegisterChannel(s, m.GuildID, m.User)

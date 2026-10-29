@@ -142,6 +142,11 @@ func (h *Handler) logPage(ctx context.Context, s *discordgo.Session, beforeID, a
 func (h *Handler) saveLogPage(ctx context.Context, st *store.LogScan, msgs []*discordgo.Message) error {
 	var evidence []store.LogEvidence
 	for _, m := range msgs {
+		// Only the bot's own posts are evidence: a member's text must never
+		// be able to claim an address, whatever it says.
+		if m.Author == nil || !m.Author.Bot {
+			continue
+		}
 		if e, ok := legacylog.Parse(m.ID, m.Content, m.Timestamp); ok {
 			evidence = append(evidence, e)
 		}

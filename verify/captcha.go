@@ -87,5 +87,30 @@ func (t *Tokens) checkSolution(payload, linkID string) bool {
 		HMACSignatureSecret:    sig,
 		HMACKeySignatureSecret: keySig,
 	})
-	return err == nil && res.Verified && !res.Expired
+	if err != nil || !res.Verified || res.Expired {
+		return false
+	}
+	// A solution is single-use: replaying it would let one proof of work
+	// buy any number of requests until the challenge expires.
+	return t.spend(p.Challenge.Signature)
+}
+
+// spend records a solved challenge and reports whether it was fresh.
+func (t *Tokens) spend(sig string) bool {
+	if sig == "" {
+		return false
+	}
+	t.spentMu.Lock()
+	defer t.spentMu.Unlock()
+	now := time.Now()
+	for k, exp := range t.spent {
+		if now.After(exp) {
+			delete(t.spent, k)
+		}
+	}
+	if _, dup := t.spent[sig]; dup {
+		return false
+	}
+	t.spent[sig] = now.Add(challengeTTL + time.Minute)
+	return true
 }

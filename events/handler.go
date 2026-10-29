@@ -47,6 +47,9 @@ type Handler struct {
 	// interleave and, for instance, create two channels.
 	users keyedMutex
 
+	// gate rate-limits abuse-prone actions across registrations.
+	gate rateGates
+
 	bootTime    time.Time
 	guild       atomic.Value // string: the Steki guild, see onGuildCreate
 	processed   atomic.Int64
@@ -185,6 +188,14 @@ func (h *Handler) safely(name string, fn func()) {
 // could not be created, which previously vanished into stdout.
 func (h *Handler) alertMods(s *discordgo.Session, format string, args ...any) {
 	h.modlog.Post(s, fmt.Sprintf(format, args...))
+}
+
+// alertModsOnce is alertMods limited to one post per key per alertEvery, so a
+// member repeating an action cannot flood the mod log.
+func (h *Handler) alertModsOnce(s *discordgo.Session, key, format string, args ...any) {
+	if h.gate.allow("alert:"+key, 1, alertEvery) {
+		h.alertMods(s, format, args...)
+	}
 }
 
 // audit writes an audit event, logging rather than propagating failures: the

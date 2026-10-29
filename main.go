@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -74,6 +75,9 @@ func run() error {
 	}
 
 	pages := verify.NewServer(verify.NewTokens(cfg.JWTSecret), h.GuardLifter(sess), h.LinkConsenter(sess), logger)
+	if len(cfg.JWTSecret) < 32 {
+		logger.Warn("JWT_SECRET is shorter than 32 characters; use a long random value")
+	}
 	logger.Info("verification pages enabled", "public_url", cfg.PublicURL)
 	srv := startHTTPServer(cfg.Port, st, pages, logger)
 
@@ -104,10 +108,20 @@ func run() error {
 func startHTTPServer(port string, st *store.Store, pages *verify.Server, logger *slog.Logger) *http.Server {
 	mux := http.NewServeMux()
 	pages.Register(mux)
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
-		defer cancel()
-		if err := st.Ping(ctx); err != nil {
+	// Health is probed in the background and cached, so a flood of public
+	// requests never reaches the database pool.
+	var dbHealthy atomic.Bool
+	dbHealthy.Store(true)
+	go func() {
+		for {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			dbHealthy.Store(st.Ping(ctx) == nil)
+			cancel()
+			time.Sleep(5 * time.Second)
+		}
+	}()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		if !dbHealthy.Load() {
 			http.Error(w, "database unreachable", http.StatusServiceUnavailable)
 			return
 		}
@@ -119,7 +133,7 @@ func startHTTPServer(port string, st *store.Store, pages *verify.Server, logger 
 	// bounded: a client that trickles bytes cannot hold connections open.
 	srv := &http.Server{
 		Addr:              ":" + port,
-		Handler:           mux,
+		Handler:           verify.Harden(mux, logger),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      30 * time.Second,

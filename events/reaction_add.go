@@ -4,7 +4,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-// onReactionAdd implements the restart control and the interest-role picker.
+// onReactionAdd implements the legacy restart reaction.
 // Both only apply inside the reacting member's own registration channel.
 func (h *Handler) onReactionAdd(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
 	if !h.inHomeGuild(r.GuildID) || (s.State.User != nil && r.UserID == s.State.User.ID) {
@@ -18,8 +18,10 @@ func (h *Handler) onReactionAdd(s *discordgo.Session, r *discordgo.MessageReacti
 	if err != nil {
 		return
 	}
+	// A thread or forum post can carry any name a member likes, so only a
+	// plain text channel counts as a register channel.
 	owner, ok := userIDFromChannelName(ch.Name)
-	if !ok || owner != r.UserID {
+	if !ok || ch.Type != discordgo.ChannelTypeGuildText || owner != r.UserID {
 		return
 	}
 
@@ -30,16 +32,9 @@ func (h *Handler) onReactionAdd(s *discordgo.Session, r *discordgo.MessageReacti
 		return
 	}
 
-	roleID, known := reactionRoles[r.Emoji.Name]
-	if !known {
-		// APIName is "name:id" for custom emoji, which the endpoint requires.
-		if err := s.MessageReactionRemove(r.ChannelID, r.MessageID, r.Emoji.APIName(), r.UserID); err != nil {
-			h.log.Debug("remove unknown reaction failed", "emoji", r.Emoji.Name, "error", err)
-		}
-		return
-	}
-
-	if err := h.grantRole(ctx, s, r.GuildID, r.UserID, roleID); err != nil {
-		h.log.Error("add interest role failed", "user_id", r.UserID, "role_id", roleID, "error", err)
+	// Nothing else is a control here. Reactions never grant roles: the
+	// verified role is only ever given by the email link.
+	if err := s.MessageReactionRemove(r.ChannelID, r.MessageID, r.Emoji.APIName(), r.UserID); err != nil {
+		h.log.Debug("remove unknown reaction failed", "emoji", r.Emoji.Name, "error", err)
 	}
 }

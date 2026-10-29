@@ -194,8 +194,8 @@ func TestSolveLiftsOnceThenLinkIsSpent(t *testing.T) {
 		t.Fatalf("lifted = %d", fl.lifted)
 	}
 
-	// Replaying the same payload and link must not lift again.
-	if code, body := postSolve(t, srv, token, payload); code != http.StatusGone || body["error"] != "invalid" {
+	// Replaying the same payload must be refused: a solution is single-use.
+	if code, body := postSolve(t, srv, token, payload); code != http.StatusUnprocessableEntity || body["error"] != "captcha" {
 		t.Fatalf("replay = %d %v", code, body)
 	}
 
@@ -311,7 +311,7 @@ func TestLinkAcceptOnceThenSpent(t *testing.T) {
 	if code, body := postTo(t, e.srv, "/link/accept", token, payload); code != http.StatusOK {
 		t.Fatalf("accept = %d %v", code, body)
 	}
-	if code, body := postTo(t, e.srv, "/link/accept", token, payload); code != http.StatusGone || body["error"] != "invalid" {
+	if code, body := postTo(t, e.srv, "/link/accept", token, payload); code != http.StatusUnprocessableEntity || body["error"] != "captcha" {
 		t.Fatalf("replay = %d %v", code, body)
 	}
 	if e.fc.accepted != 1 {

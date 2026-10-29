@@ -67,3 +67,46 @@ func TestQuoteNeutralisesCodeBlockBreakout(t *testing.T) {
 		t.Fatalf("SafeMentions allows more than user pings: %+v", SafeMentions.Parse)
 	}
 }
+
+func TestLinkHostIgnoresAtSignAfterAuthority(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://evil.com?@discord.com":  "evil.com",
+		"https://evil.com#@discord.com":  "evil.com",
+		"https://evil.com\\@discord.com": "evil.com",
+	} {
+		if got := linkHost(in); got != want {
+			t.Errorf("linkHost(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestTrustedDomainSubdomainsNeverMatch(t *testing.T) {
+	f := feedWith(t, "x.google.com", "evil.com")
+	if _, ok := f.Match("x.google.com"); ok {
+		t.Error("feed entry under a trusted domain matched")
+	}
+	if _, ok := f.Match("a.evil.com"); !ok {
+		t.Error("evil.com subdomain not matched")
+	}
+}
+
+func TestBareDomainsAreScreened(t *testing.T) {
+	if got := bareRegex.FindAllString("go to evil.com/login now", -1); len(got) != 1 || got[0] != "evil.com/login" {
+		t.Fatalf("bare = %q", got)
+	}
+}
+
+func TestQuoteStripsControlAndBidi(t *testing.T) {
+	if got := Quote("a‮b`c\x00"); got != "abˋc" {
+		t.Fatalf("Quote = %q", got)
+	}
+}
+
+func TestSplitMessageKeepsFencesBalanced(t *testing.T) {
+	msg := "```" + strings.Repeat("a", 3000) + "```"
+	for i, c := range splitMessage(msg) {
+		if strings.Count(c, "```")%2 != 0 || len(c) > discordMessageLimit {
+			t.Fatalf("chunk %d unbalanced or too long (%d)", i, len(c))
+		}
+	}
+}

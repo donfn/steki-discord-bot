@@ -307,7 +307,7 @@ func (h *Handler) reconcile(s *discordgo.Session) {
 	}
 	for _, ch := range channels {
 		userID, ok := userIDFromChannelName(ch.Name)
-		if !ok || createdAfter(ch.ID, listedAt) {
+		if !ok || ch.Type != discordgo.ChannelTypeGuildText || createdAfter(ch.ID, listedAt) {
 			// A channel newer than the row snapshot belongs to a join this
 			// pass cannot see yet; it is not an orphan.
 			continue

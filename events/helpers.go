@@ -68,7 +68,7 @@ func userIDFromChannelName(name string) (string, bool) {
 
 // isRegisterChannel reports whether a channel is somebody's register channel.
 func isRegisterChannel(ch *discordgo.Channel) bool {
-	if ch == nil {
+	if ch == nil || ch.Type != discordgo.ChannelTypeGuildText {
 		return false
 	}
 	_, ok := userIDFromChannelName(ch.Name)
@@ -92,7 +92,7 @@ func truncate(s string, limit int) string {
 // quote makes user-supplied text safe to embed in a ``` code block, where a
 // stray backtick run would otherwise end the block early.
 func quote(s string) string {
-	return strings.ReplaceAll(s, "`", "ˋ")
+	return moderation.Quote(s)
 }
 
 // channel resolves a channel, preferring the state cache.

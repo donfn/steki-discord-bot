@@ -113,10 +113,15 @@ func (f *PhishFeed) Match(host string) (string, bool) {
 		return "", false
 	}
 	host = normalizeDomain(host)
-	for host != "" && strings.Contains(host, ".") {
-		if neverPhishing[host] {
+	// Trusted domains cover their subdomains too, so a feed entry for
+	// "x.google.com" can never block a link to Google.
+	for h := host; h != "" && strings.Contains(h, "."); {
+		if neverPhishing[h] {
 			return "", false
 		}
+		_, h, _ = strings.Cut(h, ".")
+	}
+	for host != "" && strings.Contains(host, ".") {
 		if _, ok := (*d)[host]; ok {
 			return host, true
 		}
@@ -149,7 +154,12 @@ func linkHost(link string) string {
 		link = "https://" + link
 	}
 	rest := link[strings.Index(link, "://")+3:]
-	if at := strings.LastIndex(strings.SplitN(rest, "/", 2)[0], "@"); at >= 0 {
+	// The authority ends at the first of / ? # or \; an @ after that point
+	// belongs to the path, not to userinfo.
+	if end := strings.IndexAny(rest, "/?#\\"); end >= 0 {
+		rest = rest[:end]
+	}
+	if at := strings.LastIndex(rest, "@"); at >= 0 {
 		rest = rest[at+1:] // userinfo: "https://discord.com@evil.com" opens evil.com
 	}
 	end := strings.IndexFunc(rest, func(r rune) bool {

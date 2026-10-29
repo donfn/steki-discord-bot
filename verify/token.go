@@ -8,6 +8,7 @@ package verify
 
 import (
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -40,11 +41,14 @@ type Claims struct {
 // Tokens issues and checks verification links.
 type Tokens struct {
 	secret []byte
+
+	spentMu sync.Mutex
+	spent   map[string]time.Time
 }
 
 // NewTokens returns a signer for the given secret.
 func NewTokens(secret string) *Tokens {
-	return &Tokens{secret: []byte(secret)}
+	return &Tokens{secret: []byte(secret), spent: make(map[string]time.Time)}
 }
 
 // Issue signs a link for one restriction that stops working at expires.

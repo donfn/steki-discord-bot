@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -20,6 +21,11 @@ const timeoutDuration = 24 * time.Hour
 // against the phishing feed in their punycode form.
 var urlRegex = regexp.MustCompile("(?i)\\bhttps?://[^\\s<>\"'`]+|\\bwww\\.[^\\s<>\"'`]+")
 
+// bareRegex matches scheme-less domains ("evil.com/login"), which Discord
+// also turns into links. It is used only for screening, not for counting
+// links, because ordinary text like "e.g." or "main.go" can look like one.
+var bareRegex = regexp.MustCompile("(?i)(?:[\\p{L}\\p{N}](?:[\\p{L}\\p{N}-]*[\\p{L}\\p{N}])?\\.)+\\p{L}{2,}(?:[/?#][^\\s<>\"'`]*)?")
+
 // ContainsURL reports whether text contains anything that looks like a link.
 func ContainsURL(text string) bool {
 	return urlRegex.MatchString(text)
@@ -31,9 +37,19 @@ var SafeMentions = &discordgo.MessageAllowedMentions{
 	Parse: []discordgo.AllowedMentionType{discordgo.AllowedMentionTypeUsers},
 }
 
-// Quote makes member text safe to embed in a ``` code block, where a stray
-// backtick run would otherwise end the block early.
+// Quote makes member text safe to embed in a ``` code block: backticks that
+// would end the block early are replaced, and control and bidirectional
+// characters that could reorder or hide the text are dropped.
 func Quote(s string) string {
+	s = strings.Map(func(r rune) rune {
+		switch {
+		case r == '\n' || r == '\t':
+			return r
+		case unicode.IsControl(r), unicode.Is(unicode.Cf, r):
+			return -1
+		}
+		return r
+	}, s)
 	return strings.ReplaceAll(s, "`", "ˋ")
 }
 
@@ -87,7 +103,7 @@ func (l *LinkChecker) Check(s *discordgo.Session, m *discordgo.Message) bool {
 	}
 
 	text := Text(m)
-	links := urlRegex.FindAllString(text, -1)
+	links := append(urlRegex.FindAllString(text, -1), bareRegex.FindAllString(text, -1)...)
 	if len(links) == 0 {
 		return false
 	}
@@ -119,7 +135,7 @@ const (
 
 // punish warns the member, times them out and removes the message.
 func (l *LinkChecker) punish(s *discordgo.Session, m *discordgo.Message, text string, kind hitKind, matched string) {
-	quoted := Quote(text)
+	quoted := Quote(truncateRunes(text, 1000))
 	reason, modReason := "περιέχει συνδέσμους με μη επιτρεπτές λέξεις",
 		fmt.Sprintf("σύνδεσμο με μη επιτρεπτή λέξη (`%s`)", matched)
 	if kind == phishingHit {
@@ -155,4 +171,14 @@ func (l *LinkChecker) punish(s *discordgo.Session, m *discordgo.Message, text st
 	}
 	l.log.Info("removed flagged link",
 		"user_id", m.Author.ID, "channel_id", m.ChannelID, "kind", kind, "matched", matched)
+}
+
+// truncateRunes cuts s to at most n runes, so a quoted message always fits
+// inside one log post and DM.
+func truncateRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
 }
