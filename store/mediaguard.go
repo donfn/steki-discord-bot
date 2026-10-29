@@ -26,57 +26,62 @@ func FlagTrips(windowStart *time.Time, now time.Time, window time.Duration) bool
 // tokenID as the outstanding verification link and returns true. A member
 // still inside a post-captcha exemption is never tripped.
 func (s *Store) RecordFlaggedPost(ctx context.Context, userID, guildID, tokenID string, now time.Time, window time.Duration) (bool, error) {
-	tx, err := s.pool.Begin(ctx)
+	// Transactions begin IMMEDIATE, so this read-then-write cannot interleave
+	// with another writer: the lock a SELECT ... FOR UPDATE would take is held
+	// from the start.
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
+	defer func() { _ = tx.Rollback() }()
 
-	if _, err := tx.Exec(ctx, `
-		insert into media_guard (user_id, guild_id) values ($1, $2)
-		on conflict (user_id) do nothing`, userID, guildID); err != nil {
+	if _, err := tx.ExecContext(ctx, `
+		insert into media_guard (user_id, guild_id, updated_at) values (?1, ?2, ?3)
+		on conflict (user_id) do nothing`, userID, guildID, ms(time.Now())); err != nil {
 		return false, fmt.Errorf("insert media_guard: %w", err)
 	}
 
 	var windowStart, exemptUntil *time.Time
-	if err := tx.QueryRow(ctx, `
+	if err := tx.QueryRowContext(ctx, `
 		select window_start, exempt_until from media_guard
-		where user_id = $1 for update`, userID).Scan(&windowStart, &exemptUntil); err != nil {
+		where user_id = ?1`, userID).
+		Scan(nullTimeDest{&windowStart}, nullTimeDest{&exemptUntil}); err != nil {
 		return false, err
 	}
 
 	if exemptUntil != nil && now.Before(*exemptUntil) {
-		return false, tx.Commit(ctx)
+		return false, tx.Commit()
 	}
 
 	tripped := FlagTrips(windowStart, now, window)
 	if tripped {
-		_, err = tx.Exec(ctx, `
+		_, err = tx.ExecContext(ctx, `
 			update media_guard set
-				guild_id      = $2,
+				guild_id      = ?2,
 				window_start  = null,
-				token_id      = $3,
-				restricted_at = $4,
+				token_id      = ?3,
+				restricted_at = ?4,
 				dm_channel_id = null,
 				dm_message_id = null,
-				updated_at    = now()
-			where user_id = $1`, userID, guildID, tokenID, now)
+				updated_at    = ?5
+			where user_id = ?1`, userID, guildID, tokenID, ms(now), ms(time.Now()))
 	} else {
-		_, err = tx.Exec(ctx, `
-			update media_guard set guild_id = $2, window_start = $3, updated_at = now()
-			where user_id = $1`, userID, guildID, now)
+		_, err = tx.ExecContext(ctx, `
+			update media_guard set guild_id = ?2, window_start = ?3, updated_at = ?4
+			where user_id = ?1`, userID, guildID, ms(now), ms(time.Now()))
 	}
 	if err != nil {
 		return false, err
 	}
-	return tripped, tx.Commit(ctx)
+	return tripped, tx.Commit()
 }
 
 // SetGuardDM remembers which DM carries the member's verification link.
 func (s *Store) SetGuardDM(ctx context.Context, userID, tokenID string, dm GuardDM) error {
-	_, err := s.pool.Exec(ctx, `
-		update media_guard set dm_channel_id = $3, dm_message_id = $4, updated_at = now()
-		where user_id = $1 and token_id = $2`, userID, tokenID, dm.ChannelID, dm.MessageID)
+	_, err := s.db.ExecContext(ctx, `
+		update media_guard set dm_channel_id = ?3, dm_message_id = ?4, updated_at = ?5
+		where user_id = ?1 and token_id = ?2`,
+		userID, tokenID, dm.ChannelID, dm.MessageID, ms(time.Now()))
 	return err
 }
 
@@ -84,8 +89,8 @@ func (s *Store) SetGuardDM(ctx context.Context, userID, tokenID string, dm Guard
 // unused verification link.
 func (s *Store) GuardTokenActive(ctx context.Context, userID, tokenID string) (bool, error) {
 	var ok bool
-	err := s.pool.QueryRow(ctx, `
-		select exists (select 1 from media_guard where user_id = $1 and token_id = $2)`,
+	err := s.db.QueryRowContext(ctx, `
+		select exists (select 1 from media_guard where user_id = ?1 and token_id = ?2)`,
 		userID, tokenID).Scan(&ok)
 	return ok, err
 }
@@ -96,14 +101,15 @@ func (s *Store) GuardTokenActive(ctx context.Context, userID, tokenID string) (b
 func (s *Store) ConsumeGuardToken(ctx context.Context, userID, tokenID string, exemptUntil time.Time) (GuardDM, error) {
 	var dm GuardDM
 	var ch, msg *string
-	err := s.pool.QueryRow(ctx, `
+	err := s.db.QueryRowContext(ctx, `
 		update media_guard set
 			token_id      = null,
 			restricted_at = null,
-			exempt_until  = $3,
-			updated_at    = now()
-		where user_id = $1 and token_id = $2
-		returning dm_channel_id, dm_message_id`, userID, tokenID, exemptUntil).Scan(&ch, &msg)
+			exempt_until  = ?3,
+			updated_at    = ?4
+		where user_id = ?1 and token_id = ?2
+		returning dm_channel_id, dm_message_id`,
+		userID, tokenID, ms(exemptUntil), ms(time.Now())).Scan(&ch, &msg)
 	if err != nil {
 		return dm, noRows(err)
 	}
@@ -120,9 +126,9 @@ func (s *Store) ConsumeGuardToken(ctx context.Context, userID, tokenID string, e
 // a post, for detections strong enough to restrict on their own (the same
 // message across many channels). It ignores any post-captcha exemption.
 func (s *Store) ForceRestriction(ctx context.Context, userID, guildID, tokenID string, now time.Time) error {
-	_, err := s.pool.Exec(ctx, `
-		insert into media_guard (user_id, guild_id, token_id, restricted_at)
-		values ($1, $2, $3, $4)
+	_, err := s.db.ExecContext(ctx, `
+		insert into media_guard (user_id, guild_id, token_id, restricted_at, updated_at)
+		values (?1, ?2, ?3, ?4, ?5)
 		on conflict (user_id) do update set
 			guild_id      = excluded.guild_id,
 			window_start  = null,
@@ -130,7 +136,8 @@ func (s *Store) ForceRestriction(ctx context.Context, userID, guildID, tokenID s
 			restricted_at = excluded.restricted_at,
 			dm_channel_id = null,
 			dm_message_id = null,
-			updated_at    = now()`, userID, guildID, tokenID, now)
+			updated_at    = excluded.updated_at`,
+		userID, guildID, tokenID, ms(now), ms(time.Now()))
 	return err
 }
 
@@ -146,10 +153,11 @@ type GuardState struct {
 // have never posted an attachment or a link.
 func (s *Store) GuardStatus(ctx context.Context, userID string) (*GuardState, error) {
 	var g GuardState
-	err := s.pool.QueryRow(ctx, `
+	err := s.db.QueryRowContext(ctx, `
 		select window_start, exempt_until, restricted_at, token_id is not null
-		from media_guard where user_id = $1`, userID).
-		Scan(&g.WindowStart, &g.ExemptUntil, &g.RestrictedAt, &g.LinkPending)
+		from media_guard where user_id = ?1`, userID).
+		Scan(nullTimeDest{&g.WindowStart}, nullTimeDest{&g.ExemptUntil},
+			nullTimeDest{&g.RestrictedAt}, &g.LinkPending)
 	if err != nil {
 		return nil, noRows(err)
 	}
@@ -159,11 +167,13 @@ func (s *Store) GuardStatus(ctx context.Context, userID string) (*GuardState, er
 // ClearExemption ends a member's post-captcha grace period early, reporting
 // whether one was running.
 func (s *Store) ClearExemption(ctx context.Context, userID string) (bool, error) {
-	tag, err := s.pool.Exec(ctx, `
-		update media_guard set exempt_until = null, updated_at = now()
-		where user_id = $1 and exempt_until > now()`, userID)
+	now := ms(time.Now())
+	res, err := s.db.ExecContext(ctx, `
+		update media_guard set exempt_until = null, updated_at = ?2
+		where user_id = ?1 and exempt_until > ?2`, userID, now)
 	if err != nil {
 		return false, err
 	}
-	return tag.RowsAffected() > 0, nil
+	n, err := res.RowsAffected()
+	return n > 0, err
 }

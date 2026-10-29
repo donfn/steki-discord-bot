@@ -14,12 +14,29 @@ import (
 func feedWith(t *testing.T, domains ...string) *PhishFeed {
 	t.Helper()
 	f := NewPhishFeed(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	set := map[string]struct{}{}
-	for _, d := range domains {
-		set[d] = struct{}{}
-	}
-	f.domains.Store(&set)
+	f.set.Store(newDomainSet(domains...))
 	return f
+}
+
+func TestParseDomainsJSONStreams(t *testing.T) {
+	var got []string
+	body := `{"updated":"2026-01-01","domains":["a.example","b.example"],"extra":{"x":[1,2]}}`
+	if err := parseDomainsJSON(strings.NewReader(body), func(d string) { got = append(got, d) }); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(got, ",") != "a.example,b.example" {
+		t.Fatalf("got %v", got)
+	}
+	if err := parseDomainsJSON(strings.NewReader(`[1,2]`), func(string) {}); err == nil {
+		t.Fatal("a JSON array was accepted as a feed")
+	}
+}
+
+func TestDomainSetDedupes(t *testing.T) {
+	s := newDomainSet("a.example", "b.example", "a.example")
+	if len(s.hashes) != 2 || !s.has("a.example") || s.has("c.example") {
+		t.Fatalf("hashes=%d has(a)=%v has(c)=%v", len(s.hashes), s.has("a.example"), s.has("c.example"))
+	}
 }
 
 func TestPhishFeedMatch(t *testing.T) {
@@ -89,11 +106,11 @@ func TestRefreshMergesAndKeepsGoodListOnFailure(t *testing.T) {
 	phishFeeds = append(phishFeeds,
 		struct {
 			url   string
-			parse func(io.Reader) ([]string, error)
+			parse func(io.Reader, func(string)) error
 		}{srv.URL + "/txt", parseLines},
 		struct {
 			url   string
-			parse func(io.Reader) ([]string, error)
+			parse func(io.Reader, func(string)) error
 		}{srv.URL + "/json", parseDomainsJSON},
 	)
 

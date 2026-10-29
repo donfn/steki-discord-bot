@@ -5,16 +5,18 @@ given a private `register-<id>` channel and send their student email there. The
 bot emails them a link (via Resend) to a consent page that shows their Discord
 avatar beside the address and the university's logo; accepting it, behind an
 invisible ALTCHA proof of work, binds the address and grants the role at once.
-State lives in PostgreSQL.
+State lives in an embedded SQLite file, so there is no database server to run.
 
 ## Configuration
 
-Four variables are required; the rest have sane defaults. See `.env.example`.
+Three variables are required (plus a public URL); the rest have sane defaults.
+See `.env.example`.
 
 | Variable        | Required | Purpose                                            |
 |-----------------|----------|----------------------------------------------------|
 | `DISCORD_TOKEN` | yes      | Bot token                                          |
-| `DATABASE_URL`  | yes      | Postgres DSN (`${{Postgres.DATABASE_URL}}` on Railway) |
+| `DATABASE_PATH` | no       | SQLite file. Defaults to `steki.db` inside the Railway volume (`RAILWAY_VOLUME_MOUNT_PATH`), or the working directory off Railway. On Railway the bot refuses to start without a volume, since the database would be erased on every deploy |
+| `DATABASE_URL`  | no       | Old Postgres DSN, read only to copy its data across once (see [Moving off Postgres](#moving-off-postgres)) |
 | `RESEND_API_KEY`| yes      | Resend API key                                     |
 | `JWT_SECRET`    | yes      | Signs email and captcha links (`openssl rand -hex 32`) |
 | `PUBLIC_URL`    | on Railway, no | Base URL of the pages; defaults to `RAILWAY_PUBLIC_DOMAIN` |
@@ -45,7 +47,46 @@ go run .
 ```
 
 The schema is created automatically on first boot (embedded migrations in
-`store/migrations`, applied under a Postgres advisory lock).
+`store/migrations`). The database is the file `steki.db` next to where you run
+it; delete it to start over. The store's tests run against throwaway SQLite
+files, so `go test ./...` needs no database.
+
+## Memory footprint
+
+The whole deployment is the bot process and one SQLite file on a volume; there
+is no database service. What keeps the process small:
+
+- **SQLite instead of Postgres.** The database runs inside the bot with two
+  connections and a 1 MiB page cache each, replacing a separate Postgres
+  service that idled at 50-70 MB.
+- **A soft Go heap limit of 24 MiB and `GOGC=40`** (`tuneRuntime` in `main.go`);
+  `GOMEMLIMIT` and `GOGC` in the environment override them.
+- **Only the discordgo state the bot reads is tracked**: channels, roles and
+  members. Presences, voice, emojis, stickers and threads are switched off, and
+  the unused emoji intent is not requested.
+- **A fixed ring of the last 1500 messages** (`events/msgcache.go`) backs the
+  edit and delete logs, instead of discordgo's cache of 200 messages for every
+  channel.
+- **The phishing feeds are streamed into a sorted slice of 64-bit hashes**, 8
+  bytes a domain rather than a map of strings (about 0.7 MB instead of 7.5 MB
+  for 90,000 domains), and never held as a full list while refreshing.
+- **The hourly reconciler keeps a trimmed copy of each member** rather than the
+  whole decoded payload.
+
+## Moving off Postgres
+
+Earlier versions kept their data in Railway Postgres. To move it:
+
+1. Attach a volume to the bot service (any mount path, e.g. `/data`).
+2. Keep `DATABASE_URL` pointing at the Postgres service (it already does, via
+   `${{Postgres.DATABASE_URL}}`) and deploy this version.
+3. On that first boot, with an empty SQLite file, the bot copies all nine tables
+   in one consistent snapshot, checks the row counts, and records the import in
+   `schema_migrations` so it never runs again. If the copy fails the bot does not
+   start, because an empty database would let members reuse taken addresses.
+4. Once the log shows `imported postgres data`, remove `DATABASE_URL` and delete
+   the Postgres service. The import code in `store/pgimport.go` and the pgx
+   dependency can then be deleted too.
 
 ## How it stays stable
 

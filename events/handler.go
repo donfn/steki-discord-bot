@@ -38,6 +38,8 @@ type Handler struct {
 	tokens *verify.Tokens
 	// dups tracks recent messages for cross-channel duplicate detection.
 	dups *dupTracker
+	// msgs remembers recent message text for the edit and delete logs.
+	msgs *msgCache
 	// invites caches whether an invite code points at the Steki guild.
 	invitesMu sync.Mutex
 	invites   map[string]bool
@@ -80,6 +82,7 @@ func NewHandler(cfg *config.Config, st *store.Store, logger *slog.Logger) *Handl
 		linkChk:  moderation.NewLinkChecker(cfg.URLBlacklist, phish, modlog, logger),
 		phish:    phish,
 		dups:     newDupTracker(),
+		msgs:     newMsgCache(msgCacheSize),
 		invites:  map[string]bool{},
 		modlog:   modlog,
 		placer:   dc.NewPlacer(config.RegisterCategoryID, logger),

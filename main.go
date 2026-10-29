@@ -4,10 +4,12 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -21,14 +23,33 @@ import (
 	"steki-bot/verify"
 )
 
-// messageCacheSize is how many recent messages per channel discordgo keeps,
-// which bounds how far back an edit or deletion can still be reported.
-const messageCacheSize = 200
+const (
+	// memoryLimit is the soft ceiling the Go runtime holds the heap under. The
+	// bot's live data is a few megabytes; without a limit the collector lets
+	// the heap grow to twice that between cycles and the scavenger returns
+	// the slack slowly. GOMEMLIMIT in the environment overrides it.
+	memoryLimit = 24 << 20
+	// gcPercent collects sooner than the default 100, trading a little CPU
+	// (the bot idles near zero) for a smaller resident set.
+	gcPercent = 40
+)
 
 func main() {
+	tuneRuntime()
 	if err := run(); err != nil {
 		slog.Error("fatal", "error", err)
 		os.Exit(1)
+	}
+}
+
+// tuneRuntime sets the garbage collector's targets, unless the operator has
+// set GOGC or GOMEMLIMIT, which then win.
+func tuneRuntime() {
+	if os.Getenv("GOGC") == "" {
+		debug.SetGCPercent(gcPercent)
+	}
+	if os.Getenv("GOMEMLIMIT") == "" {
+		debug.SetMemoryLimit(memoryLimit)
 	}
 }
 
@@ -42,16 +63,31 @@ func run() error {
 	slog.SetDefault(logger)
 	logger.Info("starting steki-bot")
 
-	// Give the database a generous window: on Railway the bot and Postgres
-	// may start together, and Open retries until it answers.
 	dbCtx, dbCancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	st, err := store.Open(dbCtx, cfg.DatabaseURL, logger)
-	dbCancel()
+	st, err := store.Open(dbCtx, cfg.DatabasePath, logger)
 	if err != nil {
+		dbCancel()
 		return err
 	}
 	defer st.Close()
-	logger.Info("database ready")
+	// The data of the Postgres-era bot is copied across exactly once. If the
+	// copy fails the bot does not start: an empty database would let members
+	// reuse addresses that were already taken.
+	if cfg.ImportDatabaseURL != "" {
+		res, err := st.ImportPostgres(dbCtx, cfg.ImportDatabaseURL)
+		if err != nil {
+			dbCancel()
+			return fmt.Errorf("import from postgres: %w", err)
+		}
+		if res.Skipped != "" {
+			logger.Info("postgres import skipped", "reason", res.Skipped)
+		} else {
+			logger.Warn("imported postgres data; DATABASE_URL and the Postgres service can now be removed",
+				"rows", res.Rows)
+		}
+	}
+	dbCancel()
+	logger.Info("database ready", "path", cfg.DatabasePath, "bytes", st.FileSize())
 
 	sess, err := discordgo.New("Bot " + cfg.DiscordToken)
 	if err != nil {
@@ -61,12 +97,20 @@ func run() error {
 		discordgo.IntentsGuildMessages |
 		discordgo.IntentsMessageContent |
 		discordgo.IntentsDirectMessages |
-		discordgo.IntentsGuildEmojis |
 		discordgo.IntentsGuildMembers |
 		discordgo.IntentsGuildMessageReactions
-	// The edit and delete logs need the previous message content, which
-	// discordgo only has if it caches messages; it caches none by default.
-	sess.State.MaxMessageCount = messageCacheSize
+	// The bot reads channels, roles and members from the state cache and
+	// nothing else. Presences and voice states are not even subscribed to,
+	// and emojis, stickers and threads are never looked at, so tracking them
+	// would only fill the heap. Message text for the edit and delete logs is
+	// kept by events.msgCache, a fixed ring, instead of discordgo's
+	// per-channel cache (MaxMessageCount stays 0).
+	sess.State.TrackPresences = false
+	sess.State.TrackVoice = false
+	sess.State.TrackEmojis = false
+	sess.State.TrackStickers = false
+	sess.State.TrackThreads = false
+	sess.State.TrackThreadMembers = false
 
 	h := events.NewHandler(cfg, st, logger)
 	h.Register(sess)

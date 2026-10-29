@@ -415,6 +415,19 @@ func (h *Handler) closeLocked(ctx context.Context, s *discordgo.Session, reg *st
 	h.closeAndCleanup(ctx, s, reg, outcome)
 }
 
+// slimMember keeps only what the reconciler reads: who the member is, their
+// roles and when they joined.
+func slimMember(m *discordgo.Member) *discordgo.Member {
+	s := &discordgo.Member{GuildID: m.GuildID, Roles: m.Roles, JoinedAt: m.JoinedAt}
+	if u := m.User; u != nil {
+		s.User = &discordgo.User{
+			ID: u.ID, Username: u.Username, GlobalName: u.GlobalName,
+			Discriminator: u.Discriminator, Avatar: u.Avatar, Bot: u.Bot,
+		}
+	}
+	return s
+}
+
 // allMembers pages through the guild's member list.
 func (h *Handler) allMembers(ctx context.Context, s *discordgo.Session, guildID string) ([]*discordgo.Member, error) {
 	var all []*discordgo.Member
@@ -440,7 +453,11 @@ func (h *Handler) allMembers(ctx context.Context, s *discordgo.Session, guildID 
 		if len(page) == 0 {
 			return all, nil
 		}
-		all = append(all, page...)
+		// Keep a trimmed copy so each decoded page, with its avatar hashes,
+		// flags and banners, can be collected as soon as the next one loads.
+		for _, m := range page {
+			all = append(all, slimMember(m))
+		}
 
 		last := page[len(page)-1]
 		if last.User == nil || len(page) < 1000 {

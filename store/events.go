@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
@@ -13,21 +14,25 @@ func (s *Store) LogEvent(ctx context.Context, userID, regID, kind string, detail
 	if detail == nil {
 		detail = map[string]any{}
 	}
-	_, err := s.pool.Exec(ctx, `
-		insert into registration_events (user_id, reg_id, kind, detail, actor_id)
-		values ($1, nullif($2, '')::uuid, $3, $4, nullif($5, ''))`,
-		userID, regID, kind, detail, actorID)
+	body, err := json.Marshal(detail)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `
+		insert into registration_events (user_id, reg_id, kind, detail, actor_id, created_at)
+		values (?1, ?2, ?3, ?4, ?5, ?6)`,
+		userID, nullStr(regID), kind, string(body), nullStr(actorID), ms(time.Now()))
 	return err
 }
 
 // History returns a member's audit trail, newest first.
 func (s *Store) History(ctx context.Context, userID string, limit int) ([]*Event, error) {
-	rows, err := s.pool.Query(ctx, `
-		select id, user_id, reg_id::text, kind, detail, actor_id, created_at
+	rows, err := s.db.QueryContext(ctx, `
+		select id, user_id, reg_id, kind, detail, actor_id, created_at
 		from registration_events
-		where user_id = $1
+		where user_id = ?1
 		order by created_at desc, id desc
-		limit $2`, userID, limit)
+		limit ?2`, userID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -36,9 +41,13 @@ func (s *Store) History(ctx context.Context, userID string, limit int) ([]*Event
 	var out []*Event
 	for rows.Next() {
 		var e Event
-		if err := rows.Scan(&e.ID, &e.UserID, &e.RegID, &e.Kind, &e.Detail,
-			&e.ActorID, &e.CreatedAt); err != nil {
+		var detail string
+		if err := rows.Scan(&e.ID, &e.UserID, &e.RegID, &e.Kind, &detail,
+			&e.ActorID, timeDest{&e.CreatedAt}); err != nil {
 			return nil, err
+		}
+		if err := json.Unmarshal([]byte(detail), &e.Detail); err != nil {
+			e.Detail = map[string]any{"raw": detail}
 		}
 		out = append(out, &e)
 	}
@@ -48,10 +57,10 @@ func (s *Store) History(ctx context.Context, userID string, limit int) ([]*Event
 // CountEventsByKind counts events of each kind since a point in time, for the
 // stats command.
 func (s *Store) CountEventsByKind(ctx context.Context, since time.Time) (map[string]int, error) {
-	rows, err := s.pool.Query(ctx, `
+	rows, err := s.db.QueryContext(ctx, `
 		select kind, count(*) from registration_events
-		where created_at >= $1
-		group by kind`, since)
+		where created_at >= ?1
+		group by kind`, ms(since))
 	if err != nil {
 		return nil, err
 	}

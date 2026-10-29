@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/maphash"
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -19,9 +21,12 @@ import (
 // phishFeeds are public, community-maintained lists of Discord phishing and
 // scam domains. They are merged, so one going stale or offline only narrows
 // coverage instead of disabling it.
+//
+// Each parser streams: it calls emit once per domain instead of returning a
+// slice, so a refresh never holds the raw lists in memory.
 var phishFeeds = []struct {
 	url   string
-	parse func(io.Reader) ([]string, error)
+	parse func(r io.Reader, emit func(string)) error
 }{
 	{"https://raw.githubusercontent.com/Discord-AntiScam/scam-links/main/list.txt", parseLines},
 	{"https://raw.githubusercontent.com/nikolaischunk/discord-phishing-links/main/domain-list.json", parseDomainsJSON},
@@ -47,9 +52,39 @@ var neverPhishing = map[string]bool{
 
 // PhishFeed holds the merged phishing domain set, refreshed in the background.
 type PhishFeed struct {
-	domains atomic.Pointer[map[string]struct{}]
-	client  *http.Client
-	log     *slog.Logger
+	set    atomic.Pointer[domainSet]
+	client *http.Client
+	log    *slog.Logger
+}
+
+// domainSet is the loaded domains as a sorted list of 64-bit hashes, eight
+// bytes a domain where a map of strings costs several times that and keeps
+// every name alive. The hash is seeded per process, so nobody can pick a
+// domain that collides with a listed one; at tens of thousands of entries an
+// accidental collision is a one in 10^14 event.
+type domainSet struct {
+	seed   maphash.Seed
+	hashes []uint64
+}
+
+func newDomainSet(domains ...string) *domainSet {
+	s := &domainSet{seed: maphash.MakeSeed()}
+	for _, d := range domains {
+		s.hashes = append(s.hashes, maphash.String(s.seed, d))
+	}
+	s.finish()
+	return s
+}
+
+// finish sorts and deduplicates, and releases the slack left by appending.
+func (s *domainSet) finish() {
+	slices.Sort(s.hashes)
+	s.hashes = slices.Clip(slices.Compact(s.hashes))
+}
+
+func (s *domainSet) has(domain string) bool {
+	_, ok := slices.BinarySearch(s.hashes, maphash.String(s.seed, domain))
+	return ok
 }
 
 // NewPhishFeed returns an empty feed; call Refresh to load it.
@@ -59,8 +94,8 @@ func NewPhishFeed(logger *slog.Logger) *PhishFeed {
 
 // Size reports how many domains are loaded.
 func (f *PhishFeed) Size() int {
-	if d := f.domains.Load(); d != nil {
-		return len(*d)
+	if d := f.set.Load(); d != nil {
+		return len(d.hashes)
 	}
 	return 0
 }
@@ -68,47 +103,48 @@ func (f *PhishFeed) Size() int {
 // Refresh downloads every feed and swaps in the merged set. Sources that fail
 // are skipped; if the merged set is implausibly small the previous one is kept.
 func (f *PhishFeed) Refresh(ctx context.Context) error {
-	merged := map[string]struct{}{}
+	merged := &domainSet{seed: maphash.MakeSeed()}
 	for _, src := range phishFeeds {
-		domains, err := f.fetch(ctx, src.url, src.parse)
+		// A source that fails half way keeps the entries it already yielded:
+		// they are a prefix of a real list, so each is still a real entry.
+		err := f.fetch(ctx, src.url, src.parse, func(d string) {
+			if d = normalizeDomain(d); d != "" && !neverPhishing[d] {
+				merged.hashes = append(merged.hashes, maphash.String(merged.seed, d))
+			}
+		})
 		if err != nil {
 			f.log.Warn("phishing feed fetch failed", "url", src.url, "error", err)
-			continue
-		}
-		for _, d := range domains {
-			if d = normalizeDomain(d); d != "" && !neverPhishing[d] {
-				merged[d] = struct{}{}
-			}
 		}
 	}
-	if len(merged) < feedMinDomains {
-		return fmt.Errorf("phishing feed: only %d domains, keeping %d", len(merged), f.Size())
+	merged.finish()
+	if len(merged.hashes) < feedMinDomains {
+		return fmt.Errorf("phishing feed: only %d domains, keeping %d", len(merged.hashes), f.Size())
 	}
-	f.domains.Store(&merged)
-	f.log.Info("phishing feed refreshed", "domains", len(merged))
+	f.set.Store(merged)
+	f.log.Info("phishing feed refreshed", "domains", len(merged.hashes))
 	return nil
 }
 
-func (f *PhishFeed) fetch(ctx context.Context, u string, parse func(io.Reader) ([]string, error)) ([]string, error) {
+func (f *PhishFeed) fetch(ctx context.Context, u string, parse func(io.Reader, func(string)) error, emit func(string)) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	res, err := f.client.Do(req)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("status %d", res.StatusCode)
+		return fmt.Errorf("status %d", res.StatusCode)
 	}
-	return parse(io.LimitReader(res.Body, feedMaxBytes))
+	return parse(io.LimitReader(res.Body, feedMaxBytes), emit)
 }
 
 // Match reports the listed domain that host falls under, checking the host
 // itself and each parent domain, so "login.evil.com" matches "evil.com".
 func (f *PhishFeed) Match(host string) (string, bool) {
-	d := f.domains.Load()
+	d := f.set.Load()
 	if d == nil {
 		return "", false
 	}
@@ -122,7 +158,7 @@ func (f *PhishFeed) Match(host string) (string, bool) {
 		_, h, _ = strings.Cut(h, ".")
 	}
 	for host != "" && strings.Contains(host, ".") {
-		if _, ok := (*d)[host]; ok {
+		if d.has(host) {
 			return host, true
 		}
 		_, host, _ = strings.Cut(host, ".")
@@ -175,21 +211,48 @@ func linkHost(link string) string {
 	return host
 }
 
-func parseLines(r io.Reader) ([]string, error) {
-	var out []string
+func parseLines(r io.Reader, emit func(string)) error {
 	sc := bufio.NewScanner(r)
 	for sc.Scan() {
 		if line := strings.TrimSpace(sc.Text()); line != "" && !strings.HasPrefix(line, "#") {
-			out = append(out, line)
+			emit(line)
 		}
 	}
-	return out, sc.Err()
+	return sc.Err()
 }
 
-func parseDomainsJSON(r io.Reader) ([]string, error) {
-	var body struct {
-		Domains []string `json:"domains"`
+// parseDomainsJSON reads {"domains": ["a.example", ...]} one element at a
+// time, so the array never exists as a whole.
+func parseDomainsJSON(r io.Reader, emit func(string)) error {
+	dec := json.NewDecoder(r)
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
+		return fmt.Errorf("feed is not a JSON object: %v", err)
 	}
-	err := json.NewDecoder(r).Decode(&body)
-	return body.Domains, err
+	for dec.More() {
+		key, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		if key != "domains" {
+			var skip json.RawMessage
+			if err := dec.Decode(&skip); err != nil {
+				return err
+			}
+			continue
+		}
+		if tok, err := dec.Token(); err != nil || tok != json.Delim('[') {
+			return fmt.Errorf("domains is not an array: %v", err)
+		}
+		for dec.More() {
+			var d string
+			if err := dec.Decode(&d); err != nil {
+				return err
+			}
+			emit(d)
+		}
+		if _, err := dec.Token(); err != nil { // the closing ]
+			return err
+		}
+	}
+	return nil
 }

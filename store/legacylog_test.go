@@ -4,18 +4,16 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
 
+// openTestStore opens a throwaway SQLite database in the test's temp dir.
 func openTestStore(t *testing.T) *Store {
 	t.Helper()
-	dsn := os.Getenv("STEKI_TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("STEKI_TEST_DATABASE_URL not set")
-	}
-	s, err := Open(context.Background(), dsn, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	path := filepath.Join(t.TempDir(), "steki.db")
+	s, err := Open(context.Background(), path, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}

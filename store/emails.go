@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"strings"
+	"time"
 )
 
 // NormalizeEmail lowercases and trims an address so that dedup is not defeated
@@ -52,8 +53,8 @@ func (s *Store) CheckEmail(ctx context.Context, email string) (EmailUse, error) 
 	email = NormalizeEmail(email)
 
 	var owner *string
-	err := s.pool.QueryRow(ctx,
-		`select user_id from verified_emails where email = $1`, email).Scan(&owner)
+	err := s.db.QueryRowContext(ctx,
+		`select user_id from verified_emails where email = ?1`, email).Scan(&owner)
 	if err == nil {
 		return EmailUse{InUse: true, UserID: owner}, nil
 	}
@@ -61,8 +62,8 @@ func (s *Store) CheckEmail(ctx context.Context, email string) (EmailUse, error) 
 		return EmailUse{}, err
 	}
 
-	err = s.pool.QueryRow(ctx,
-		`select user_id from legacy_email_hashes where sha256 = $1`, LegacyHash(email)).Scan(&owner)
+	err = s.db.QueryRowContext(ctx,
+		`select user_id from legacy_email_hashes where sha256 = ?1`, LegacyHash(email)).Scan(&owner)
 	if err == nil {
 		return EmailUse{InUse: true, UserID: owner, Legacy: true}, nil
 	}
@@ -76,12 +77,12 @@ func (s *Store) CheckEmail(ctx context.Context, email string) (EmailUse, error) 
 // AddVerifiedEmail records an address, optionally bound to an owner.
 func (s *Store) AddVerifiedEmail(ctx context.Context, email string, userID *string, source string) error {
 	email = NormalizeEmail(email)
-	_, err := s.pool.Exec(ctx, `
-		insert into verified_emails (email, user_id, domain, source)
-		values ($1, $2, $3, $4)
+	_, err := s.db.ExecContext(ctx, `
+		insert into verified_emails (email, user_id, domain, source, verified_at)
+		values (?1, ?2, ?3, ?4, ?5)
 		on conflict (email) do update set
 			user_id = coalesce(verified_emails.user_id, excluded.user_id)`,
-		email, userID, EmailDomain(email), source)
+		email, userID, EmailDomain(email), source, ms(time.Now()))
 	return err
 }
 
@@ -90,25 +91,32 @@ func (s *Store) AddVerifiedEmail(ctx context.Context, email string, userID *stri
 func (s *Store) RemoveVerifiedEmail(ctx context.Context, email string) (bool, error) {
 	email = NormalizeEmail(email)
 
-	tx, err := s.pool.Begin(ctx)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
+	defer func() { _ = tx.Rollback() }()
 
-	tag, err := tx.Exec(ctx, `delete from verified_emails where email = $1`, email)
+	res, err := tx.ExecContext(ctx, `delete from verified_emails where email = ?1`, email)
 	if err != nil {
 		return false, err
 	}
-	removed := tag.RowsAffected()
-
-	tag, err = tx.Exec(ctx, `delete from legacy_email_hashes where sha256 = $1`, LegacyHash(email))
+	removed, err := res.RowsAffected()
 	if err != nil {
 		return false, err
 	}
-	removed += tag.RowsAffected()
 
-	if err := tx.Commit(ctx); err != nil {
+	res, err = tx.ExecContext(ctx, `delete from legacy_email_hashes where sha256 = ?1`, LegacyHash(email))
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	removed += n
+
+	if err := tx.Commit(); err != nil {
 		return false, err
 	}
 	return removed > 0, nil
@@ -117,34 +125,41 @@ func (s *Store) RemoveVerifiedEmail(ctx context.Context, email string) (bool, er
 // RemoveLegacyHash deletes a raw hash, for the rare case where only the hash is
 // known. Mirrors the old `removeHash` admin command.
 func (s *Store) RemoveLegacyHash(ctx context.Context, hash string) (bool, error) {
-	tag, err := s.pool.Exec(ctx,
-		`delete from legacy_email_hashes where sha256 = $1`,
+	res, err := s.db.ExecContext(ctx,
+		`delete from legacy_email_hashes where sha256 = ?1`,
 		strings.ToLower(strings.TrimSpace(hash)))
 	if err != nil {
 		return false, err
 	}
-	return tag.RowsAffected() > 0, nil
+	n, err := res.RowsAffected()
+	return n > 0, err
 }
 
 // WhoIs returns the stored record for an address.
 func (s *Store) WhoIs(ctx context.Context, email string) (*VerifiedEmail, error) {
 	email = NormalizeEmail(email)
-	var v VerifiedEmail
-	err := s.pool.QueryRow(ctx, `
+	v, err := scanVerifiedEmail(s.db.QueryRowContext(ctx, `
 		select email, user_id, domain, source, verified_at
-		from verified_emails where email = $1`, email).
-		Scan(&v.Email, &v.UserID, &v.Domain, &v.Source, &v.VerifiedAt)
+		from verified_emails where email = ?1`, email))
 	if err != nil {
 		return nil, noRows(err)
+	}
+	return v, nil
+}
+
+func scanVerifiedEmail(row scanner) (*VerifiedEmail, error) {
+	var v VerifiedEmail
+	if err := row.Scan(&v.Email, &v.UserID, &v.Domain, &v.Source, timeDest{&v.VerifiedAt}); err != nil {
+		return nil, err
 	}
 	return &v, nil
 }
 
 // EmailsForUser lists every address bound to a Discord account.
 func (s *Store) EmailsForUser(ctx context.Context, userID string) ([]*VerifiedEmail, error) {
-	rows, err := s.pool.Query(ctx, `
+	rows, err := s.db.QueryContext(ctx, `
 		select email, user_id, domain, source, verified_at
-		from verified_emails where user_id = $1 order by verified_at asc`, userID)
+		from verified_emails where user_id = ?1 order by verified_at asc`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -152,23 +167,23 @@ func (s *Store) EmailsForUser(ctx context.Context, userID string) ([]*VerifiedEm
 
 	var out []*VerifiedEmail
 	for rows.Next() {
-		var v VerifiedEmail
-		if err := rows.Scan(&v.Email, &v.UserID, &v.Domain, &v.Source, &v.VerifiedAt); err != nil {
+		v, err := scanVerifiedEmail(rows)
+		if err != nil {
 			return nil, err
 		}
-		out = append(out, &v)
+		out = append(out, v)
 	}
 	return out, rows.Err()
 }
 
 // AddLegacyHash stores an imported hash that could not be resolved to plaintext.
 func (s *Store) AddLegacyHash(ctx context.Context, hash string, userID *string, source string) error {
-	_, err := s.pool.Exec(ctx, `
-		insert into legacy_email_hashes (sha256, user_id, source)
-		values ($1, $2, $3)
+	_, err := s.db.ExecContext(ctx, `
+		insert into legacy_email_hashes (sha256, user_id, source, imported_at)
+		values (?1, ?2, ?3, ?4)
 		on conflict (sha256) do update set
 			user_id = coalesce(legacy_email_hashes.user_id, excluded.user_id)`,
-		strings.ToLower(strings.TrimSpace(hash)), userID, source)
+		strings.ToLower(strings.TrimSpace(hash)), userID, source, ms(time.Now()))
 	return err
 }
 
@@ -182,7 +197,7 @@ type EmailStats struct {
 // EmailStats counts stored addresses.
 func (s *Store) EmailStats(ctx context.Context) (EmailStats, error) {
 	var st EmailStats
-	err := s.pool.QueryRow(ctx, `
+	err := s.db.QueryRowContext(ctx, `
 		select
 			(select count(*) from verified_emails),
 			(select count(*) from verified_emails where user_id is not null),

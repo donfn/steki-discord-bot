@@ -29,8 +29,13 @@ const (
 // Config holds everything the bot needs to run.
 type Config struct {
 	DiscordToken string
-	DatabaseURL  string
 	ResendAPIKey string
+
+	// DatabasePath is the SQLite file. ImportDatabaseURL, when set, is a
+	// Postgres database whose contents are copied into it once, on the first
+	// boot that finds the file empty.
+	DatabasePath      string
+	ImportDatabaseURL string
 
 	EmailFrom    string
 	URLBlacklist []string
@@ -58,13 +63,17 @@ func Load() (*Config, error) {
 
 	cfg := &Config{
 		DiscordToken: os.Getenv("DISCORD_TOKEN"),
-		DatabaseURL:  os.Getenv("DATABASE_URL"),
 		ResendAPIKey: os.Getenv("RESEND_API_KEY"),
-		EmailFrom:    envOr("EMAIL_FROM", "Steki <steki@poiw.org>"),
-		LogLevel:     parseLevel(os.Getenv("LOG_LEVEL")),
-		Port:         envOr("PORT", "8080"),
-		JWTSecret:    strings.TrimSpace(os.Getenv("JWT_SECRET")),
-		PublicURL:    publicURL(),
+
+		// The Postgres URL the bot used to require is now only a source to
+		// copy from; the variable keeps its name so the existing Railway
+		// reference (${{Postgres.DATABASE_URL}}) can stay in place for that.
+		ImportDatabaseURL: strings.TrimSpace(os.Getenv("DATABASE_URL")),
+		EmailFrom:         envOr("EMAIL_FROM", "Steki <steki@poiw.org>"),
+		LogLevel:          parseLevel(os.Getenv("LOG_LEVEL")),
+		Port:              envOr("PORT", "8080"),
+		JWTSecret:         strings.TrimSpace(os.Getenv("JWT_SECRET")),
+		PublicURL:         publicURL(),
 
 		RailwayToken:     strings.TrimSpace(os.Getenv("RAILWAY_TOKEN")),
 		RailwayServiceID: strings.TrimSpace(os.Getenv("RAILWAY_SERVICE_ID")),
@@ -80,8 +89,10 @@ func Load() (*Config, error) {
 	if cfg.DiscordToken == "" {
 		missing = append(missing, "DISCORD_TOKEN")
 	}
-	if cfg.DatabaseURL == "" {
-		missing = append(missing, "DATABASE_URL")
+	if path, err := databasePath(); err != nil {
+		return nil, err
+	} else {
+		cfg.DatabasePath = path
 	}
 	if cfg.ResendAPIKey == "" {
 		missing = append(missing, "RESEND_API_KEY")
@@ -103,6 +114,26 @@ func Load() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// databasePath is where the SQLite file lives: DATABASE_PATH when set, else
+// steki.db inside the Railway volume, else a file in the working directory.
+//
+// On Railway without a volume the container's disk is wiped by every deploy,
+// so a database there would silently vanish; that is refused rather than
+// allowed to happen.
+func databasePath() (string, error) {
+	if v := strings.TrimSpace(os.Getenv("DATABASE_PATH")); v != "" {
+		return v, nil
+	}
+	if m := strings.TrimSpace(os.Getenv("RAILWAY_VOLUME_MOUNT_PATH")); m != "" {
+		return strings.TrimRight(m, "/") + "/steki.db", nil
+	}
+	if os.Getenv("RAILWAY_ENVIRONMENT_ID") != "" {
+		return "", fmt.Errorf("no volume is attached to this Railway service, and the database " +
+			"would be erased on every deploy: attach a volume, or set DATABASE_PATH to a file on one")
+	}
+	return "steki.db", nil
 }
 
 // publicURL is PUBLIC_URL when set, otherwise the domain Railway injects for

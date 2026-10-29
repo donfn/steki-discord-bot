@@ -2,17 +2,20 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"strings"
 	"time"
-
-	"github.com/jackc/pgx/v5"
 )
 
-// Kinds of log evidence; see migrations/0003_legacy_log.sql.
+// Kinds of log evidence; see migrations/0001_init.sql.
 const (
 	EvidenceSubmitted = "submitted"
 	EvidenceInUse     = "in_use"
 )
+
+// evidenceChunk bounds how many hashes one query binds.
+const evidenceChunk = 500
 
 // LogEvidence is one log line that ties an email hash to a member (a
 // submission) or to a plaintext address (an "already in use" notice).
@@ -39,11 +42,11 @@ type LogScan struct {
 func (s *Store) LogScanState(ctx context.Context, channelID string) (LogScan, error) {
 	st := LogScan{ChannelID: channelID}
 	var oldest, newest *string
-	err := s.pool.QueryRow(ctx, `
+	err := s.db.QueryRowContext(ctx, `
 		select oldest_id, newest_id, complete, scanned
-		from log_scan_state where channel_id = $1`, channelID).
+		from log_scan_state where channel_id = ?1`, channelID).
 		Scan(&oldest, &newest, &st.Complete, &st.Scanned)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, sql.ErrNoRows) {
 		return st, nil
 	}
 	if oldest != nil {
@@ -59,31 +62,32 @@ func (s *Store) LogScanState(ctx context.Context, channelID string) (LogScan, er
 // after it, so a scan interrupted at any point resumes exactly where the last
 // saved page ended.
 func (s *Store) SaveLogPage(ctx context.Context, st LogScan, evidence []LogEvidence) error {
-	tx, err := s.pool.Begin(ctx)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
+	defer func() { _ = tx.Rollback() }()
 
 	for _, e := range evidence {
-		if _, err := tx.Exec(ctx, `
+		if _, err := tx.ExecContext(ctx, `
 			insert into legacy_log_evidence (message_id, sha256, kind, user_id, email, posted_at)
-			values ($1, $2, $3, nullif($4, ''), nullif($5, ''), $6)
+			values (?1, ?2, ?3, nullif(?4, ''), nullif(?5, ''), ?6)
 			on conflict do nothing`,
-			e.MessageID, e.Hash, e.Kind, e.UserID, e.Email, e.PostedAt); err != nil {
+			e.MessageID, e.Hash, e.Kind, e.UserID, e.Email, ms(e.PostedAt)); err != nil {
 			return err
 		}
 	}
-	if _, err := tx.Exec(ctx, `
+	if _, err := tx.ExecContext(ctx, `
 		insert into log_scan_state (channel_id, oldest_id, newest_id, complete, scanned, updated_at)
-		values ($1, nullif($2, ''), nullif($3, ''), $4, $5, now())
+		values (?1, nullif(?2, ''), nullif(?3, ''), ?4, ?5, ?6)
 		on conflict (channel_id) do update set
 			oldest_id = excluded.oldest_id, newest_id = excluded.newest_id,
-			complete = excluded.complete, scanned = excluded.scanned, updated_at = now()`,
-		st.ChannelID, st.OldestID, st.NewestID, st.Complete, st.Scanned); err != nil {
+			complete = excluded.complete, scanned = excluded.scanned,
+			updated_at = excluded.updated_at`,
+		st.ChannelID, st.OldestID, st.NewestID, st.Complete, st.Scanned, ms(time.Now())); err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	return tx.Commit()
 }
 
 // LegacyClaim is a recorded address that may still lack an owner or a
@@ -98,24 +102,24 @@ type LegacyClaim struct {
 // LegacyClaims lists the claims reconciliation can still improve.
 func (s *Store) LegacyClaims(ctx context.Context) ([]LegacyClaim, error) {
 	var out []LegacyClaim
-	rows, err := s.pool.Query(ctx, `select sha256, user_id from legacy_email_hashes`)
+	rows, err := s.db.QueryContext(ctx, `select sha256, user_id from legacy_email_hashes`)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
 		var c LegacyClaim
 		if err := rows.Scan(&c.Hash, &c.UserID); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, err
 		}
 		out = append(out, c)
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 
-	rows, err = s.pool.Query(ctx, `select email from verified_emails where user_id is null`)
+	rows, err = s.db.QueryContext(ctx, `select email from verified_emails where user_id is null`)
 	if err != nil {
 		return nil, err
 	}
@@ -132,24 +136,36 @@ func (s *Store) LegacyClaims(ctx context.Context) ([]LegacyClaim, error) {
 
 // EvidenceFor returns the stored evidence for the given hashes, by hash.
 func (s *Store) EvidenceFor(ctx context.Context, hashes []string) (map[string][]LogEvidence, error) {
-	rows, err := s.pool.Query(ctx, `
-		select message_id, sha256, kind, coalesce(user_id, ''), coalesce(email, ''), posted_at
-		from legacy_log_evidence where sha256 = any($1)
-		order by posted_at`, hashes)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
 	out := map[string][]LogEvidence{}
-	for rows.Next() {
-		var e LogEvidence
-		if err := rows.Scan(&e.MessageID, &e.Hash, &e.Kind, &e.UserID, &e.Email, &e.PostedAt); err != nil {
+	for start := 0; start < len(hashes); start += evidenceChunk {
+		chunk := hashes[start:min(start+evidenceChunk, len(hashes))]
+		args := make([]any, len(chunk))
+		for i, h := range chunk {
+			args[i] = h
+		}
+		rows, err := s.db.QueryContext(ctx, `
+			select message_id, sha256, kind, coalesce(user_id, ''), coalesce(email, ''), posted_at
+			from legacy_log_evidence
+			where sha256 in (?`+strings.Repeat(",?", len(chunk)-1)+`)
+			order by posted_at`, args...)
+		if err != nil {
 			return nil, err
 		}
-		out[e.Hash] = append(out[e.Hash], e)
+		for rows.Next() {
+			var e LogEvidence
+			if err := rows.Scan(&e.MessageID, &e.Hash, &e.Kind, &e.UserID, &e.Email, timeDest{&e.PostedAt}); err != nil {
+				_ = rows.Close()
+				return nil, err
+			}
+			out[e.Hash] = append(out[e.Hash], e)
+		}
+		err = rows.Err()
+		_ = rows.Close()
+		if err != nil {
+			return nil, err
+		}
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // ResolveClaim records what reconciliation found for a claim: its owner, its
@@ -163,40 +179,40 @@ func (s *Store) ResolveClaim(ctx context.Context, c LegacyClaim, owner, email st
 	}
 
 	if c.Email != "" {
-		_, err := s.pool.Exec(ctx, `
-			update verified_emails set user_id = $2
-			where email = $1 and user_id is null`, c.Email, ownerArg)
+		_, err := s.db.ExecContext(ctx, `
+			update verified_emails set user_id = ?2
+			where email = ?1 and user_id is null`, c.Email, ownerArg)
 		return err
 	}
 
 	if email == "" {
-		_, err := s.pool.Exec(ctx, `
-			update legacy_email_hashes set user_id = $2
-			where sha256 = $1 and user_id is null`, c.Hash, ownerArg)
+		_, err := s.db.ExecContext(ctx, `
+			update legacy_email_hashes set user_id = ?2
+			where sha256 = ?1 and user_id is null`, c.Hash, ownerArg)
 		return err
 	}
 
-	tx, err := s.pool.Begin(ctx)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
+	defer func() { _ = tx.Rollback() }()
 
 	if ownerArg == nil {
 		ownerArg = c.UserID
 	}
 	email = NormalizeEmail(email)
-	if _, err := tx.Exec(ctx, `
-		insert into verified_emails (email, user_id, domain, source)
-		values ($1, $2, $3, $4)
+	if _, err := tx.ExecContext(ctx, `
+		insert into verified_emails (email, user_id, domain, source, verified_at)
+		values (?1, ?2, ?3, ?4, ?5)
 		on conflict (email) do update set
 			user_id = coalesce(verified_emails.user_id, excluded.user_id)`,
-		email, ownerArg, EmailDomain(email), SourceDiscordLog); err != nil {
+		email, ownerArg, EmailDomain(email), SourceDiscordLog, ms(time.Now())); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx,
-		`delete from legacy_email_hashes where sha256 = $1`, c.Hash); err != nil {
+	if _, err := tx.ExecContext(ctx,
+		`delete from legacy_email_hashes where sha256 = ?1`, c.Hash); err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	return tx.Commit()
 }

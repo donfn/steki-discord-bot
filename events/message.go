@@ -16,6 +16,7 @@ func (h *Handler) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 	h.processed.Add(1)
+	h.msgs.put(m.Message)
 
 	if h.linkChk.Check(s, m.Message) {
 		h.blocked.Add(1)

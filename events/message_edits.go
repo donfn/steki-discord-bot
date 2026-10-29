@@ -18,14 +18,19 @@ const auditLogWindow = 20 * time.Second
 // it. Edits are not counted towards the media guard or duplicate detection,
 // which would count the same message twice.
 //
-// The previous content for the log comes from the state cache, so edits to
+// The previous content for the log comes from the message cache, so edits to
 // messages sent before the bot started, or evicted from the cache, are not
 // reported.
 func (h *Handler) onMessageUpdate(s *discordgo.Session, m *discordgo.MessageUpdate) {
 	if m.Message == nil || m.Author == nil || m.Author.Bot || m.GuildID == "" {
 		return
 	}
-	if m.Content != "" && (m.BeforeUpdate == nil || m.BeforeUpdate.Content != m.Content) {
+	var before cachedMsg
+	var cached bool
+	if m.Content != "" {
+		before, cached = h.msgs.edit(m.ID, m.Content)
+	}
+	if m.Content != "" && (!cached || before.content != clip(m.Content, msgCacheMaxContent)) {
 		if h.linkChk.Check(s, m.Message) {
 			h.blocked.Add(1)
 			return
@@ -38,40 +43,41 @@ func (h *Handler) onMessageUpdate(s *discordgo.Session, m *discordgo.MessageUpda
 	if !h.inHomeGuild(m.GuildID) {
 		return
 	}
-	if m.BeforeUpdate == nil || m.BeforeUpdate.Content == "" || m.Content == "" {
+	if !cached || before.content == "" || m.Content == "" {
 		return
 	}
-	if m.BeforeUpdate.Content == m.Content {
+	if before.content == clip(m.Content, msgCacheMaxContent) {
 		return
 	}
 
 	h.alertMods(s,
 		"Ο χρήστης <@%s> επεξεργάστηκε στο κανάλι <#%s> αυτό το μήνυμα:\n```%s```*και η νέα έκδοσή του είναι:*```%s```",
-		m.Author.ID, m.ChannelID, quote(m.BeforeUpdate.Content), quote(m.Content))
+		m.Author.ID, m.ChannelID, quote(before.content), quote(m.Content))
 }
 
 // onMessageDelete logs deleted Steki messages for moderators, attributing the
 // deletion to whoever the audit log says removed it. Deletions by staff are
 // not reported, and, as with edits, only cached messages can be.
 func (h *Handler) onMessageDelete(s *discordgo.Session, m *discordgo.MessageDelete) {
-	if !h.inHomeGuild(m.GuildID) || m.BeforeDelete == nil || m.BeforeDelete.Author == nil {
+	// Take the message even for other guilds, so the ring does not hold on to it.
+	gone, cached := h.msgs.take(m.ID)
+	if !h.inHomeGuild(m.GuildID) || !cached {
 		return
 	}
-	author := m.BeforeDelete.Author
-	if author.Bot {
+	if gone.bot {
 		return
 	}
 
 	ctx, cancel := h.ctx()
 	defer cancel()
 
-	member, err := h.guildMember(ctx, s, m.GuildID, author.ID)
+	member, err := h.guildMember(ctx, s, m.GuildID, gone.authorID)
 	if err == nil && (hasRole(member, staffRoleID) || hasRole(member, modRoleID)) {
 		return
 	}
 
 	h.alertMods(s, "Ο χρήστης <@%s> διέγραψε από το κανάλι <#%s> αυτό το μήνυμα:\n```%s```",
-		h.deletedBy(s, m.GuildID, m.ChannelID, author.ID), m.ChannelID, quote(m.BeforeDelete.Content))
+		h.deletedBy(s, m.GuildID, m.ChannelID, gone.authorID), m.ChannelID, quote(gone.content))
 }
 
 // deletedBy returns who deleted a message by authorID in channelID. Discord

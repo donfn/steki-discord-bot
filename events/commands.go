@@ -740,8 +740,9 @@ func (h *Handler) cmdBotStats(s *discordgo.Session, i *discordgo.InteractionCrea
 	if err := h.st.Ping(ctx); err != nil {
 		fmt.Fprintf(&b, "• 🔴 Βάση: %v\n", err)
 	} else {
-		stat := h.st.PoolStat()
-		fmt.Fprintf(&b, "• 🟢 Βάση: %d/%d συνδέσεις\n", stat.AcquiredConns(), stat.MaxConns())
+		stat := h.st.DBStats()
+		fmt.Fprintf(&b, "• 🟢 Βάση: %.1f MB · %d/%d συνδέσεις\n",
+			float64(h.st.FileSize())/(1<<20), stat.InUse, stat.MaxOpenConnections)
 	}
 
 	if open, err := h.st.ListOpen(ctx); err == nil {

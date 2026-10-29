@@ -3,9 +3,6 @@ package store
 import (
 	"context"
 	"errors"
-	"io"
-	"log/slog"
-	"os"
 	"testing"
 	"time"
 )
@@ -25,22 +22,10 @@ func TestFlagTrips(t *testing.T) {
 	}
 }
 
-// TestMediaGuardFlow runs against a real database when STEKI_TEST_DATABASE_URL
-// points at a disposable one; it is skipped otherwise.
+// TestMediaGuardFlow runs against a real, throwaway SQLite database.
 func TestMediaGuardFlow(t *testing.T) {
-	dsn := os.Getenv("STEKI_TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("STEKI_TEST_DATABASE_URL not set")
-	}
 	ctx := context.Background()
-	s, err := Open(ctx, dsn, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	if _, err := s.pool.Exec(ctx, `delete from media_guard`); err != nil {
-		t.Fatal(err)
-	}
+	s := openTestStore(t)
 
 	t0 := time.Now()
 	post := func(user, token string, at time.Time) bool {
