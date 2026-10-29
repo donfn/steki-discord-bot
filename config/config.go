@@ -42,6 +42,11 @@ type Config struct {
 	// both, so both are required.
 	JWTSecret string
 	PublicURL string
+
+	// RailwayToken is a project token. When set, the bot turns on Railway's
+	// Under Attack Mode for its own service if it sees a flood. Optional.
+	RailwayToken     string
+	RailwayServiceID string
 }
 
 // Load reads configuration from the environment, falling back to a .env file
@@ -60,6 +65,9 @@ func Load() (*Config, error) {
 		Port:         envOr("PORT", "8080"),
 		JWTSecret:    strings.TrimSpace(os.Getenv("JWT_SECRET")),
 		PublicURL:    publicURL(),
+
+		RailwayToken:     strings.TrimSpace(os.Getenv("RAILWAY_TOKEN")),
+		RailwayServiceID: strings.TrimSpace(os.Getenv("RAILWAY_SERVICE_ID")),
 	}
 
 	for _, entry := range strings.Split(os.Getenv("URL_BLACKLIST"), ",") {

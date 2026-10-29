@@ -16,6 +16,7 @@ import (
 
 	"steki-bot/config"
 	"steki-bot/events"
+	"steki-bot/shield"
 	"steki-bot/store"
 	"steki-bot/verify"
 )
@@ -79,7 +80,7 @@ func run() error {
 		logger.Warn("JWT_SECRET is shorter than 32 characters; use a long random value")
 	}
 	logger.Info("verification pages enabled", "public_url", cfg.PublicURL)
-	srv := startHTTPServer(cfg.Port, st, pages, logger)
+	srv := startHTTPServer(cfg.Port, st, pages, newShield(cfg, sess, logger), logger)
 
 	logger.Info("bot is running")
 	stop := make(chan os.Signal, 1)
@@ -105,7 +106,7 @@ func run() error {
 
 // startHTTPServer exposes /healthz, so the platform can tell a wedged process
 // from a healthy one, and the registration and media guard pages.
-func startHTTPServer(port string, st *store.Store, pages *verify.Server, logger *slog.Logger) *http.Server {
+func startHTTPServer(port string, st *store.Store, pages *verify.Server, sh *shield.Detector, logger *slog.Logger) *http.Server {
 	mux := http.NewServeMux()
 	pages.Register(mux)
 	// Health is probed in the background and cached, so a flood of public
@@ -129,11 +130,17 @@ func startHTTPServer(port string, st *store.Store, pages *verify.Server, logger 
 		_, _ = w.Write([]byte("ok"))
 	})
 
+	var handler http.Handler = verify.Harden(mux, logger)
+	if sh != nil {
+		// Outside Harden, so requests it turns away still count as load.
+		handler = sh.Middleware(handler)
+	}
+
 	// The verification page is public, so every phase of a request is
 	// bounded: a client that trickles bytes cannot hold connections open.
 	srv := &http.Server{
 		Addr:              ":" + port,
-		Handler:           verify.Harden(mux, logger),
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -146,4 +153,27 @@ func startHTTPServer(port string, st *store.Store, pages *verify.Server, logger 
 		}
 	}()
 	return srv
+}
+
+// newShield returns the flood detector, or nil when no Railway token is set:
+// without one there is nothing it could switch on.
+func newShield(cfg *config.Config, sess *discordgo.Session, logger *slog.Logger) *shield.Detector {
+	if cfg.RailwayToken == "" {
+		logger.Info("RAILWAY_TOKEN not set; automatic Under Attack Mode is off")
+		return nil
+	}
+	if cfg.RailwayServiceID == "" {
+		logger.Warn("RAILWAY_SERVICE_ID not set; the Railway CLI will have to infer the service")
+	}
+	notify := func(reason string, err error) {
+		msg := "🛡️ Under Attack Mode on για 1 ώρα. Λόγος: " + reason
+		if err != nil {
+			msg = "⚠️ Δεν μπόρεσα να ενεργοποιήσω το Under Attack Mode (" + reason + "). Ξαναπροσπαθώ σε λίγα λεπτά."
+		}
+		if _, sendErr := sess.ChannelMessageSend(config.LogChannelID, msg); sendErr != nil {
+			logger.Warn("shield: log channel message", "error", sendErr)
+		}
+	}
+	logger.Info("automatic Under Attack Mode enabled")
+	return shield.New(shield.RailwayEnabler("railway", cfg.RailwayServiceID), notify, logger)
 }

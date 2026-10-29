@@ -22,10 +22,20 @@ Four variables are required; the rest have sane defaults. See `.env.example`.
 | `URL_BLACKLIST` | no       | Comma-separated link substrings to block           |
 | `LOG_LEVEL`     | no       | `debug`/`info`/`warn`/`error` (default `info`)     |
 | `PORT`          | no       | HTTP port for the pages and `/healthz` (default `8080`) |
+| `RAILWAY_TOKEN` | no       | Railway project token; enables automatic Under Attack Mode (see below) |
 
 Discord channel, category and role IDs are compile-time constants in
 `config/config.go` and `events/constants.go`. The guild ID is learned from the
 gateway at runtime.
+
+## Automatic Under Attack Mode
+
+With `RAILWAY_TOKEN` set (a project token), the bot turns on Railway's Under
+Attack Mode for its own service for one hour when it sees either more than
+5 requests/s sustained over 10 seconds, or more than 10 `404` responses in an
+hour. `/healthz` is not counted. It posts to the log channel when it does, waits
+out the hour before it can fire again, and retries after 5 minutes if Railway
+refuses. The Railway CLI is installed in the image for this.
 
 ## Running locally
 
