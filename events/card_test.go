@@ -51,6 +51,26 @@ func TestCardSentEchoesAddressAndTicksStepOne(t *testing.T) {
 	}
 }
 
+func TestCardSentMarksOutsiders(t *testing.T) {
+	cases := []struct {
+		email             string
+		outsider, webmail bool
+	}{
+		{"th12345@edu.hmu.gr", false, true},
+		{"tp12345@edu.hmu.gr", true, true},
+		{"csd1234@csd.uoc.gr", true, false},
+	}
+	for _, tc := range cases {
+		c := card{userID: "42", state: cardSent, email: tc.email}
+		if got := strings.Contains(c.status(), "Verified Outsider"); got != tc.outsider {
+			t.Errorf("%s: outsider note = %v, want %v", tc.email, got, tc.outsider)
+		}
+		if got := strings.Contains(cardText(t, c), "webmail.edu.hmu.gr"); got != tc.webmail {
+			t.Errorf("%s: webmail button = %v, want %v", tc.email, got, tc.webmail)
+		}
+	}
+}
+
 func TestCardTooManyHasNoEmailButton(t *testing.T) {
 	if strings.Contains(cardText(t, card{userID: "42", state: cardTooMany}), emailButtonID) {
 		t.Error("too-many card still offers another email")

@@ -83,13 +83,13 @@ func (c card) status() string {
 	case cardSent:
 		s := entered + "📬 **Σου έστειλα email.** Άνοιξέ το και πάτα **Σύνδεση λογαριασμού**.\n" +
 			fmt.Sprintf("-# Ο σύνδεσμος λήγει σε %d λεπτά. Αν δεν το βρίσκεις, κοίτα και στα spam.", int(linkTTL.Minutes()))
-		if csdEmailRegex.MatchString(c.email) {
+		if role, _ := classifyEmail(c.email); role == outsiderRoleID {
 			s += "\n-# Είσαι από άλλο τμήμα, οπότε θα μπεις ως Verified Outsider."
 		}
 		return s
 	case cardInvalid:
 		return entered + "❌ **Αυτό δεν είναι φοιτητικό email.**\n" +
-			"Πρέπει να μοιάζει με `th12345@edu.hmu.gr` ή `csd1234@csd.uoc.gr`."
+			"Πρέπει να μοιάζει με `th12345@edu.hmu.gr`, `tp12345@edu.hmu.gr` ή `csd1234@csd.uoc.gr`."
 	case cardInUse:
 		return entered + "❌ **Αυτό το email έχει ήδη χρησιμοποιηθεί.**\n" +
 			"Αν είναι δικό σου, πάτα **Χρειάζομαι βοήθεια**."
@@ -102,7 +102,7 @@ func (c card) status() string {
 		return "⌛ **Ο σύνδεσμος έληξε.** Γράψε ξανά το email σου για να σου στείλω νέο."
 	default:
 		return "Πάτα το κουμπί και γράψε το email που σου έδωσε η γραμματεία.\n" +
-			"-# Π.χ. `th12345@edu.hmu.gr` ή, για άλλα τμήματα, `csd1234@csd.uoc.gr`"
+			"-# Π.χ. `th12345@edu.hmu.gr` ή, για άλλα τμήματα, `tp12345@edu.hmu.gr` ή `csd1234@csd.uoc.gr`"
 	}
 }
 
@@ -124,7 +124,7 @@ func (c card) buttons() discordgo.ActionsRow {
 		b.Disabled = true
 		row = append(row, b)
 	case cardSent:
-		if hmuEmailRegex.MatchString(c.email) {
+		if strings.HasSuffix(c.email, "@edu.hmu.gr") {
 			row = append(row, discordgo.Button{
 				Label: "Άνοιγμα webmail", Style: discordgo.LinkButton, URL: "https://webmail.edu.hmu.gr",
 			})

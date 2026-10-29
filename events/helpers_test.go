@@ -15,7 +15,10 @@ func TestClassifyEmail(t *testing.T) {
 		ok    bool
 	}{
 		{"th123456@edu.hmu.gr", hmuRoleID, true},
-		{"csd4321@csd.uoc.gr", csdRoleID, true},
+		{"csd4321@csd.uoc.gr", outsiderRoleID, true},
+		{"tp12345@edu.hmu.gr", outsiderRoleID, true},
+		{"tp@edu.hmu.gr", "", false},
+		{"tp123@edu.hmu.gr.evil.com", "", false},
 		{"th123@edu.hmu.gr", hmuRoleID, true},
 		{"random@gmail.com", "", false},
 		{"th123@edu.hmu.gr.evil.com", "", false},

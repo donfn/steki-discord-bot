@@ -15,6 +15,9 @@ import (
 
 var (
 	hmuEmailRegex = regexp.MustCompile(`^th[0-9]+@edu\.hmu\.gr$`)
+	// tpEmailRegex is another HMU department: same university, but its
+	// students join as Verified Outsiders.
+	tpEmailRegex  = regexp.MustCompile(`^tp[0-9]+@edu\.hmu\.gr$`)
 	csdEmailRegex = regexp.MustCompile(`^csd[0-9]+@csd\.uoc\.gr$`)
 )
 
@@ -24,8 +27,8 @@ func classifyEmail(email string) (roleID string, ok bool) {
 	switch {
 	case hmuEmailRegex.MatchString(email):
 		return hmuRoleID, true
-	case csdEmailRegex.MatchString(email):
-		return csdRoleID, true
+	case tpEmailRegex.MatchString(email), csdEmailRegex.MatchString(email):
+		return outsiderRoleID, true
 	default:
 		return "", false
 	}

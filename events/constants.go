@@ -4,18 +4,18 @@ import "time"
 
 // Discord role IDs for the Steki guild.
 const (
-	staffRoleID   = "886976948172124160"
-	modRoleID     = "887063786240999475"
-	modViewRoleID = "887348241350402138" // can view register channels
-	hmuRoleID     = "886993717725102103"
-	csdRoleID     = "993612908074381352"
+	staffRoleID    = "886976948172124160"
+	modRoleID      = "887063786240999475"
+	modViewRoleID  = "887348241350402138" // can view register channels
+	hmuRoleID      = "886993717725102103"
+	outsiderRoleID = "993612908074381352"
 )
 
 // verifiedRoleIDs are the roles that mean a member has completed registration.
-var verifiedRoleIDs = []string{hmuRoleID, csdRoleID}
+var verifiedRoleIDs = []string{hmuRoleID, outsiderRoleID}
 
 // protectedRoleIDs are never kicked by the reaper regardless of idle time.
-var protectedRoleIDs = []string{staffRoleID, modRoleID, modViewRoleID, hmuRoleID, csdRoleID}
+var protectedRoleIDs = []string{staffRoleID, modRoleID, modViewRoleID, hmuRoleID, outsiderRoleID}
 
 // Registration lifecycle timings.
 const (
@@ -90,7 +90,7 @@ const (
 
 	msgAskEmail = "**Για να συνεχίσουμε, πάτα το κουμπί και γράψε το ακαδημαϊκό σου email. " +
 		"Θα πρέπει να είναι της μορφής *thXXXXXX@edu.hmu.gr* (αυτό που σου έδωσε η γραμματεία κατά την εγγραφή)**.\n\n" +
-		":new: Τώρα φοιτητές από εξωτερικά τμήματα (csd.uoc.gr) μπορούν να γραφτούν ως Verified Outsiders."
+		":new: Τώρα φοιτητές από εξωτερικά τμήματα (tpXXXXX@edu.hmu.gr, csd.uoc.gr) μπορούν να γραφτούν ως Verified Outsiders."
 
 	// msgNudge is posted in the register channel after one hour of silence.
 	// It replaces the old direct messages, which were sent every 20 minutes
