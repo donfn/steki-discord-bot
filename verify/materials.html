@@ -1843,6 +1843,13 @@
   function undoInk() {
     const a = inkUndo.pop();
     if (!a || !current) return;
+    if (a.op === 'clear') {
+      ink[current.id] = a.all;
+      saveInk();
+      for (const c of stage.querySelectorAll('.ink')) paintInk(c);
+      syncInkButtons();
+      return;
+    }
     const list = strokesOf(current, a.page);
     if (a.op === 'add') {
       const i = list.lastIndexOf(a.s);
@@ -1854,12 +1861,14 @@
     for (const c of stage.querySelectorAll('.ink')) if (c.dataset.page === a.page) paintInk(c);
     syncInkButtons();
   }
+  // Clearing asks nothing (browsers may block confirm dialogs); it can be
+  // undone instead.
   function clearInk() {
     if (!current || !ink[current.id]) return;
-    if (!confirm('Να σβηστούν όσα έγραψες πάνω σε αυτό το αρχείο;')) return;
+    inkUndo.push({ op: 'clear', all: ink[current.id] });
     delete ink[current.id];
-    inkUndo = [];
     saveInk();
+    toast('Σβήστηκαν όλα σε αυτό το αρχείο. Πάτα «Αναίρεση» για να τα φέρεις πίσω.');
     for (const c of stage.querySelectorAll('.ink')) paintInk(c);
     syncInkButtons();
   }
