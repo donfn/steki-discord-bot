@@ -948,13 +948,13 @@
 <main class="sheet" aria-labelledby="heading">
   <div class="sheet-head">
     <div class="logo-wrap"><img class="logo" src="/verify/logo.png" alt="" width="56" height="56"></div>
-    {{if .Who.Username}}
+    {{if or .Who.Username .ViewOnly}}
     <div class="whoami{{if .ViewOnly}} viewing{{end}}" title="Οι σημειώσεις σου αποθηκεύονται σε αυτόν τον λογαριασμό">
       {{if .Avatar}}<img class="whoami-avatar" src="{{.Avatar}}" alt="" width="36" height="36" referrerpolicy="no-referrer">{{end}}
       <span class="whoami-text">
         <small>{{if .ViewOnly}}Προβολή ως{{else}}Σύνδεση ως{{end}}</small>
         <b>{{.Who.Name}}</b>
-        <span class="whoami-user">@{{.Who.Username}}</span>
+        {{if .Who.Username}}<span class="whoami-user">@{{.Who.Username}}</span>{{end}}
       </span>
     </div>
     {{end}}

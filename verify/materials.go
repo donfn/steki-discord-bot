@@ -55,6 +55,9 @@ type MaterialBody struct {
 	Type string
 }
 
+// profileTimeout bounds how long the material page waits for a member's profile.
+const profileTimeout = 2 * time.Second
+
 const (
 	// entryPath is where the links on the stickies point. It only turns a
 	// valid link into a session; see session.go.
@@ -111,11 +114,7 @@ func (v *Server) materialsPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	analytics.Tag(r.Context(), "channel_id", c.ChannelID)
-	var who Profile
-	if c.Profile != nil {
-		who = *c.Profile
-	}
-	id, ok := v.sessions.open(c.ChannelID, c.Subject, c.GuildID, who, time.Now())
+	id, ok := v.sessions.open(c.ChannelID, c.Subject, c.GuildID, c.Viewer, time.Now())
 	if !ok {
 		v.expired(w, r)
 		return
@@ -175,7 +174,9 @@ func (v *Server) sessionPage(w http.ResponseWriter, r *http.Request) {
 	}
 	v.sessions.setFiles(id, ids)
 	notes := v.notesFor(ctx, subject, ids)
-	guildID, who := v.sessions.owner(id)
+	guildID, viewer := v.sessions.owner(id)
+	who := v.memberProfile(ctx, guildID, subject)
+	who.Viewer = viewer
 	if who.Viewer != "" {
 		// A staff member viewing as the member gets no socket: nothing
 		// saves and they are not counted.
@@ -277,6 +278,22 @@ func (v *Server) materialFile(w http.ResponseWriter, r *http.Request) {
 	if v.sessions.complete(sid, id) {
 		analytics.Tag(ctx, "outcome", "material_session_completed")
 	}
+}
+
+// memberProfile looks up how the material page shows a member. The page works
+// without it, so a failed or slow lookup only costs the name and picture.
+func (v *Server) memberProfile(ctx context.Context, guildID, userID string) Profile {
+	if v.profiles == nil || guildID == "" {
+		return Profile{}
+	}
+	ctx, cancel := context.WithTimeout(ctx, profileTimeout)
+	defer cancel()
+	who, err := v.profiles.MemberProfile(ctx, guildID, userID)
+	if err != nil {
+		v.log.Debug("verify: profile lookup failed", "user_id", userID, "error", err)
+		return Profile{}
+	}
+	return who
 }
 
 // avatarURL returns an avatar's URL if it is on Discord's CDN, the only

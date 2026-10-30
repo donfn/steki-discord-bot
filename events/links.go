@@ -1,6 +1,7 @@
 package events
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -70,7 +71,7 @@ func (h *Handler) onViewMaterials(s *discordgo.Session, i *discordgo.Interaction
 		h.respondNow(s, i, msgGenericError)
 		return
 	}
-	link, tokenID, err := h.materialLink(userID, ch.ID, memberProfile(i))
+	link, tokenID, err := h.materialLink(userID, ch.ID, "")
 	if err != nil {
 		h.log.Error("materials: issue personal link", "user_id", userID, "error", err)
 		h.respondNow(s, i, msgGenericError)
@@ -198,13 +199,6 @@ func (h *Handler) dropPersonalLink(tokenID string) {
 	})
 }
 
-// memberProfile is how the material page shows the member who clicked: their
-// server nickname or display name, username and avatar (their server avatar
-// if they set one).
-func memberProfile(i *discordgo.InteractionCreate) verify.Profile {
-	return profileOf(i.Member, i.GuildID)
-}
-
 // profileOf is how the material page shows a member.
 func profileOf(m *discordgo.Member, guildID string) verify.Profile {
 	if m == nil || m.User == nil {
@@ -217,6 +211,25 @@ func profileOf(m *discordgo.Member, guildID string) verify.Profile {
 		name = displayName(mem.User)
 	}
 	return verify.Profile{Name: name, Username: mem.User.Username, Avatar: mem.AvatarURL("64")}
+}
+
+// ProfileSource returns the verify.ProfileSource that finds members through s.
+func (h *Handler) ProfileSource(s *discordgo.Session) verify.ProfileSource {
+	return profileSource{h: h, s: s}
+}
+
+type profileSource struct {
+	h *Handler
+	s *discordgo.Session
+}
+
+// MemberProfile returns how the material page shows a member.
+func (p profileSource) MemberProfile(ctx context.Context, guildID, userID string) (verify.Profile, error) {
+	m, err := p.h.guildMember(ctx, p.s, guildID, userID)
+	if err != nil {
+		return verify.Profile{}, err
+	}
+	return profileOf(m, guildID), nil
 }
 
 // cmdMaterialsViewAs gives a staff member a personal link to a course
@@ -255,9 +268,7 @@ func (h *Handler) cmdMaterialsViewAs(s *discordgo.Session, i *discordgo.Interact
 		h.reply(s, i, fmt.Sprintf("Ο έλεγχος πρόσβασης απέτυχε: %v", err))
 		return
 	}
-	who := profileOf(mem, i.GuildID)
-	who.Viewer = actorID(i)
-	link, tokenID, err := h.materialLink(target.ID, ch.ID, who)
+	link, tokenID, err := h.materialLink(target.ID, ch.ID, actorID(i))
 	if err != nil {
 		h.reply(s, i, fmt.Sprintf("Δεν μπόρεσα να φτιάξω τον σύνδεσμο: %v", err))
 		return
@@ -265,5 +276,5 @@ func (h *Handler) cmdMaterialsViewAs(s *discordgo.Session, i *discordgo.Interact
 	h.log.Info("materials: view as member", "user_id", actorID(i), "target_id", target.ID, "channel_id", ch.ID)
 	h.alertMods(s, "👁️ Ο/Η <@%s> άνοιξε τον χώρο μελέτης του <#%s> ως <@%s> (μόνο ανάγνωση).", actorID(i), ch.ID, target.ID)
 	h.sendLinkReply(s, i, true, tokenID,
-		fmt.Sprintf("Προβολή ως **%s**, μόνο ανάγνωση:", who.Name), "Άνοιγμα χώρου μελέτης", "👁️", link)
+		fmt.Sprintf("Προβολή ως **%s**, μόνο ανάγνωση:", profileOf(mem, i.GuildID).Name), "Άνοιγμα χώρου μελέτης", "👁️", link)
 }

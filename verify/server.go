@@ -70,7 +70,8 @@ type Server struct {
 	// leaves the page unmounted.
 	mcpURL string
 	// watcher, if set, is told when a personal link is followed.
-	watcher LinkWatcher
+	watcher  LinkWatcher
+	profiles ProfileSource
 	// sockets counts the open page sockets.
 	sockets atomic.Int64
 	// presence is who has the page open.
@@ -83,6 +84,17 @@ type Server struct {
 type LinkWatcher interface {
 	LinkUsed(tokenID string)
 }
+
+// ProfileSource finds how the material page shows a member. It is looked up
+// when the page opens because names and avatars are too long to carry in a
+// link: Discord refuses link buttons over 512 characters.
+type ProfileSource interface {
+	MemberProfile(ctx context.Context, guildID, userID string) (Profile, error)
+}
+
+// SetProfiles sets where the material page finds members. Without one it shows
+// no name or avatar.
+func (v *Server) SetProfiles(p ProfileSource) { v.profiles = p }
 
 // SetLinkWatcher sets who is told about followed personal links.
 func (v *Server) SetLinkWatcher(w LinkWatcher) { v.watcher = w }
