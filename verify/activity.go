@@ -190,8 +190,9 @@ type proxyPayload struct {
 func (v *Server) viaDiscord(next http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if key := v.activity.proxyKey; key != nil {
-			p, ok := checkProxy(key, r.Header, time.Now())
-			if !ok {
+			p, why := checkProxy(key, r.Header, time.Now())
+			if p == nil {
+				v.log.Warn("verify: activity request without a valid proxy signature", "path", r.URL.Path, "reason", why)
 				secure(w)
 				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "proxy"})
 				return
@@ -204,31 +205,40 @@ func (v *Server) viaDiscord(next http.HandlerFunc) http.Handler {
 
 type proxyUserKey struct{}
 
-// checkProxy verifies the proxy's signature headers. The docs show the
-// signature both hex and base64 encoded, so either is accepted.
-func checkProxy(key ed25519.PublicKey, h http.Header, now time.Time) (*proxyPayload, bool) {
+// checkProxy verifies the proxy's signature headers, or says why they fail.
+// The docs show the signature both hex and base64 encoded, so either is
+// accepted.
+func checkProxy(key ed25519.PublicKey, h http.Header, now time.Time) (*proxyPayload, string) {
+	if h.Get(proxyPayloadHeader) == "" || h.Get(proxySignatureHeader) == "" {
+		return nil, "missing headers"
+	}
 	raw, err := decodeBase64(h.Get(proxyPayloadHeader))
 	if err != nil || len(raw) == 0 || len(raw) > 4<<10 {
-		return nil, false
+		return nil, "payload not base64"
 	}
 	sigText := h.Get(proxySignatureHeader)
 	sig, err := hex.DecodeString(sigText)
 	if err != nil {
 		sig, err = decodeBase64(sigText)
 	}
-	if err != nil || len(sig) != ed25519.SignatureSize || !ed25519.Verify(key, raw, sig) {
-		return nil, false
+	if err != nil || len(sig) != ed25519.SignatureSize {
+		return nil, "signature not hex or base64"
+	}
+	if !ed25519.Verify(key, raw, sig) {
+		return nil, "bad signature"
 	}
 	var p proxyPayload
 	if err := json.Unmarshal(raw, &p); err != nil {
-		return nil, false
+		return nil, "payload not json"
 	}
-	expires, err := p.ExpiresAt.Int64()
-	if err != nil || p.CreatedAt.String() == "" || p.CreatedAt.String() != h.Get(proxyTimestampHeader) ||
-		now.Unix() >= expires {
-		return nil, false
+	if p.CreatedAt.String() == "" || p.CreatedAt.String() != h.Get(proxyTimestampHeader) {
+		return nil, "timestamp mismatch"
 	}
-	return &p, true
+	expires, err := p.ExpiresAt.Float64()
+	if err != nil || float64(now.Unix()) >= expires {
+		return nil, "expired"
+	}
+	return &p, ""
 }
 
 // decodeBase64 reads standard or URL-safe base64, padded or not.
@@ -312,12 +322,13 @@ func (v *Server) activityToken(w http.ResponseWriter, r *http.Request) {
 
 	guildID := v.activity.access.GuildID()
 	if guildID == "" {
+		v.log.Warn("verify: activity login before the bot knows its server")
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": stateError})
 		return
 	}
 	userID, err := v.activity.discordUser(ctx, in.Code)
 	if err != nil {
-		v.log.Info("verify: activity login failed", "error", err)
+		v.log.Warn("verify: activity login failed", "error", err)
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "login"})
 		return
 	}
@@ -418,18 +429,36 @@ func (a *activity) call(ctx context.Context, method, path string, form url.Value
 	return json.Unmarshal(b, out)
 }
 
+// activityTokenHeader carries the Activity token too, beside Authorization:
+// a proxy may claim the Authorization header for itself, and nothing
+// documents that Discord's leaves it alone.
+const activityTokenHeader = "X-Activity-Token"
+
 // activityUser checks the request's Activity token and returns the member it
 // was issued to. It writes the error response itself when the token fails.
 func (v *Server) activityUser(w http.ResponseWriter, r *http.Request) (string, bool) {
 	raw, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if ok {
+	if !ok || raw == "" {
+		raw = r.Header.Get(activityTokenHeader)
+	}
+	why := "no token"
+	if raw != "" {
 		// When the proxy names the member, the token must be theirs.
 		proxyUser, _ := r.Context().Value(proxyUserKey{}).(string)
-		if c, err := v.tokens.Parse(raw); err == nil && c.Reason == ReasonActivity &&
-			(proxyUser == "" || proxyUser == c.Subject) {
+		c, err := v.tokens.Parse(raw)
+		switch {
+		case err != nil:
+			why = "token: " + err.Error()
+		case c.Reason != ReasonActivity:
+			why = "not an activity token"
+		case proxyUser != "" && proxyUser != c.Subject:
+			why = "token is another member's"
+		default:
 			return c.Subject, true
 		}
 	}
+	v.log.Warn("verify: activity request refused", "path", r.URL.Path, "reason", why,
+		"has_authorization", r.Header.Get("Authorization") != "", "has_token_header", r.Header.Get(activityTokenHeader) != "")
 	writeJSON(w, http.StatusUnauthorized, map[string]string{"error": stateInvalid})
 	return "", false
 }
@@ -448,8 +477,10 @@ func (v *Server) activityAuthorize(ctx context.Context, w http.ResponseWriter, r
 	// Forbidden rather than Not Found: 404s count towards the flood shield.
 	switch err := v.activity.access.CanRead(ctx, userID, channelID); {
 	case errors.Is(err, ErrForbidden):
+		v.log.Info("verify: activity refused: not a verified member", "user_id", userID)
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
 	case errors.Is(err, ErrNoMaterial):
+		v.log.Info("verify: activity refused: not a course channel the member sees", "user_id", userID, "channel_id", channelID)
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "channel"})
 	case err != nil:
 		v.log.Error("verify: activity access check", "user_id", userID, "channel_id", channelID, "error", err)

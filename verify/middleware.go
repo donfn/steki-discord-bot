@@ -90,15 +90,6 @@ func isActivityPath(path string) bool {
 	return path == ActivityPath || strings.HasPrefix(path, ActivityPath+"/")
 }
 
-// isDiscordsays reports whether origin is a Discord Activity's: inside
-// Discord the page runs at <app id>.discordsays.com, which proxies its
-// requests here. The Activity's writes carry a Bearer token, not a cookie, so
-// another site cannot make them on a member's behalf anyway.
-func isDiscordsays(origin string) bool {
-	host, ok := strings.CutPrefix(origin, "https://")
-	return ok && strings.HasSuffix(host, ".discordsays.com") && !strings.ContainsAny(host, "/:@")
-}
-
 // Harden wraps h with the protections every response needs, whichever route
 // it reaches: panic recovery, security headers (including on 404s), a global
 // concurrency cap, per-address rate limiting, and cross-site and content-type
@@ -142,12 +133,16 @@ func Harden(h http.Handler, logger *slog.Logger) http.Handler {
 		}
 
 		if r.Method == http.MethodPost {
-			if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" {
+			// The Activity's writes are authorised by a Bearer token (and the
+			// proxy's signature), never by a cookie, so another site cannot
+			// make them on a member's behalf; and what Discord's proxy sends as
+			// their origin is not documented. They skip the cross-site checks.
+			if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && !isActivityPath(r.URL.Path) {
 				http.Error(w, "forbidden", http.StatusForbidden)
 				return
 			}
 			if origin := r.Header.Get("Origin"); origin != "" && origin != "https://"+r.Host && origin != "http://"+r.Host &&
-				!(isActivityPath(r.URL.Path) && isDiscordsays(origin)) {
+				!isActivityPath(r.URL.Path) {
 				http.Error(w, "forbidden", http.StatusForbidden)
 				return
 			}

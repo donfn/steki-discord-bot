@@ -1128,7 +1128,7 @@
   // else, or from the back button, on the index of every course the member
   // can see. The token and which of the two shows are kept for this launch in
   // sessionStorage, so moving between them is a reload without a new sign-in.
-  const act = { sdk: null, token: '', channel: '', signing: null };
+  const act = { sdk: null, token: '', channel: '', signing: null, step: '' };
   const ACT_KEY = 'act:' + (new URLSearchParams(location.search).get('instance_id') || '');
   function actLoad() {
     try { return JSON.parse(sessionStorage.getItem(ACT_KEY) || 'null') || {}; } catch { return {}; }
@@ -1155,6 +1155,7 @@
     } catch {
       throw Object.assign(new Error('consent'), { consent: true });
     }
+    act.step = 'login';
     const res = await fetch('./token', {
       method: 'POST',
       cache: 'no-store',
@@ -1162,7 +1163,7 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code }),
     });
-    if (!res.ok) throw new Error('token HTTP ' + res.status);
+    if (!res.ok) throw new Error('login ' + res.status);
     act.token = (await res.json()).token;
     actSave({ token: act.token });
   }
@@ -1176,7 +1177,7 @@
       ...opts,
       cache: 'no-store',
       credentials: 'omit',
-      headers: { ...opts.headers, Authorization: 'Bearer ' + act.token },
+      headers: { ...opts.headers, Authorization: 'Bearer ' + act.token, 'X-Activity-Token': act.token },
     });
     if (!act.token) await signInOnce();
     let res = await go();
@@ -1193,7 +1194,7 @@
   const never = () => new Promise(() => {});
 
   // actFail puts a message in place of the page.
-  function actFail(title, text) {
+  function actFail(title, text, code) {
     for (const m of document.querySelectorAll('main.sheet')) m.hidden = true;
     const main = document.createElement('main');
     main.className = 'sheet narrow';
@@ -1204,11 +1205,19 @@
     const p = document.createElement('p');
     p.textContent = text;
     main.append(h, p);
+    if (code) {
+      // Says which step failed, for whoever is asked for help.
+      const c = document.createElement('p');
+      c.className = 'sub';
+      c.textContent = 'Κωδικός: ' + code;
+      main.append(c);
+      console.error('activity:', code);
+    }
     document.getElementById('course').before(main);
   }
   const failForbidden = () => actFail('Δεν έχεις πρόσβαση',
     'Ο χώρος μελέτης είναι για τα μέλη που έχουν ολοκληρώσει την εγγραφή τους στο Steki.');
-  const failError = () => actFail('Κάτι πήγε στραβά', 'Ο χώρος μελέτης δεν φόρτωσε. Κλείσε την εφαρμογή και δοκίμασε ξανά σε λίγο.');
+  const failError = (code) => actFail('Κάτι πήγε στραβά', 'Ο χώρος μελέτης δεν φόρτωσε. Κλείσε την εφαρμογή και δοκίμασε ξανά σε λίγο.', code);
 
   // The index: every course the member can see, under its category, with a
   // search that ignores accents and case.
@@ -1218,7 +1227,7 @@
     const res = await api('./courses');
     const body = await res.json().catch(() => ({}));
     if (res.status === 403) return failForbidden();
-    if (!res.ok) return failError();
+    if (!res.ok) return failError('courses ' + res.status);
     const courses = body.courses || [];
     const list = document.getElementById('course-list');
     const groups = [];
@@ -1277,6 +1286,7 @@
       act.token = saved.token || '';
       let view = saved.view;
       if (!view) {
+        act.step = 'sdk';
         view = (await discord()).channelId || 'index';
         actSave({ view });
       }
@@ -1299,7 +1309,7 @@
           return never();
         }
         if (res.status !== 400 && res.status !== 403) {
-          failError();
+          failError('data ' + res.status);
           return never();
         }
         // Not a course page this member can read (the launch was elsewhere,
@@ -1311,7 +1321,7 @@
       if (e.consent) {
         actFail('Δεν έγινε σύνδεση', 'Για να δεις το υλικό, επίτρεψε στο Steki να δει ποιος είσαι στο Discord. Κλείσε την εφαρμογή και άνοιξέ τη ξανά.');
       } else {
-        failError();
+        failError(e.message && /^login /.test(e.message) ? e.message : (act.step || 'start') + ': ' + (e.message || e));
       }
     }
     return never();
