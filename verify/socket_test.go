@@ -1,6 +1,7 @@
 package verify
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"regexp"
@@ -152,5 +153,35 @@ func TestSocketNeedsAuthFirst(t *testing.T) {
 	if _, res, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(e.srv.URL, "http")+"/s", bad); err == nil ||
 		res == nil || res.StatusCode != http.StatusForbidden {
 		t.Errorf("cross-site socket: %v", err)
+	}
+}
+
+func TestSocketChecksAccess(t *testing.T) {
+	e := newEnv(t)
+	_, _, body := e.open(t, "100")
+	first, _ := pageData(t, body)
+
+	ws := e.dial(t, first)
+	if m, _ := ws.read(); m["op"] != "token" {
+		t.Fatalf("first message = %v", m)
+	}
+	// The member loses access while the page is open: the next save ends it.
+	e.fm.deny("u1")
+	ws.send(map[string]any{"op": "save", "seq": 1, "items": []map[string]any{
+		{"f": "11", "k": "study", "d": map[string]any{"d": 1}},
+	}})
+	if _, code := ws.read(); code != socketExpired {
+		t.Errorf("save after losing access: close %d, want %d", code, socketExpired)
+	}
+	if notes, _ := e.fm.Notes(context.Background(), "u1"); len(notes) != 0 {
+		t.Errorf("saved without access: %v", notes)
+	}
+
+	// And a member without access cannot open it at all.
+	_, _, body = e.open(t, "100")
+	tok, _ := pageData(t, body)
+	ws = e.dial(t, tok)
+	if m, code := ws.read(); code != socketExpired {
+		t.Errorf("socket without access: %v, close %d, want %d", m, code, socketExpired)
 	}
 }
