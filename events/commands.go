@@ -238,6 +238,22 @@ var commandDefs = []*discordgo.ApplicationCommand{
 			}},
 		}},
 	},
+	{
+		Name:                     "rules",
+		Description:              "Κανόνες και ρόλοι του server",
+		DefaultMemberPermissions: &staffOnly,
+		Options: []*discordgo.ApplicationCommandOption{{
+			Name:        "post",
+			Description: "Στέλνει σε ένα κανάλι τους κανόνες και τη λίστα των ρόλων",
+			Type:        discordgo.ApplicationCommandOptionSubCommand,
+			Options: []*discordgo.ApplicationCommandOption{{
+				Name: "channel", Description: "Το κανάλι όπου θα σταλούν",
+				Type:         discordgo.ApplicationCommandOptionChannel,
+				ChannelTypes: []discordgo.ChannelType{discordgo.ChannelTypeGuildText, discordgo.ChannelTypeGuildNews},
+				Required:     true,
+			}},
+		}},
+	},
 }
 
 // registerCommands installs the command set on the guild. Guild commands
@@ -278,6 +294,7 @@ var commandRoutes = map[string]commandFunc{
 	"email remove":   (*Handler).cmdEmailRemove,
 	"bot stats":      (*Handler).cmdBotStats,
 	"mcp announce":   (*Handler).cmdMCPAnnounce,
+	"rules post":     (*Handler).cmdRulesPost,
 	"guard status":   (*Handler).cmdGuardStatus,
 	"guard restrict": (*Handler).cmdGuardRestrict,
 	"guard ungrace":  (*Handler).cmdGuardUngrace,
