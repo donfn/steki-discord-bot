@@ -402,21 +402,26 @@ func TestActivityStaticFiles(t *testing.T) {
 	}
 }
 
-func TestActivityAcceptsDiscordsaysOrigin(t *testing.T) {
+func TestActivitySkipsCrossSiteChecks(t *testing.T) {
 	e := newActivityEnv(t, false)
 	body := `{"code":"good"}`
-	res, _ := e.do(t, http.MethodPost, "/activity/token", body, map[string]string{
-		"Origin": "https://123.discordsays.com", "Sec-Fetch-Site": "same-origin",
-	})
-	if res.StatusCode != http.StatusOK {
-		t.Errorf("discordsays origin: %d", res.StatusCode)
-	}
-	for _, origin := range []string{"https://evil.example", "https://discordsays.com.evil.example", "http://123.discordsays.com"} {
-		if res, _ := e.do(t, http.MethodPost, "/activity/token", body, map[string]string{"Origin": origin}); res.StatusCode != http.StatusForbidden {
-			t.Errorf("%s: %d", origin, res.StatusCode)
+	// Whatever Discord's proxy sends as the origin, the login goes through:
+	// the Activity's writes carry no cookie.
+	for _, hdr := range []map[string]string{
+		{"Origin": "https://123.discordsays.com", "Sec-Fetch-Site": "same-origin"},
+		{"Origin": "https://discord.com", "Sec-Fetch-Site": "cross-site"},
+	} {
+		if res, _ := e.do(t, http.MethodPost, "/activity/token", body, hdr); res.StatusCode != http.StatusOK {
+			t.Errorf("%v: %d", hdr, res.StatusCode)
 		}
 	}
-	// Elsewhere the Activity's origin is just another site.
+	// A cross-site report still needs a valid token.
+	res, _ := e.do(t, http.MethodPost, "/activity/report", `{"channel":"100","file":"11","reason":"δεν είναι υλικό μαθήματος"}`,
+		map[string]string{"Origin": "https://evil.example", "Sec-Fetch-Site": "cross-site"})
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Errorf("cross-site report without a token: %d", res.StatusCode)
+	}
+	// Elsewhere the cookie routes keep their checks.
 	if res, _ := e.do(t, http.MethodPost, "/s/report", `{}`, map[string]string{"Origin": "https://123.discordsays.com"}); res.StatusCode != http.StatusForbidden {
 		t.Errorf("discordsays origin on /s/report: %d", res.StatusCode)
 	}
@@ -496,5 +501,17 @@ func TestEnableActivityRejectsBadKey(t *testing.T) {
 		if err := v.EnableActivity(ActivityOptions{PublicKey: key}); err == nil {
 			t.Errorf("key %q accepted", key)
 		}
+	}
+}
+
+func TestActivityTokenHeaderFallback(t *testing.T) {
+	e := newActivityEnv(t, false)
+	tok := e.login(t, "good")
+	hdr := map[string]string{"X-Activity-Token": tok, "Authorization": "Basic proxy-owned"}
+	if res, _ := e.do(t, http.MethodGet, "/activity/courses", "", hdr); res.StatusCode != http.StatusOK {
+		t.Errorf("token in X-Activity-Token: %d", res.StatusCode)
+	}
+	if res, _ := e.do(t, http.MethodGet, "/activity/courses", "", map[string]string{"X-Activity-Token": "nope"}); res.StatusCode != http.StatusUnauthorized {
+		t.Errorf("bad token in X-Activity-Token: %d", res.StatusCode)
 	}
 }
