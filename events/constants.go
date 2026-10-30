@@ -76,19 +76,8 @@ const registerChannelPrefix = "register-"
 // before the button existed working.
 const restartEmoji = "🔄"
 
-// Greek copy shared by the welcome flow and the restart flow.
+// Greek copy shared by the reaper and the cleanup paths.
 const (
-	msgWelcome = "**Γεια σου <@%s>, καλώς ήρθες στο Steki!**\n" +
-		"Πριν μπεις, πρέπει να επιβεβαιώσουμε ότι είσαι φοιτητής.\n\n" +
-		"**Θα σου στείλω έναν σύνδεσμο στο ακαδημαϊκό σου email. Άνοιξέ τον, πάτα αποδοχή και μπαίνεις αμέσως.**"
-
-	msgRestartHint = "Αν κολλήσεις κάπου, πάτα το κουμπί παρακάτω για να ξεκινήσεις από την αρχή " +
-		"ή γράψε στο <#%s>."
-
-	msgAskEmail = "**Πάτα το κουμπί και γράψε το ακαδημαϊκό σου email, " +
-		"αυτό της μορφής *thXXXXXX@edu.hmu.gr* που σου έδωσε η γραμματεία**.\n\n" +
-		":new: Φοιτητές άλλων τμημάτων (tpXXXXX@edu.hmu.gr, csd.uoc.gr) μπορούν πλέον να γραφτούν ως Verified Outsiders."
-
 	// msgNudge is posted in the register channel after one hour of silence.
 	// It replaces the old direct messages, which were sent every 20 minutes
 	// for as long as the registration stayed open.

@@ -174,14 +174,16 @@ func (s *Store) SetReportCard(ctx context.Context, id int64, messageID string) e
 // the file was no longer awaiting a decision, so two admins clicking at once
 // cannot both win. The file's row is returned either way.
 func (s *Store) ResolveReport(ctx context.Context, attachmentID string, remove bool, note string) (*Material, bool, error) {
-	status, backedUp := MaterialApproved, "backed_up_at"
+	status := MaterialApproved
 	if remove {
-		status, backedUp = MaterialRejected, "null"
+		status = MaterialRejected
 	}
+	// A removed file loses its bucket copy's mark; one put back keeps it.
 	res, err := s.db.ExecContext(ctx, `update materials
-		set status = ?2, screen_note = ?3, screened_at = ?4, backed_up_at = `+backedUp+`
+		set status = ?2, screen_note = ?3, screened_at = ?4,
+		    backed_up_at = case when ?6 then null else backed_up_at end
 		where attachment_id = ?1 and status = ?5`,
-		attachmentID, status, nullStr(note), ms(time.Now()), MaterialReported)
+		attachmentID, status, nullStr(note), ms(time.Now()), MaterialReported, remove)
 	if err != nil {
 		return nil, false, err
 	}

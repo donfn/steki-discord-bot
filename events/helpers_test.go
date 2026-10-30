@@ -132,3 +132,21 @@ func TestMayUpload(t *testing.T) {
 		}
 	}
 }
+
+func TestCleanLine(t *testing.T) {
+	// Invisible characters are written as escapes, so the source shows them.
+	cases := []struct{ name, in, want string }{
+		{"plain", "Θέματα Σεπτεμβρίου 2024", "Θέματα Σεπτεμβρίου 2024"},
+		{"whitespace collapsed", "  Σημειώσεις \t\n  Ανάλυση  ", "Σημειώσεις Ανάλυση"},
+		{"zero-width dropped", "Θέ\u200bματα\u2060", "Θέματα"},
+		{"bidi override dropped", "fdp.\u202etxt", "fdp.txt"},
+		{"bidi isolate dropped", "\u2066a\u2069", "a"},
+		{"control dropped", "a\x00b\x07c", "abc"},
+		{"empty", " \u200b ", ""},
+	}
+	for _, c := range cases {
+		if got := cleanLine(c.in); got != c.want {
+			t.Errorf("%s: cleanLine(%q) = %q, want %q", c.name, c.in, got, c.want)
+		}
+	}
+}

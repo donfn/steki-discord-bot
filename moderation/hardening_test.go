@@ -97,7 +97,7 @@ func TestBareDomainsAreScreened(t *testing.T) {
 }
 
 func TestQuoteStripsControlAndBidi(t *testing.T) {
-	if got := Quote("a‮b`c\x00"); got != "abˋc" {
+	if got := Quote("a\u202eb`c\x00"); got != "abˋc" {
 		t.Fatalf("Quote = %q", got)
 	}
 }

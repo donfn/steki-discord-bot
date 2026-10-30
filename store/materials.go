@@ -301,33 +301,41 @@ func (s *Store) DeleteMaterialsByMessage(ctx context.Context, messageIDs ...stri
 	for _, id := range messageIDs {
 		args = append(args, id)
 	}
-	return s.deleteMaterials(ctx, `message_id in (`+placeholders(len(messageIDs))+`)`, args)
+	return s.deleteMaterials(ctx, deleteLive+`message_id in (`+placeholders(len(messageIDs))+`)`+returnHome, args)
 }
 
 // DeleteMaterialsRemovedFrom hides the materials of a message that are no
 // longer among keep, which is what an edit that removes an attachment leaves.
 func (s *Store) DeleteMaterialsRemovedFrom(ctx context.Context, messageID string, keep []string) ([]string, error) {
 	args := []any{ms(time.Now()), messageID}
-	cond := `message_id = ?`
+	query := deleteLive + `message_id = ?`
 	if len(keep) > 0 {
 		for _, id := range keep {
 			args = append(args, id)
 		}
-		cond += ` and attachment_id not in (` + placeholders(len(keep)) + `)`
+		query += ` and attachment_id not in (` + placeholders(len(keep)) + `)`
 	}
-	return s.deleteMaterials(ctx, cond, args)
+	return s.deleteMaterials(ctx, query+returnHome, args)
 }
 
 func placeholders(n int) string {
 	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
 }
 
-// deleteMaterials soft-deletes the live rows matching cond, whose positional
-// parameters follow the deletion time in args.
-func (s *Store) deleteMaterials(ctx context.Context, cond string, args []any) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `update materials set deleted_at = ?
-		where deleted_at is null and `+cond+`
-		returning home_channel_id`, args...)
+// The two ends of a soft delete. The caller puts a condition between them,
+// built only from literals and placeholders, never from a value.
+const (
+	deleteLive = `update materials set deleted_at = ?
+		where deleted_at is null and `
+	returnHome = `
+		returning home_channel_id`
+)
+
+// deleteMaterials soft-deletes the live rows a query built from deleteLive and
+// returnHome matches, and returns their home channels. The deletion time is the
+// first of args, the condition's parameters follow.
+func (s *Store) deleteMaterials(ctx context.Context, query string, args []any) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
