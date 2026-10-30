@@ -45,11 +45,12 @@ Each channel in the course categories (`courseCategoryIDs` in
 `events/materials.go`) keeps a bot message at its bottom saying how many files
 members have shared, with two buttons:
 
-- **Προβολή υλικού μαθήματος** answers, to that member alone, with a short
-  explainer of the study space and an «Άνοιγμα χώρου μελέτης» button. The
+- **Προβολή υλικού μαθήματος** answers, to that member alone, with one short
+  line and an «Άνοιγμα χώρου μελέτης» button. The
   button holds a personal link to `/materials`, valid for 30 seconds and good
   for one visit. The reply counts down with a bar and is deleted when the
-  link is opened or runs out. The page lists every file of the channel and
+  link is opened or runs out. On start-up every existing sticky is edited in
+  place to the current card. The page lists every file of the channel and
   its threads, searchable, with PDFs (pdf.js) and images viewed in the page.
   It downloads every file as soon as it opens. Studied marks, the member's
   own titles, notes and ink are saved per member (`study_notes`) and come back

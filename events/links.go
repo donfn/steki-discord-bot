@@ -1,7 +1,6 @@
 package events
 
 import (
-	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -12,9 +11,8 @@ import (
 // The buttons on the stickies and the MCP announcements carry no link. A click
 // answers, to that member alone, with a personal link: it names the member,
 // works for personalLinkTTL and opens once. Nothing is reissued: while the
-// link lives, the reply counts down with a bar the bot edits every
-// countdownStep, next to a Discord timestamp that counts on its own, and it is
-// deleted as soon as the link is followed (the page tells the bot through
+// link lives, a bar under the reply shrinks every countdownStep, and the reply
+// is deleted as soon as the link is followed (the page tells the bot through
 // LinkUsed) or runs out, so no stale link stays on screen.
 
 const (
@@ -41,23 +39,17 @@ type personalLink struct {
 }
 
 // studySpaceIntro is the reply that carries a link to the material page.
-const studySpaceIntro = "### 📚 Ο χώρος μελέτης του μαθήματος\n" +
-	"Όλο το υλικό του καναλιού σε μία σελίδα. Διάβασε τα PDF και τις φωτογραφίες, τσέκαρε ό,τι έχεις μελετήσει, " +
-	"δώσε στα αρχεία δικούς σου τίτλους, κράτα σημειώσεις δίπλα σε κάθε αρχείο και γράψε ή υπογράμμισε πάνω στις σελίδες.\n" +
-	"Ό,τι κάνεις αποθηκεύεται στον λογαριασμό σου και το βρίσκεις κάθε φορά που επιστρέφεις, από όποια συσκευή κι αν μπεις. " +
-	"Τα βλέπεις μόνο εσύ."
+const studySpaceIntro = "📚 Ο χώρος μελέτης σου"
 
 // mcpGuideIntro is the reply that carries a link to the MCP setup page.
-const mcpGuideIntro = "Οδηγίες βήμα προς βήμα για να συνδέσεις το **Claude** ή το **ChatGPT** με το υλικό του Steki."
+const mcpGuideIntro = "🔌 Οδηγίες σύνδεσης AI"
 
-// countdown is the reply's last lines: a bar of the time left, and when the
-// link runs out as a Discord timestamp, which every client counts down live.
-func countdown(left time.Duration, expires time.Time) string {
+// countdown is the bar under the reply, showing how much of the link's time
+// is left.
+func countdown(left time.Duration) string {
 	full := int((left*countdownCells + personalLinkTTL - 1) / personalLinkTTL)
 	full = min(max(full, 0), countdownCells)
-	return fmt.Sprintf("\n\n`%s%s`  λήγει <t:%d:R>\n"+
-		"-# Ο σύνδεσμος είναι προσωπικός και ανοίγει μία φορά. Το μήνυμα θα σβηστεί μόλις τον ανοίξεις ή λήξει.",
-		strings.Repeat("█", full), strings.Repeat("░", countdownCells-full), expires.Unix())
+	return "  `" + strings.Repeat("█", full) + strings.Repeat("░", countdownCells-full) + "`"
 }
 
 // onViewMaterials answers a sticky's "Προβολή υλικού μαθήματος" button.
@@ -106,7 +98,7 @@ func (h *Handler) sendPersonalLink(s *discordgo.Session, i *discordgo.Interactio
 	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
-			Content: text + countdown(personalLinkTTL, expires),
+			Content: text + countdown(personalLinkTTL),
 			Flags:   discordgo.MessageFlagsEphemeral,
 			Components: []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{
 				discordgo.Button{Label: label, Style: discordgo.LinkButton, URL: link, Emoji: &discordgo.ComponentEmoji{Name: emoji}},
@@ -150,7 +142,7 @@ func (h *Handler) countDown(l *personalLink, tokenID, text string, expires time.
 			if left <= 0 {
 				continue
 			}
-			content := text + countdown(left, expires)
+			content := text + countdown(left)
 			ctx, cancel := h.ctx()
 			_, err := l.s.InteractionResponseEdit(l.i, &discordgo.WebhookEdit{Content: &content}, discordgo.WithContext(ctx))
 			cancel()

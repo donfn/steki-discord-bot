@@ -369,4 +369,41 @@ func isStickyMessage(m *discordgo.Message) bool {
 	return false
 }
 
+// updateStickies brings every sticky's card up to date in place, silently,
+// once per start, so a change to the card reaches the copies already in the
+// channels. Channels without a sticky are left alone.
+func (h *Handler) updateStickies(s *discordgo.Session) {
+	guildID := h.guildID()
+	if guildID == "" || !h.stickyEnabled() {
+		return
+	}
+	ctx, cancel := h.ctx()
+	channels, err := dc.GuildChannels(ctx, s, h.log, guildID)
+	cancel()
+	if err != nil {
+		h.log.Error("sticky: list channels for update", "error", err)
+		return
+	}
+	updated := 0
+	for _, ch := range channels {
+		if !hasSticky(ch) || !h.stickyEnabled() || h.base.Err() != nil {
+			continue
+		}
+		ctx, cancel := h.ctxTimeout(flowTimeout)
+		id, err := h.st.Sticky(ctx, ch.ID)
+		if err == nil && id != "" {
+			err = h.syncSticky(ctx, s, ch.ID, false)
+			if err == nil {
+				updated++
+			}
+		}
+		cancel()
+		if err != nil && err != store.ErrNotFound {
+			h.log.Warn("sticky: update", "channel_id", ch.ID, "name", ch.Name, "error", err)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	h.log.Info("sticky: cards updated", "channels", updated)
+}
+
 func ptr[T any](v T) *T { return &v }
