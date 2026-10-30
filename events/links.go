@@ -11,7 +11,7 @@ import (
 // The buttons on the stickies and the MCP announcements carry no link. A click
 // answers, to that member alone, with a personal link: it names the member,
 // works for personalLinkTTL and opens once. Nothing is reissued: while the
-// link lives, a bar under the reply shrinks every countdownStep, and the reply
+// link lives, a bar at the top of the reply shrinks every countdownStep, and the reply
 // is deleted as soon as the link is followed (the page tells the bot through
 // LinkUsed) or runs out, so no stale link stays on screen.
 
@@ -39,17 +39,17 @@ type personalLink struct {
 }
 
 // studySpaceIntro is the reply that carries a link to the material page.
-const studySpaceIntro = "📚 Ο χώρος μελέτης σου"
+const studySpaceIntro = "Πάτησε το κουμπί για να δεις το υλικό στον χώρο μελέτης:"
 
 // mcpGuideIntro is the reply that carries a link to the MCP setup page.
-const mcpGuideIntro = "🔌 Οδηγίες σύνδεσης AI"
+const mcpGuideIntro = "Πάτησε το κουμπί για να δεις τις οδηγίες σύνδεσης του AI σου:"
 
-// countdown is the bar under the reply, showing how much of the link's time
-// is left.
+// countdown is the bar at the top of the reply, showing how much of the
+// link's time is left.
 func countdown(left time.Duration) string {
 	full := int((left*countdownCells + personalLinkTTL - 1) / personalLinkTTL)
 	full = min(max(full, 0), countdownCells)
-	return "  `" + strings.Repeat("█", full) + strings.Repeat("░", countdownCells-full) + "`"
+	return "`" + strings.Repeat("█", full) + strings.Repeat("░", countdownCells-full) + "`\n"
 }
 
 // onViewMaterials answers a sticky's "Προβολή υλικού μαθήματος" button.
@@ -98,7 +98,7 @@ func (h *Handler) sendPersonalLink(s *discordgo.Session, i *discordgo.Interactio
 	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
-			Content: text + countdown(personalLinkTTL),
+			Content: countdown(personalLinkTTL) + text,
 			Flags:   discordgo.MessageFlagsEphemeral,
 			Components: []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{
 				discordgo.Button{Label: label, Style: discordgo.LinkButton, URL: link, Emoji: &discordgo.ComponentEmoji{Name: emoji}},
@@ -142,7 +142,7 @@ func (h *Handler) countDown(l *personalLink, tokenID, text string, expires time.
 			if left <= 0 {
 				continue
 			}
-			content := text + countdown(left)
+			content := countdown(left) + text
 			ctx, cancel := h.ctx()
 			_, err := l.s.InteractionResponseEdit(l.i, &discordgo.WebhookEdit{Content: &content}, discordgo.WithContext(ctx))
 			cancel()
