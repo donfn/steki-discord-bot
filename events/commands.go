@@ -386,6 +386,11 @@ func (h *Handler) onInteractionCreate(s *discordgo.Session, i *discordgo.Interac
 		return
 	}
 	data := i.ApplicationCommandData()
+	// The App Launcher's Launch command is for every member, anywhere.
+	if data.CommandType == primaryEntryPointCommand {
+		h.launchFromEntryPoint(s, i)
+		return
+	}
 	log := h.log.With("command", commandPath(data), "guild_id", i.GuildID, "user_id", actorID(i))
 	log.Info("slash command received")
 

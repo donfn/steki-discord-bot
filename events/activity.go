@@ -2,7 +2,9 @@ package events
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
 
 	"github.com/bwmarrin/discordgo"
 
@@ -19,6 +21,13 @@ import (
 // interactionLaunchActivity is the LAUNCH_ACTIVITY interaction callback, which
 // discordgo v0.29.0 has no constant for.
 const interactionLaunchActivity discordgo.InteractionResponseType = 12
+
+// primaryEntryPointCommand is the App Launcher's Launch command, and
+// entryPointAppHandler the handler that has the app answer it.
+const (
+	primaryEntryPointCommand discordgo.ApplicationCommandType = 4
+	entryPointAppHandler                                      = 1
+)
 
 // activityEnabled reports whether the stickies offer the Activity: it needs
 // what the MCP server needs, the Activity's routes are then served, and the
@@ -105,4 +114,60 @@ func (h *Handler) launchActivity(s *discordgo.Session, i *discordgo.InteractionC
 		return
 	}
 	h.respondNow(s, i, "Η εφαρμογή δεν άνοιξε. Δες το υλικό στον browser: "+link)
+}
+
+// Discord creates the Launch command with the DISCORD_LAUNCH_ACTIVITY
+// handler, which launches the Activity itself and posts a "Game Invitation"
+// in the channel. quietLaunchCommand switches it to APP_HANDLER, so the bot
+// answers it the way it answers the sticky's button: the Activity opens and
+// the channel stays as it was. It runs when the bot connects, and only with
+// the Activity's button on.
+func (h *Handler) quietLaunchCommand(s *discordgo.Session) {
+	if !h.activityEnabled() || s.State.User == nil {
+		return
+	}
+	ctx, cancel := h.ctx()
+	defer cancel()
+	endpoint := discordgo.EndpointApplicationGlobalCommands(s.State.User.ID)
+	body, err := s.RequestWithBucketID(http.MethodGet, endpoint, nil, endpoint, discordgo.WithContext(ctx))
+	if err != nil {
+		h.log.Warn("activity: list global commands", "error", err)
+		return
+	}
+	var cmds []struct {
+		ID      string                           `json:"id"`
+		Type    discordgo.ApplicationCommandType `json:"type"`
+		Handler int                              `json:"handler"`
+	}
+	if err := json.Unmarshal(body, &cmds); err != nil {
+		h.log.Warn("activity: read global commands", "error", err)
+		return
+	}
+	for _, c := range cmds {
+		if c.Type != primaryEntryPointCommand || c.Handler == entryPointAppHandler {
+			continue
+		}
+		cmd := discordgo.EndpointApplicationGlobalCommand(s.State.User.ID, c.ID)
+		_, err := s.RequestWithBucketID(http.MethodPatch, cmd, map[string]int{"handler": entryPointAppHandler},
+			endpoint, discordgo.WithContext(ctx))
+		if err != nil {
+			h.log.Warn("activity: switch the Launch command to the app", "error", err)
+			return
+		}
+		h.log.Info("activity: the Launch command no longer posts in the channel", "command_id", c.ID)
+	}
+}
+
+// launchFromEntryPoint answers the App Launcher's Launch command. Wherever it
+// is used the Activity opens; outside a course channel it shows the study
+// space's index.
+func (h *Handler) launchFromEntryPoint(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	if !h.mcpEnabled() {
+		h.respondNow(s, i, "Ο χώρος μελέτης δεν είναι διαθέσιμος αυτή τη στιγμή.")
+		return
+	}
+	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{Type: interactionLaunchActivity}); err != nil {
+		h.log.Error("activity: launch from the app launcher failed", "error", err)
+		h.respondNow(s, i, msgGenericError)
+	}
 }
