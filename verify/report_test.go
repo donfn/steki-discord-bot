@@ -137,7 +137,7 @@ func TestReportsWorkAfterTheDownloadsAreDone(t *testing.T) {
 func TestReportsStopWhenTheSessionRunsOut(t *testing.T) {
 	s := newSessions()
 	now := time.Now()
-	id, _ := s.open("100", "u1", "g1", now)
+	id, _ := s.open("100", "u1", "g1", Profile{}, now)
 	s.claimPage(id, now)
 	s.setFiles(id, []string{"11"})
 	if _, _, ok := s.authorizeOnPage(id, "11", now); !ok {

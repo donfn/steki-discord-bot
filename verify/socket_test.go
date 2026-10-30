@@ -60,8 +60,20 @@ func (s *testSocket) send(v any) {
 	}
 }
 
-// read returns the next message, or the close code when the socket closed.
+// read returns the next message other than a presence update, or the close
+// code when the socket closed.
 func (s *testSocket) read() (map[string]any, int) {
+	s.t.Helper()
+	for {
+		m, code := s.readAny()
+		if code != 0 || m["op"] != "presence" {
+			return m, code
+		}
+	}
+}
+
+// readAny returns the next message, or the close code when the socket closed.
+func (s *testSocket) readAny() (map[string]any, int) {
 	s.t.Helper()
 	_ = s.conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	var m map[string]any
@@ -184,4 +196,48 @@ func TestSocketChecksAccess(t *testing.T) {
 	if m, code := ws.read(); code != socketExpired {
 		t.Errorf("socket without access: %v, close %d, want %d", m, code, socketExpired)
 	}
+}
+
+func TestSocketPresence(t *testing.T) {
+	e := newEnv(t)
+	join := func(userID, channelID string) *testSocket {
+		t.Helper()
+		_, body := fetch(t, browser(t), e.srv.URL+"/materials?t="+e.materialTokenFor(t, userID, channelID, time.Minute))
+		tok, _ := pageData(t, body)
+		ws := e.dial(t, tok)
+		if m, _ := ws.read(); m["op"] != "token" {
+			t.Fatalf("first message = %v", m)
+		}
+		return ws
+	}
+	// waitFor reads until a presence message with these counts arrives.
+	waitFor := func(ws *testSocket, here, all float64) {
+		t.Helper()
+		for range 10 {
+			m, code := ws.readAny()
+			if code != 0 {
+				t.Fatalf("socket closed: %d", code)
+			}
+			if m["op"] == "presence" && m["here"] == here && m["all"] == all {
+				return
+			}
+		}
+		t.Fatalf("no presence %v/%v", here, all)
+	}
+	a := join("u1", "100")
+	waitFor(a, 1, 1)
+	// The same member in a second tab counts once.
+	a2 := join("u1", "100")
+	waitFor(a2, 1, 1)
+	// Another member on the same course counts in both.
+	b := join("u2", "100")
+	waitFor(a, 2, 2)
+	// A member on another course counts in the whole space only.
+	c := join("u3", "200")
+	waitFor(c, 1, 3)
+	waitFor(a, 2, 3)
+	// Leaving counts them out again.
+	_ = c.conn.Close()
+	_ = b.conn.Close()
+	waitFor(a, 1, 1)
 }

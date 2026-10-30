@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"html/template"
 	"net/http"
 	"strings"
 	"time"
@@ -70,7 +71,7 @@ const (
 // load from blob: URLs.
 const materialCSP = "default-src 'none'; script-src 'nonce-%s' https://cdn.jsdelivr.net; " +
 	"style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com https://cdn.jsdelivr.net data:; " +
-	"img-src 'self' data: blob:; connect-src 'self' https://cdn.jsdelivr.net; worker-src blob:; " +
+	"img-src 'self' data: blob: https://cdn.discordapp.com; connect-src 'self' https://cdn.jsdelivr.net; worker-src blob:; " +
 	"frame-src blob: https://www.youtube-nocookie.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 // materialClaims parses a material page token; every other kind is refused.
@@ -110,7 +111,11 @@ func (v *Server) materialsPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	analytics.Tag(r.Context(), c.Subject, "channel_id", c.ChannelID)
-	id, ok := v.sessions.open(c.ChannelID, c.Subject, c.GuildID, time.Now())
+	var who Profile
+	if c.Profile != nil {
+		who = *c.Profile
+	}
+	id, ok := v.sessions.open(c.ChannelID, c.Subject, c.GuildID, who, time.Now())
 	if !ok {
 		v.expired(w, r)
 		return
@@ -170,13 +175,16 @@ func (v *Server) sessionPage(w http.ResponseWriter, r *http.Request) {
 	}
 	v.sessions.setFiles(id, ids)
 	notes := v.notesFor(ctx, subject, ids)
-	socket, socketExp, err := v.socketToken(subject, v.sessions.guild(id), channelID)
+	guildID, who := v.sessions.owner(id)
+	socket, socketExp, err := v.socketToken(subject, guildID, channelID)
 	if err != nil {
 		v.log.Error("verify: issue socket token", "error", err)
 	}
 	v.renderMaterials(w, http.StatusOK, map[string]any{
 		"Socket":    socket,
 		"SocketExp": socketExp.UnixMilli(),
+		"Who":       who,
+		"Avatar":    avatarURL(who.Avatar),
 		"State":     stateReady,
 		"Channel":   ch.Name,
 		"Course":    courseName(ch.Name),
@@ -262,6 +270,15 @@ func (v *Server) materialFile(w http.ResponseWriter, r *http.Request) {
 	if v.sessions.complete(sid, id) {
 		analytics.Tag(ctx, subject, "outcome", "material_session_completed")
 	}
+}
+
+// avatarURL returns an avatar's URL if it is on Discord's CDN, the only
+// image host the page's CSP allows, or "" otherwise.
+func avatarURL(u string) template.URL {
+	if !strings.HasPrefix(u, "https://cdn.discordapp.com/") {
+		return ""
+	}
+	return template.URL(u)
 }
 
 // isSnowflake reports whether s looks like a Discord ID.
