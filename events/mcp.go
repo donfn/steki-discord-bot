@@ -206,8 +206,19 @@ func (r *mcpReader) Open(ctx context.Context, channelID, fileID string) (*mcp.Do
 
 // ── The announcement ────────────────────────────────────────────────────────
 
-// mcpGuideButtonID asks for a personal link to the setup page.
-const mcpGuideButtonID = "mcp:guide"
+const (
+	// mcpGuideButtonID asks for a personal link to the setup page.
+	mcpGuideButtonID = "mcp:guide"
+	// mcpAnnouncementTitle is the announcement's embed title, which is also
+	// how the bot finds its old announcements.
+	mcpAnnouncementTitle = "🤖 Το υλικό του Steki, στο AI σου"
+
+	// mcpConvertJob names the one-off pass that gives announcements posted
+	// with a shared link the current button.
+	mcpConvertJob = "mcp_announcements_personal_links"
+	// mcpConvertDepth is how far back in each channel that pass looks.
+	mcpConvertDepth = 300
+)
 
 // mcpGuideLink returns one member's personal link to the setup page, and the
 // link's ID.
@@ -229,7 +240,7 @@ func (h *Handler) mcpGuideLink(userID string) (link, tokenID string, err error) 
 // mcpAnnouncementCard is the message explaining the feature and its button.
 func mcpAnnouncementCard() ([]*discordgo.MessageEmbed, []discordgo.MessageComponent) {
 	embeds := []*discordgo.MessageEmbed{{
-		Title: "🤖 Το υλικό του Steki, στο AI σου",
+		Title: mcpAnnouncementTitle,
 		Description: "Μπορείς πλέον να συνδέσεις το **Claude** ή το **ChatGPT** με το υλικό των μαθημάτων. " +
 			"Ζήτα τους να βρουν σημειώσεις και θέματα, να διαβάσουν ένα PDF ή να σου κάνουν περίληψη, " +
 			"χωρίς να ψάχνεις κανάλι κανάλι.",
@@ -287,4 +298,104 @@ func (h *Handler) cmdMCPAnnounce(s *discordgo.Session, i *discordgo.InteractionC
 	}
 	h.log.Info("mcp: announcement posted", "channel_id", ch.ID, "message_id", msg.ID, "user_id", actorID(i))
 	h.reply(s, i, fmt.Sprintf("✅ Το μήνυμα στάλθηκε στο <#%s>. Το κουμπί δίνει σε κάθε μέλος δικό του σύνδεσμο.", ch.ID))
+}
+
+// isOldMCPAnnouncement reports whether m is one of the bot's announcements
+// still carrying a link button instead of the current one.
+func isOldMCPAnnouncement(m *discordgo.Message, botID string) bool {
+	if m.Author == nil || m.Author.ID != botID || len(m.Embeds) == 0 || m.Embeds[0].Title != mcpAnnouncementTitle {
+		return false
+	}
+	for _, c := range m.Components {
+		row, ok := c.(*discordgo.ActionsRow)
+		if !ok {
+			continue
+		}
+		for _, b := range row.Components {
+			if btn, ok := b.(*discordgo.Button); ok && btn.Style == discordgo.LinkButton {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// convertMCPAnnouncements finds, once, the announcements posted while their
+// button carried a shared link, and gives them the current button. The bot no
+// longer keeps a list of them, so it looks through the latest
+// mcpConvertDepth messages of every text channel. The pass is recorded as
+// done only if it got through every channel it could read.
+func (h *Handler) convertMCPAnnouncements(s *discordgo.Session) {
+	guildID := h.guildID()
+	if guildID == "" || s.State.User == nil {
+		return
+	}
+	ctx, cancel := h.ctx()
+	done, err := h.st.JobDone(ctx, mcpConvertJob)
+	cancel()
+	if err != nil || done {
+		return
+	}
+	ctx, cancel = h.ctx()
+	channels, err := dc.GuildChannels(ctx, s, h.log, guildID)
+	cancel()
+	if err != nil {
+		h.log.Error("mcp: list channels for announcement update", "error", err)
+		return
+	}
+	_, components := mcpAnnouncementCard()
+	converted, failed := 0, false
+	for _, ch := range channels {
+		if ch.Type != discordgo.ChannelTypeGuildText && ch.Type != discordgo.ChannelTypeGuildNews {
+			continue
+		}
+		if h.base.Err() != nil {
+			return
+		}
+		before := ""
+		for read := 0; read < mcpConvertDepth; read += 100 {
+			ctx, cancel := h.ctxTimeout(flowTimeout)
+			msgs, err := s.ChannelMessages(ch.ID, 100, before, "", "", discordgo.WithContext(ctx))
+			cancel()
+			if err != nil {
+				// A channel the bot cannot read holds none of its messages.
+				if dc.APICode(err) != discordgo.ErrCodeMissingAccess && dc.APICode(err) != discordgo.ErrCodeMissingPermissions {
+					h.log.Warn("mcp: read channel for announcements", "channel_id", ch.ID, "error", err)
+					failed = true
+				}
+				break
+			}
+			for _, m := range msgs {
+				if !isOldMCPAnnouncement(m, s.State.User.ID) {
+					continue
+				}
+				ctx, cancel := h.ctxTimeout(flowTimeout)
+				_, err := s.ChannelMessageEditComplex(&discordgo.MessageEdit{
+					ID: m.ID, Channel: ch.ID, Components: &components,
+				}, discordgo.WithContext(ctx))
+				cancel()
+				if err != nil {
+					h.log.Warn("mcp: update announcement", "message_id", m.ID, "error", err)
+					failed = true
+					continue
+				}
+				converted++
+			}
+			if len(msgs) < 100 {
+				break
+			}
+			before = msgs[len(msgs)-1].ID
+			time.Sleep(300 * time.Millisecond)
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	h.log.Info("mcp: old announcements updated", "messages", converted)
+	if failed {
+		return
+	}
+	ctx, cancel = h.ctx()
+	defer cancel()
+	if err := h.st.MarkJobDone(ctx, mcpConvertJob); err != nil {
+		h.log.Error("mcp: record announcement update", "error", err)
+	}
 }
