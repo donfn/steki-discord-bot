@@ -190,7 +190,7 @@ func (h *Handler) restoreVerifiedRole(ctx context.Context, s *discordgo.Session,
 			h.log.Warn("touch registration failed", "reg_id", reg.ID, "error", terr)
 		}
 		h.alertMods(s, "⚠️ <@&%s> Ο <@%s> είναι επαληθευμένος στη βάση (`%s`) αλλά δεν έχει ρόλο "+
-			"και δεν μπόρεσα να του τον δώσω. Δεν αφαιρέθηκε. %v",
+			"και δεν μπόρεσα να του τον δώσω, οπότε δεν τον αφαίρεσα. %v",
 			staffRoleID, reg.UserID, email, err)
 		return true, nil
 	}

@@ -11,215 +11,390 @@
 <link rel="icon" href="/verify/logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans+Extra+Condensed:wght@700;800&family=Fira+Sans:wght@400;500;700&family=JetBrains+Mono:wght@500;700&display=swap">
 {{if eq .State "ready"}}
 <link rel="modulepreload" nonce="{{.Nonce}}" href="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy/build/pdf.min.mjs"
   integrity="sha384-z/XbAtvhBXJoK+yvYimnFuTCF6/2wTCDSIFD09/HtIfwFtvDKOMdAe5Z3wOChkmW" crossorigin="anonymous">
 {{end}}
 <style>
+  /* Hallmark · genre: playful · macrostructure: Notice Board · nav: none · footer: none
+   * theme: custom (notebook yellow, warm ink, tomato marker) · enrichment: none
+   * paper oklch(0.855 0.172 87) · accent oklch(0.52 0.2 28) · Fira Sans Extra Condensed + Fira Sans
+   * axes: mid / display-condensed / warm */
   :root {
-    --brand: #FFC900;
-    --ink: #0B0B0C;
-    --bg: var(--brand);
-    --card: #FFFFFF;
-    --tile: #F6F5F1;
-    --text: var(--ink);
-    --muted: rgba(11, 11, 12, 0.62);
-    --hairline: rgba(11, 11, 12, 0.10);
-    --button: var(--ink);
-    --button-text: #FFFFFF;
-    --warn: #B42318;
-    --pdf: #D93A2B;
-    --img: #2F6FDE;
-    --stage: #E9E7E1;
-    --shadow: 0 1px 2px rgba(60, 45, 0, 0.08), 0 12px 40px -12px rgba(60, 45, 0, 0.35);
-    --radius: 28px;
+    --color-brand: oklch(0.855 0.172 87);
+    --color-on-brand: oklch(0.2 0.012 80);
+    --color-paper: var(--color-brand);
+    --color-dot: oklch(0.2 0.012 80 / 0.2);
+    --color-sheet: oklch(0.986 0.012 95);
+    --color-tile: oklch(0.953 0.03 94);
+    --color-ink: oklch(0.2 0.012 80);
+    --color-muted: oklch(0.43 0.02 80);
+    --color-line: oklch(0.2 0.012 80);
+    --color-soft: oklch(0.2 0.012 80 / 0.16);
+    --color-shadow: oklch(0.2 0.012 80);
+    --color-marker: oklch(0.52 0.2 28);
+    --color-sky: oklch(0.5 0.16 255);
+    --color-tape: oklch(0.72 0.14 28 / 0.8);
+    --color-stage: oklch(0.9 0.025 92);
+    --color-page: oklch(1 0 0);
+    --color-code: oklch(0.2 0.012 80);
+    --color-scrim: oklch(0.2 0.012 80 / 0.6);
+
+    --font-display: "Fira Sans Extra Condensed", "Arial Narrow", system-ui, sans-serif;
+    --font-body: "Fira Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+    --space-3xs: 0.25rem;
+    --space-2xs: 0.5rem;
+    --space-xs: 0.75rem;
+    --space-sm: 1rem;
+    --space-md: 1.5rem;
+    --space-lg: 2rem;
+    --space-xl: 3rem;
+
+    --text-xs: 0.75rem;
+    --text-sm: 0.875rem;
+    --text-md: 1rem;
+    --text-lg: 1.25rem;
+    --text-display: clamp(2.2rem, 9vw, 3rem);
+
+    --radius-card: 10px;
+    --radius-ctl: 8px;
+    --border: 2px solid var(--color-line);
+    --shadow-card: 6px 6px 0 var(--color-shadow);
+    --shadow-ctl: 3px 3px 0 var(--color-shadow);
+
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --dur-short: 140ms;
+    --dur-med: 420ms;
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #0E0E0F;
-      --card: #1A1A1C;
-      --tile: #232326;
-      --text: #F5F5F7;
-      --muted: rgba(245, 245, 247, 0.62);
-      --hairline: rgba(255, 255, 255, 0.10);
-      --button: var(--brand);
-      --button-text: var(--ink);
-      --warn: #FF8A80;
-      --pdf: #FF7A6B;
-      --img: #7FA8FF;
-      --stage: #0B0B0C;
-      --shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 20px 60px -20px rgba(0, 0, 0, 0.8);
+      --color-paper: oklch(0.17 0.008 80);
+      --color-dot: oklch(0.95 0.02 92 / 0.09);
+      --color-sheet: oklch(0.225 0.01 80);
+      --color-tile: oklch(0.275 0.012 80);
+      --color-ink: oklch(0.95 0.02 92);
+      --color-muted: oklch(0.77 0.02 90);
+      --color-line: oklch(0.95 0.02 92 / 0.9);
+      --color-soft: oklch(0.95 0.02 92 / 0.18);
+      --color-shadow: var(--color-brand);
+      --color-marker: oklch(0.76 0.15 28);
+      --color-sky: oklch(0.78 0.11 250);
+      --color-stage: oklch(0.13 0.006 80);
+      --color-code: oklch(0.12 0.006 80);
       color-scheme: dark;
     }
   }
 
   * { box-sizing: border-box; }
-  html { -webkit-text-size-adjust: 100%; }
+  html { -webkit-text-size-adjust: 100%; overflow-x: clip; }
   body {
     margin: 0;
     min-height: 100dvh;
-    padding: max(24px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
-    background: var(--bg);
-    color: var(--text);
-    font: 500 1rem/1.55 Manrope, system-ui, -apple-system, "Segoe UI", sans-serif;
+    overflow-x: clip;
+    padding: max(28px, env(safe-area-inset-top)) 16px max(28px, env(safe-area-inset-bottom));
+    background-color: var(--color-paper);
+    background-image: radial-gradient(var(--color-dot) 1.3px, transparent 1.6px);
+    background-size: 22px 22px;
+    color: var(--color-ink);
+    font: 400 var(--text-md)/1.6 var(--font-body);
     -webkit-font-smoothing: antialiased;
   }
-  body.locked { overflow: hidden; }
 
-  main {
+  /* The card: a sheet pinned to the board. */
+  .sheet {
+    position: relative;
     width: 100%;
-    max-width: 52rem;
-    margin: 0 auto;
-    background: var(--card);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    padding: 2rem 1.75rem 1.75rem;
-    animation: arrive 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    background: var(--color-sheet);
+    border: var(--border);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+    padding: 2.25rem 1.75rem 1.75rem;
+    animation: arrive var(--dur-med) var(--ease-out) both;
   }
-  main.narrow { max-width: 27rem; margin-top: 10vh; }
-  @keyframes arrive { from { opacity: 0; transform: translateY(12px) scale(0.985); } }
-  @media (max-width: 480px) { main { padding: 1.5rem 1rem 1rem; border-radius: 22px; } }
+  .sheet::before {
+    content: "";
+    position: absolute;
+    top: -13px;
+    left: 50%;
+    width: 92px;
+    height: 24px;
+    margin-left: -46px;
+    background: var(--color-tape);
+    transform: rotate(-3deg);
+  }
+  @keyframes arrive { from { opacity: 0; transform: translateY(10px); } }
+  @media (max-width: 440px) { .sheet { padding: 2rem 1.25rem 1.5rem; box-shadow: 4px 4px 0 var(--color-shadow); } }
 
-  .brand { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem; }
+  .logo-wrap {
+    width: 56px;
+    height: 56px;
+    margin-bottom: var(--space-md);
+    border: var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    transform: rotate(-4deg);
+    box-shadow: var(--shadow-ctl);
+    background: var(--color-brand);
+  }
   /* The source image carries a dark matte at its corners; clip past it. */
-  .logo-wrap { width: 36px; height: 36px; border-radius: 10px; overflow: hidden; flex: none; }
-  .logo { display: block; width: 100%; height: 100%; transform: scale(1.08); }
-  .brand span { font-weight: 800; letter-spacing: -0.01em; }
+  .logo { display: block; width: 100%; height: 100%; transform: scale(1.1); }
 
   h1 {
-    margin: 0 0 0.35rem;
-    font-size: clamp(1.6rem, 6vw, 2rem);
-    line-height: 1.12;
-    font-weight: 800;
-    letter-spacing: -0.025em;
+    margin: 0 0 var(--space-xs);
+    font: 800 var(--text-display)/1.02 var(--font-display);
+    letter-spacing: -0.005em;
+    text-wrap: balance;
     overflow-wrap: anywhere;
   }
-  h1 .hash { color: var(--muted); font-weight: 700; }
-  p { margin: 0 0 1rem; color: var(--muted); text-wrap: pretty; }
-  p strong { color: var(--text); font-weight: 700; }
-  .sub { margin-bottom: 1.25rem; font-weight: 600; }
+  /* A highlighter swipe on one word. */
+  .mark {
+    padding: 0 0.12em;
+    margin: 0 -0.12em;
+    background: linear-gradient(transparent 52%, var(--color-brand) 52% 94%, transparent 94%);
+    color: var(--color-ink);
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+  @media (prefers-color-scheme: dark) { .mark { color: var(--color-on-brand); background: linear-gradient(transparent 14%, var(--color-brand) 14% 94%, transparent 94%); } }
 
-  /* Download progress: every file is fetched as soon as the page opens, so
-     the link can expire without taking the files with it. */
+  p { margin: 0 0 var(--space-sm); color: var(--color-muted); text-wrap: pretty; }
+  p strong, p b { color: var(--color-ink); font-weight: 700; }
+  a { color: inherit; }
+
+  .note {
+    margin: var(--space-md) 0;
+    padding: 0.85rem 1rem 0.9rem;
+    border: 1.5px dashed var(--color-line);
+    border-radius: 6px;
+    background: var(--color-tile);
+    font-size: 0.9375rem;
+    line-height: 1.5;
+    color: var(--color-muted);
+  }
+  .tag {
+    display: inline-block;
+    margin-bottom: var(--space-3xs);
+    padding: 1px 8px;
+    border-radius: 4px;
+    background: var(--color-ink);
+    color: var(--color-sheet);
+    font: 700 var(--text-xs)/1.6 var(--font-mono);
+  }
+
+  .btn, button.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    width: 100%;
+    min-height: 52px;
+    padding: 0 1.25rem;
+    border: var(--border);
+    border-radius: var(--radius-ctl);
+    background: var(--color-brand);
+    color: var(--color-on-brand);
+    box-shadow: var(--shadow-ctl);
+    font: 700 1.0625rem/1 var(--font-body);
+    text-align: center;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform var(--dur-short) var(--ease-out), box-shadow var(--dur-short) var(--ease-out);
+  }
+  .btn:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--color-shadow); }
+  .btn:active { transform: translate(3px, 3px); box-shadow: 0 0 0 var(--color-shadow); }
+  .btn:focus-visible { outline: 3px solid var(--color-marker); outline-offset: 3px; }
+  .btn[disabled] { cursor: default; opacity: 0.7; transform: none; box-shadow: var(--shadow-ctl); }
+  .btn.ghost { background: transparent; color: var(--color-ink); box-shadow: none; border-color: transparent; font-weight: 500; }
+  .btn.ghost:hover { border-color: var(--color-line); transform: none; }
+
+  .status {
+    min-height: 1.4rem;
+    margin: var(--space-xs) 0 0;
+    font-size: var(--text-sm);
+    font-weight: 500;
+    color: var(--color-muted);
+  }
+  .status[data-tone="error"] { color: var(--color-marker); font-weight: 700; }
+
+  .footnote {
+    margin: var(--space-md) 0 0;
+    padding-top: var(--space-sm);
+    border-top: 1.5px dashed var(--color-soft);
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+  .credit { margin: var(--space-xs) 0 0; font-size: var(--text-xs); line-height: 1.5; }
+  .credit a, .footnote a { font-weight: 700; text-underline-offset: 0.15em; }
+
+  .view[hidden] { display: none; }
+  .view.entering { animation: swap 320ms var(--ease-out) both; }
+  @keyframes swap { from { opacity: 0; transform: translateY(6px); } }
+
+  /* The stamp: a result, slapped on. */
+  .badge {
+    display: grid;
+    place-items: center;
+    width: 64px;
+    height: 64px;
+    margin-bottom: var(--space-md);
+    border: var(--border);
+    border-radius: 14px;
+    background: var(--color-brand);
+    color: var(--color-on-brand);
+    box-shadow: var(--shadow-ctl);
+    transform: rotate(-5deg);
+  }
+  .badge.muted { background: var(--color-tile); color: var(--color-ink); }
+  .badge svg { width: 30px; height: 30px; }
+  .tick { stroke-dasharray: 30; stroke-dashoffset: 30; }
+  .entering .tick { animation: draw 420ms 120ms var(--ease-out) forwards; }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+
+  .spinner {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    animation: spin 700ms linear infinite;
+  }
+  .spinner[hidden] { display: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sheet, .view.entering { animation: fade 200ms ease both; }
+    .tick, .entering .tick { animation: none; stroke-dashoffset: 0; }
+    .spinner { animation-duration: 1.6s; }
+    .btn, .btn:hover, .btn:active { transition: none; }
+    @keyframes fade { from { opacity: 0; } }
+  }
+  @media (prefers-contrast: more) {
+    :root { --color-muted: var(--color-ink); --color-soft: var(--color-line); }
+  }
+
+  body.locked { overflow: hidden; }
+  main.sheet { max-width: 52rem; margin: 0 auto; }
+  main.narrow { max-width: 27rem; margin: 10vh auto 0; }
+  @media (max-width: 480px) { main.sheet { padding: 2rem 0.9rem 1.25rem; } }
+
+  h1 .hash { color: var(--color-marker); }
+  .sub { margin-bottom: var(--space-md); font: 500 0.8125rem/1.4 var(--font-mono); color: var(--color-muted); }
+
+  /* Every file is fetched as soon as the page opens, so the link can expire
+     without taking the files with it. */
   .progress {
     display: grid;
-    gap: 0.5rem;
-    margin: 0 0 1.25rem;
-    padding: 0.85rem 1rem;
-    border-radius: 16px;
-    background: var(--tile);
+    gap: 0.55rem;
+    margin: 0 0 var(--space-md);
+    padding: 0.8rem 0.95rem;
+    border: 1.5px dashed var(--color-line);
+    border-radius: 6px;
+    background: var(--color-tile);
   }
   .progress[hidden] { display: none; }
   .progress-row { display: flex; align-items: center; gap: 0.6rem; font-size: 0.875rem; font-weight: 700; }
   .progress-row span:last-child { flex: 1; min-width: 0; }
-  .bar { height: 6px; border-radius: 99px; background: var(--hairline); overflow: hidden; }
-  .bar i {
-    display: block;
-    height: 100%;
-    width: 0;
-    border-radius: inherit;
-    background: var(--brand);
-    transition: width 240ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
+  .bar { height: 12px; border: 2px solid var(--color-line); border-radius: 4px; background: var(--color-sheet); overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--color-brand); transition: width 240ms var(--ease-out); }
   .progress[data-done] .bar { display: none; }
-  .progress[data-tone="error"] { color: var(--warn); }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--brand); flex: none; box-shadow: 0 0 0 1px var(--hairline); }
+  .progress[data-tone="error"] { color: var(--color-marker); }
+  .dot { flex: none; width: 10px; height: 10px; border: 2px solid var(--color-line); background: var(--color-brand); transform: rotate(45deg); }
 
-  .tools { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1rem; }
+  .tools { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: var(--space-sm); }
   .tools[hidden], .chips[hidden] { display: none; }
   .search-wrap { position: relative; flex: 1 1 14rem; min-width: 0; display: flex; }
   .search-wrap svg {
     position: absolute; left: 0.85rem; top: 50%; width: 18px; height: 18px;
-    transform: translateY(-50%); color: var(--muted); pointer-events: none;
+    transform: translateY(-50%); color: var(--color-muted); pointer-events: none;
   }
   .search {
     flex: 1;
     min-width: 0;
-    height: 44px;
+    height: 46px;
     padding: 0 1rem 0 2.5rem;
-    border: 1px solid var(--hairline);
-    border-radius: 14px;
-    background: var(--tile);
-    color: var(--text);
-    font: 600 1rem Manrope, system-ui, sans-serif;
+    border: var(--border);
+    border-radius: var(--radius-ctl);
+    background: var(--color-tile);
+    color: var(--color-ink);
+    font: 500 1rem var(--font-body);
   }
-  .search::placeholder { color: var(--muted); }
-  .search:focus-visible { outline: 3px solid var(--brand); outline-offset: 1px; }
+  .search::placeholder { color: var(--color-muted); }
+  .search:focus-visible { outline: 3px solid var(--color-marker); outline-offset: 2px; }
   .chips { display: flex; gap: 0.4rem; }
   .chip {
-    height: 44px;
+    height: 46px;
     padding: 0 1rem;
-    border: 1px solid var(--hairline);
-    border-radius: 14px;
-    background: transparent;
-    color: var(--text);
-    font: 700 0.875rem Manrope, system-ui, sans-serif;
+    border: var(--border);
+    border-radius: var(--radius-ctl);
+    background: var(--color-sheet);
+    color: var(--color-ink);
+    font: 700 0.875rem var(--font-body);
+    white-space: nowrap;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
-    transition: transform 100ms ease-out;
+    transition: transform var(--dur-short) var(--ease-out);
   }
-  .chip:active { transform: scale(0.96); }
-  .chip[aria-pressed="true"] { background: var(--button); color: var(--button-text); border-color: transparent; }
-  .chip:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
+  .chip:active { transform: translate(1px, 1px); }
+  .chip[aria-pressed="true"] { background: var(--color-brand); color: var(--color-on-brand); box-shadow: 2px 2px 0 var(--color-shadow); }
+  .chip:focus-visible { outline: 3px solid var(--color-marker); outline-offset: 2px; }
 
-  .files { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+  .files { list-style: none; margin: 0; padding: 0; }
   .file {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     gap: 0.25rem;
-    padding: 0.5rem;
-    border-radius: 18px;
-    background: var(--tile);
+    padding: 0.6rem 0.4rem;
+    border-radius: 8px;
   }
   .file[hidden] { display: none; }
+  .file:not([hidden]) ~ .file:not([hidden]) { border-top: 1.5px dashed var(--color-soft); border-top-left-radius: 0; border-top-right-radius: 0; }
+  .file:hover { background: var(--color-tile); }
   .open {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
     gap: 0.9rem;
     min-width: 0;
-    padding: 0.15rem;
+    padding: 0.2rem;
     border: 0;
-    border-radius: 14px;
+    border-radius: 8px;
     background: transparent;
     color: inherit;
     font: inherit;
     text-align: left;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
-    transition: transform 100ms ease-out;
   }
-  .open:active { transform: scale(0.985); }
-  .open:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
+  .open:focus-visible { outline: 3px solid var(--color-marker); outline-offset: 2px; }
   .thumb {
-    width: 52px;
-    height: 52px;
-    border-radius: 12px;
+    position: relative;
     display: grid;
     place-items: center;
-    background: var(--card);
-    box-shadow: 0 0 0 1px var(--hairline);
+    width: 52px;
+    height: 52px;
+    border: var(--border);
+    border-radius: 6px;
+    background: var(--color-tile);
     overflow: hidden;
-    position: relative;
-    font: 800 0.6875rem/1 Manrope, system-ui, sans-serif;
+    font: 700 0.6875rem/1 var(--font-mono);
     letter-spacing: 0.04em;
   }
-  .thumb.pdf { color: var(--pdf); }
-  .thumb.jpg { color: var(--img); }
+  .thumb.pdf { color: var(--color-marker); }
+  .thumb.jpg { color: var(--color-sky); }
   .thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-  .thumb .spinner { position: absolute; right: 4px; bottom: 4px; width: 12px; height: 12px; color: var(--muted); }
+  .thumb .spinner { position: absolute; right: 3px; bottom: 3px; width: 12px; height: 12px; color: var(--color-muted); }
   .info { min-width: 0; }
-  .name {
-    display: block;
-    font-weight: 800;
-    line-height: 1.3;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+  .name { display: block; font-weight: 700; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .caption {
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -228,81 +403,36 @@
     margin-top: 0.1rem;
     font-size: 0.875rem;
     line-height: 1.4;
+    color: var(--color-muted);
   }
-  .meta { display: block; margin-top: 0.15rem; font-size: 0.8125rem; font-weight: 600; color: var(--muted); }
-  .meta .err { color: var(--warn); }
+  .meta { display: block; margin-top: 0.2rem; font: 500 0.75rem/1.4 var(--font-mono); color: var(--color-muted); }
+  .meta .err { color: var(--color-marker); font-weight: 700; }
 
   .icon-btn {
-    width: 44px;
-    height: 44px;
-    flex: none;
-    border: 0;
-    border-radius: 12px;
     display: grid;
     place-items: center;
+    flex: none;
+    width: 44px;
+    height: 44px;
+    border: 2px solid transparent;
+    border-radius: 8px;
     background: transparent;
-    color: var(--text);
+    color: var(--color-ink);
     cursor: pointer;
     text-decoration: none;
     -webkit-tap-highlight-color: transparent;
-    transition: background 120ms ease, transform 100ms ease-out;
+    transition: transform var(--dur-short) var(--ease-out);
   }
-  .icon-btn:hover { background: var(--hairline); }
-  .icon-btn:active { transform: scale(0.94); }
-  .icon-btn:focus-visible { outline: 3px solid var(--brand); outline-offset: 1px; }
+  .icon-btn:hover { border-color: var(--color-line); }
+  .icon-btn:active { transform: translate(1px, 1px); }
+  .icon-btn:focus-visible { outline: 3px solid var(--color-marker); outline-offset: 1px; }
   .icon-btn[aria-disabled="true"] { opacity: 0.35; pointer-events: none; }
   .icon-btn svg { width: 20px; height: 20px; }
 
   .empty { text-align: center; padding: 2.5rem 1rem 1.5rem; }
   .empty[hidden] { display: none; }
   .empty .badge { margin: 0 auto 1rem; }
-  .empty h2 { margin: 0 0 0.4rem; font-size: 1.125rem; font-weight: 800; }
-
-  .footnote {
-    margin: 1.25rem 0 0;
-    padding-top: 1.25rem;
-    border-top: 1px solid var(--hairline);
-    font-size: 0.8125rem;
-    line-height: 1.5;
-  }
-
-  .spinner {
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    border: 2px solid currentColor;
-    border-right-color: transparent;
-    animation: spin 700ms linear infinite;
-    flex: none;
-  }
-  .spinner[hidden] { display: none; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  .badge {
-    width: 64px;
-    height: 64px;
-    border-radius: 50%;
-    display: grid;
-    place-items: center;
-    margin-bottom: 1.5rem;
-    background: var(--brand);
-    color: var(--ink);
-  }
-  .badge.muted { background: var(--hairline); color: var(--text); }
-  .badge svg { width: 30px; height: 30px; }
-  .cta {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    min-height: 52px;
-    margin-top: 0.5rem;
-    border-radius: 16px;
-    background: var(--button);
-    color: var(--button-text);
-    font-weight: 800;
-    text-decoration: none;
-  }
+  .empty h2 { margin: 0 0 0.4rem; font: 800 1.6rem/1.05 var(--font-display); }
 
   /* The viewer takes the whole screen on phones and floats on larger ones. */
   .viewer {
@@ -312,18 +442,19 @@
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
     grid-template-columns: minmax(0, 1fr);
-    background: var(--stage);
-    animation: rise 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    background: var(--color-stage);
+    animation: rise 300ms var(--ease-out) both;
   }
   .viewer[hidden], .scrim[hidden] { display: none; }
   @keyframes rise { from { opacity: 0; transform: translateY(16px); } }
-  .scrim { position: fixed; inset: 0; z-index: 9; background: rgba(11, 11, 12, 0.55); }
+  .scrim { position: fixed; inset: 0; z-index: 9; background: var(--color-scrim); }
   @media (min-width: 900px) {
     .viewer {
       inset: 24px;
-      border-radius: var(--radius);
+      border: var(--border);
+      border-radius: var(--radius-card);
       overflow: hidden;
-      box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.55);
+      box-shadow: var(--shadow-card);
     }
   }
   .bar-top {
@@ -331,22 +462,22 @@
     align-items: center;
     gap: 0.25rem;
     padding: max(8px, env(safe-area-inset-top)) 8px 8px;
-    background: var(--card);
-    border-bottom: 1px solid var(--hairline);
+    background: var(--color-sheet);
+    border-bottom: var(--border);
   }
   .bar-top .title { flex: 1; min-width: 0; padding: 0 0.4rem; }
-  .bar-top .title b { display: block; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar-top .title b { display: block; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .bar-top .title small {
-    display: block; font-size: 0.75rem; font-weight: 700; color: var(--muted);
+    display: block; font: 500 0.75rem/1.4 var(--font-mono); color: var(--color-muted);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .zoom { display: flex; align-items: center; gap: 0.1rem; }
   .zoom-level {
-    min-width: 3.4rem; height: 44px; padding: 0 0.25rem; border: 0; border-radius: 12px; background: transparent;
-    color: var(--text); font: 700 0.8125rem Manrope, system-ui, sans-serif; font-variant-numeric: tabular-nums; cursor: pointer;
+    min-width: 3.4rem; height: 44px; padding: 0 0.25rem; border: 2px solid transparent; border-radius: 8px; background: transparent;
+    color: var(--color-ink); font: 700 0.8125rem var(--font-mono); cursor: pointer;
   }
-  .zoom-level:hover { background: var(--hairline); }
-  .zoom-level:focus-visible { outline: 3px solid var(--brand); outline-offset: 1px; }
+  .zoom-level:hover { border-color: var(--color-line); }
+  .zoom-level:focus-visible { outline: 3px solid var(--color-marker); outline-offset: 1px; }
   .zoom[hidden] { display: none; }
   @media (max-width: 640px) { .zoom, .nav-file { display: none; } }
 
@@ -358,63 +489,145 @@
     -webkit-overflow-scrolling: touch;
     padding: 16px 12px max(24px, env(safe-area-inset-bottom));
   }
-  .pages { display: grid; justify-items: center; gap: 12px; margin: 0 auto; width: max-content; min-width: 100%; }
+  .pages { display: grid; justify-items: center; gap: 14px; margin: 0 auto; width: max-content; min-width: 100%; }
   .page {
     position: relative;
-    background: #fff;
-    border-radius: 4px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 8px 24px -12px rgba(0, 0, 0, 0.35);
+    background: var(--color-page);
+    border-radius: 2px;
+    box-shadow: 0 0 0 2px var(--color-line), 5px 5px 0 var(--color-shadow);
   }
   .page canvas { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: inherit; }
   .page .num {
     position: absolute;
     right: 8px;
     bottom: 8px;
-    padding: 2px 8px;
-    border-radius: 99px;
-    background: rgba(11, 11, 12, 0.6);
-    color: #fff;
-    font-size: 0.6875rem;
-    font-weight: 700;
     z-index: 1;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: var(--color-code);
+    color: var(--color-brand);
+    font: 700 0.6875rem/1.5 var(--font-mono);
   }
   /* Photos are sized in script (fit to the stage, times the zoom); margin: auto
      centres them while they are smaller than the stage and scrolls once larger. */
   .stage.photo { display: flex; }
-  .stage img.photo { display: block; flex: none; margin: auto; max-width: none; border-radius: 8px; }
-  .stage iframe { display: block; width: 100%; height: calc(100% - 4px); min-height: 70vh; border: 0; border-radius: 8px; background: #fff; }
+  .stage img.photo { display: block; flex: none; margin: auto; max-width: none; border-radius: 4px; box-shadow: 0 0 0 2px var(--color-line); }
+  .stage iframe { display: block; width: 100%; height: calc(100% - 4px); min-height: 70vh; border: 0; border-radius: 4px; background: var(--color-page); }
   .stage .loading {
     display: grid; place-items: center; align-content: center; gap: 0.75rem;
-    min-height: 50vh; padding: 0 1rem; color: var(--muted); font-weight: 700; text-align: center;
+    min-height: 50vh; padding: 0 1rem; color: var(--color-muted); font-weight: 700; text-align: center;
   }
   .stage .loading .spinner { width: 28px; height: 28px; border-width: 3px; }
 
-  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+  /* Grid view (the default) and list view */
+  .views { display: flex; gap: 0.4rem; }
+  .views .chip { width: 46px; padding: 0; display: grid; place-items: center; }
+  .views svg { width: 20px; height: 20px; }
+  .acts { display: flex; align-items: center; }
+  .top { display: none; }
+  .pill {
+    padding: 2px 9px;
+    border: 1.5px solid var(--color-line);
+    border-radius: 99px;
+    background: var(--color-tile);
+    color: var(--color-ink);
+    font: 700 0.6875rem/1.6 var(--font-mono);
+    white-space: nowrap;
+  }
+  .pill.fresh { background: var(--color-brand); color: var(--color-on-brand); }
+  .pill.old { border-style: dashed; color: var(--color-muted); }
+  .pill.kind-pdf { color: var(--color-marker); }
+  .pill.kind-jpg { color: var(--color-sky); }
+  .thumb canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: top; }
+
+  .files[data-view="grid"] {
+    display: grid;
+    gap: 16px;
+    padding: 4px 4px 6px 0;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+  }
+  .files[data-view="grid"] .file,
+  .files[data-view="grid"] .file:not([hidden]) ~ .file:not([hidden]) {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding: 0;
+    border: var(--border);
+    border-radius: var(--radius-ctl);
+    background: var(--color-sheet);
+    box-shadow: var(--shadow-ctl);
+    overflow: hidden;
+    transition: transform var(--dur-short) var(--ease-out), box-shadow var(--dur-short) var(--ease-out);
+  }
+  .files[data-view="grid"] .file[hidden] { display: none; }
+  .files[data-view="grid"] .file:hover { background: var(--color-sheet); transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--color-shadow); }
+  .files[data-view="grid"] .top { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 10px 8px; }
+  .files[data-view="grid"] .open { flex: 1 1 auto; display: flex; flex-direction: column; align-items: stretch; gap: 0.6rem; padding: 0; border-radius: 0; text-align: left; }
+  .files[data-view="grid"] .thumb { width: 100%; height: auto; aspect-ratio: 4 / 3; border-width: 2px 0; border-radius: 0; font-size: 1.1rem; }
+  .files[data-view="grid"] .thumb .spinner { width: 16px; height: 16px; right: 8px; bottom: 8px; }
+  .files[data-view="grid"] .info { padding: 0 12px; }
+  .files[data-view="grid"] .name {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .files[data-view="grid"] .acts { justify-content: flex-end; padding: 2px 6px 6px; }
+  @media (prefers-reduced-motion: reduce) { .files[data-view="grid"] .file { transition: none; } }
+
+  /* The report form */
+  dialog.report {
+    width: min(92vw, 30rem);
+    padding: 1.5rem 1.4rem 1.25rem;
+    border: var(--border);
+    border-radius: var(--radius-card);
+    background: var(--color-sheet);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-card);
+  }
+  dialog.report::backdrop { background: var(--color-scrim); }
+  dialog.report h2 { margin: 0 0 0.35rem; font: 800 1.7rem/1.05 var(--font-display); }
+  dialog.report p { margin-bottom: 0.75rem; font-size: 0.9375rem; }
+  .report-file { margin: 0 0 0.9rem; font: 500 0.8125rem/1.4 var(--font-mono); color: var(--color-muted); overflow-wrap: anywhere; }
+  .report textarea {
+    display: block;
+    width: 100%;
+    min-height: 7rem;
+    resize: vertical;
+    padding: 0.7rem 0.8rem;
+    border: var(--border);
+    border-radius: var(--radius-ctl);
+    background: var(--color-tile);
+    color: var(--color-ink);
+    font: 500 1rem/1.5 var(--font-body);
+  }
+  .report textarea:focus-visible { outline: 3px solid var(--color-marker); outline-offset: 2px; }
+  .report-count { margin: 0.25rem 0 0.5rem; text-align: right; font: 500 0.75rem var(--font-mono); color: var(--color-muted); }
+  .report-msg { min-height: 1.4rem; margin: 0 0 0.75rem; font-size: 0.875rem; font-weight: 500; color: var(--color-muted); }
+  .report-msg[data-tone="error"] { color: var(--color-marker); font-weight: 700; }
+  .report-row { display: flex; gap: 0.6rem; }
+  .report-row .btn { width: auto; flex: 1 1 0; padding: 0 0.75rem; }
+  .report [hidden] { display: none; }
+  @media (max-width: 440px) { .report-row { flex-direction: column-reverse; } }
 
   @media (prefers-reduced-motion: reduce) {
-    main, .viewer { animation: fade 200ms ease both; }
-    .spinner { animation-duration: 1.6s; }
+    .viewer { animation: fade 200ms ease both; }
     .bar i { transition: none; }
-    @keyframes fade { from { opacity: 0; } }
-  }
-  @media (prefers-contrast: more) {
-    :root { --muted: var(--text); --hairline: currentColor; }
-    main { outline: 2px solid var(--text); }
   }
 </style>
 </head>
 <body>
 {{if eq .State "ready"}}
-<main aria-labelledby="heading">
-  <div class="brand">
-    <div class="logo-wrap"><img class="logo" src="/verify/logo.png" alt="" width="36" height="36"></div>
-    <span>στέκι</span>
-  </div>
+<main class="sheet" aria-labelledby="heading">
+  <div class="logo-wrap"><img class="logo" src="/verify/logo.png" alt="" width="56" height="56"></div>
   <h1 id="heading"><span class="hash">#</span>{{.Channel}}</h1>
   <p class="sub" id="summary"></p>
 
   <div class="progress" id="progress" role="status" aria-live="polite">
-    <div class="progress-row"><span class="spinner" id="progress-spin"></span><span id="progress-text">Ετοιμάζεται η λήψη…</span></div>
+    <div class="progress-row"><span class="spinner" id="progress-spin"></span><span id="progress-text">Λήψη αρχείων…</span></div>
     <div class="bar"><i id="progress-bar"></i></div>
   </div>
 
@@ -429,19 +642,23 @@
       <button class="chip" type="button" data-kind="pdf" aria-pressed="false">PDF</button>
       <button class="chip" type="button" data-kind="jpg" aria-pressed="false">Εικόνες</button>
     </div>
+    <div class="views" role="group" aria-label="Προβολή">
+      <button class="chip view-btn" type="button" data-view="grid" aria-pressed="true" aria-label="Πλέγμα" title="Πλέγμα"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1"/></svg></button>
+      <button class="chip view-btn" type="button" data-view="list" aria-pressed="false" aria-label="Λίστα" title="Λίστα"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></svg></button>
+    </div>
   </div>
 
-  <ul class="files" id="files"></ul>
+  <ul class="files" id="files" data-view="grid"></ul>
 
   <div class="empty" id="empty" hidden>
     <div class="badge muted" aria-hidden="true">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
     </div>
-    <h2 id="empty-title">Δεν υπάρχει ακόμα υλικό</h2>
-    <p id="empty-text">Όταν κάποιος ανεβάσει PDF ή εικόνες στο κανάλι, θα εμφανιστούν εδώ. Μπορείς να ξεκινήσεις εσύ, με το κουμπί «Ανέβασμα υλικού».</p>
+    <h2 id="empty-title">Δεν υπάρχει υλικό ακόμα</h2>
+    <p id="empty-text">Ό,τι ανεβαίνει στο κανάλι εμφανίζεται εδώ. Μπορείς να ανεβάσεις κι εσύ υλικό με το κουμπί «Ανέβασμα υλικού» στο Discord.</p>
   </div>
 
-  <p class="footnote">Τα αρχεία τα ανέβασαν μέλη του στεκιού. Ο σύνδεσμος ανανεώνεται αυτόματα στο Discord και ισχύει για μία ώρα.</p>
+  <p class="footnote">Τα αρχεία τα ανέβασαν μέλη του Steki και κατεβαίνουν όλα μόλις ανοίξει η σελίδα. Αν την ανανεώσεις, θα χρειαστείς νέο σύνδεσμο από το Discord.</p>
 </main>
 
 <div class="scrim" id="scrim" hidden></div>
@@ -466,12 +683,36 @@
     <button class="icon-btn nav-file" type="button" id="next" aria-label="Επόμενο αρχείο">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
     </button>
+    <button class="icon-btn" type="button" id="viewer-report" aria-label="Αναφορά αρχείου" title="Αναφορά"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4M5 4h11l-1.5 4L16 12H5"/></svg></button>
     <a class="icon-btn" id="viewer-dl" aria-label="Λήψη αρχείου">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
     </a>
   </div>
   <div class="stage" id="stage"></div>
 </section>
+
+<dialog class="report" id="report" aria-labelledby="report-title">
+  <form id="report-form" novalidate>
+    <div id="report-ask">
+      <h2 id="report-title">Τι πρόβλημα έχει αυτό το αρχείο;</h2>
+      <p>Γράψε με δικά σου λόγια τι δεν πάει καλά. Ένα AI ελέγχει την αναφορά μαζί με το αρχείο· αν ισχύει, το αρχείο κρύβεται αμέσως και το εξετάζει ένας διαχειριστής.</p>
+      <p class="report-file" id="report-file"></p>
+      <label class="sr-only" for="report-reason">Λόγος αναφοράς</label>
+      <textarea id="report-reason" maxlength="500" placeholder="Π.χ. είναι meme και όχι υλικό, έχει προσωπικά στοιχεία, δεν ανοίγει…"></textarea>
+      <p class="report-count" id="report-count">0/500</p>
+      <p class="report-msg" id="report-msg" role="status"></p>
+      <div class="report-row">
+        <button class="btn ghost" type="button" id="report-cancel">Άκυρο</button>
+        <button class="btn" type="submit" id="report-send"><span class="spinner" id="report-spin" hidden></span><span id="report-label">Αναφορά</span></button>
+      </div>
+    </div>
+    <div id="report-done" hidden>
+      <h2 id="report-done-title"></h2>
+      <p id="report-done-text"></p>
+      <div class="report-row"><button class="btn" type="button" id="report-close">Εντάξει</button></div>
+    </div>
+  </form>
+</dialog>
 
 <script type="application/json" id="data">{"files":{{.Files}},"total":{{.Total}}}</script>
 <script nonce="{{.Nonce}}" type="module">
@@ -499,23 +740,58 @@
     return e;
   }
 
+  const FLAG_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4M5 4h11l-1.5 4L16 12H5"/></svg>';
+  const REPORT_MIN = 10;
+
   const files = data.files.map((f) => ({ ...f, state: 'queued', blob: null, url: null, wait: null }));
-  const pdfCount = files.filter((f) => kindOf(f) === 'pdf').length;
-  const imgCount = files.length - pdfCount;
+  const countOf = (k) => files.filter((f) => kindOf(f) === k).length;
+
+  // How old a file is, for the chip on top of its card.
+  function ageOf(iso) {
+    const days = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86400000));
+    if (days < 1) return { text: 'σήμερα', tone: 'fresh' };
+    if (days === 1) return { text: 'χθες', tone: 'fresh' };
+    if (days < 7) return { text: 'πριν ' + days + ' ημέρες', tone: 'fresh' };
+    if (days < 30) {
+      const w = Math.floor(days / 7);
+      return { text: 'πριν ' + w + ' ' + plural(w, 'εβδομάδα', 'εβδομάδες'), tone: 'fresh' };
+    }
+    if (days < 365) {
+      const m = Math.floor(days / 30);
+      return { text: 'πριν ' + m + ' ' + plural(m, 'μήνα', 'μήνες'), tone: '' };
+    }
+    const y = Math.floor(days / 365);
+    return { text: 'πριν ' + y + ' ' + plural(y, 'χρόνο', 'χρόνια'), tone: 'old' };
+  }
 
   // ── List ────────────────────────────────────────────────────────────────
-  $('summary').textContent = files.length
-    ? [
-        files.length + ' ' + plural(files.length, 'αρχείο', 'αρχεία'),
-        pdfCount && imgCount ? pdfCount + ' PDF, ' + imgCount + ' ' + plural(imgCount, 'εικόνα', 'εικόνες') : null,
-        size(data.total),
-      ].filter(Boolean).join(' · ')
-    : 'Υλικό μαθήματος';
+  function renderSummary() {
+    const pdfs = countOf('pdf');
+    const imgs = files.length - pdfs;
+    $('summary').textContent = files.length
+      ? [
+          files.length + ' ' + plural(files.length, 'αρχείο', 'αρχεία'),
+          pdfs && imgs ? pdfs + ' PDF, ' + imgs + ' ' + plural(imgs, 'εικόνα', 'εικόνες') : null,
+          size(files.reduce((n, f) => n + f.size, 0)),
+        ].filter(Boolean).join(' · ')
+      : 'Υλικό μαθήματος';
+  }
+  function syncTools() {
+    $('tools').hidden = !files.length;
+    $('chips').hidden = !countOf('pdf') || !countOf('jpg');
+  }
+  renderSummary();
 
   for (const f of files) {
     const li = el('li', 'file');
     li.dataset.kind = kindOf(f);
     li.dataset.search = [f.name, f.caption, f.by, f.thread].filter(Boolean).join(' ').toLocaleLowerCase('el');
+
+    const top = el('div', 'top');
+    const age = ageOf(f.posted);
+    const ageChip = el('span', 'pill ' + age.tone, age.text);
+    ageChip.title = dateFmt.format(new Date(f.posted));
+    top.append(ageChip, el('span', 'pill kind-' + kindOf(f), kindOf(f) === 'pdf' ? 'PDF' : 'JPG'));
 
     const open = el('button', 'open');
     open.type = 'button';
@@ -540,9 +816,33 @@
     dl.download = f.name;
     dl.innerHTML = DL_ICON;
 
-    li.append(open, dl);
+    const rep = el('button', 'icon-btn');
+    rep.type = 'button';
+    rep.title = 'Αναφορά';
+    rep.setAttribute('aria-label', 'Αναφορά: ' + f.name);
+    rep.innerHTML = FLAG_ICON;
+    rep.addEventListener('click', () => openReport(f, rep));
+
+    const acts = el('div', 'acts');
+    acts.append(dl, rep);
+    li.append(top, open, acts);
     $('files').append(li);
     f.row = { li, thumb, spin, meta, dl, bits };
+  }
+
+  // ── View: grid by default, list on request ──────────────────────────────
+  function setView(v) {
+    $('files').dataset.view = v;
+    for (const b of document.querySelectorAll('.view-btn')) b.setAttribute('aria-pressed', String(b.dataset.view === v));
+  }
+  let savedView = null;
+  try { savedView = localStorage.getItem('mv'); } catch {}
+  setView(savedView === 'list' ? 'list' : 'grid');
+  for (const b of document.querySelectorAll('.view-btn')) {
+    b.addEventListener('click', () => {
+      setView(b.dataset.view);
+      try { localStorage.setItem('mv', b.dataset.view); } catch {}
+    });
   }
 
   // ── Filters ─────────────────────────────────────────────────────────────
@@ -562,15 +862,14 @@
     }
   }
   $('search').addEventListener('input', applyFilter);
-  for (const chip of document.querySelectorAll('.chip')) {
+  for (const chip of document.querySelectorAll('.chips .chip')) {
     chip.addEventListener('click', () => {
       kind = chip.dataset.kind;
-      for (const c of document.querySelectorAll('.chip')) c.setAttribute('aria-pressed', String(c === chip));
+      for (const c of document.querySelectorAll('.chips .chip')) c.setAttribute('aria-pressed', String(c === chip));
       applyFilter();
     });
   }
-  $('tools').hidden = !files.length;
-  $('chips').hidden = !pdfCount || !imgCount;
+  syncTools();
   applyFilter();
 
   // ── Downloads ───────────────────────────────────────────────────────────
@@ -585,21 +884,21 @@
     if (!files.length) { box.hidden = true; return; }
     $('progress-bar').style.width = (100 * done / files.length) + '%';
     if (done < files.length) {
-      $('progress-text').textContent = 'Λήψη αρχείων: ' + done + ' από ' + files.length + '…';
+      $('progress-text').textContent = 'Λήψη: ' + done + ' από ' + files.length + '…';
       return;
     }
     const ready = files.filter((f) => f.state === 'ready').length;
     box.dataset.done = '';
     if (ready === files.length) {
       $('progress-spin').replaceWith(el('span', 'dot'));
-      $('progress-text').textContent = 'Όλα τα αρχεία κατέβηκαν και μένουν διαθέσιμα όσο η σελίδα είναι ανοιχτή.';
+      $('progress-text').textContent = 'Όλα τα αρχεία κατέβηκαν και είναι διαθέσιμα όσο η σελίδα μένει ανοιχτή.';
       return;
     }
     $('progress-spin').hidden = true;
     box.dataset.tone = 'error';
     $('progress-text').textContent = expired
       ? 'Ο σύνδεσμος έληξε πριν κατέβουν όλα (' + ready + ' από ' + files.length + '). Πάτα ξανά «Προβολή υλικού μαθήματος» στο Discord για τα υπόλοιπα.'
-      : 'Κατέβηκαν ' + ready + ' από ' + files.length + ' αρχεία. Κάποια δεν ήταν διαθέσιμα.';
+      : 'Κατέβηκαν ' + ready + ' από ' + files.length + ' αρχεία. Τα υπόλοιπα δεν είναι διαθέσιμα.';
   }
 
   function settle(f, state, message) {
@@ -615,6 +914,8 @@
         img.decoding = 'async';
         img.src = f.url;
         f.row.thumb.append(img);
+      } else {
+        pdfThumb(f);
       }
     } else {
       f.row.meta.textContent = f.row.bits.join(' · ') + ' · ';
@@ -639,7 +940,7 @@
         f.url = URL.createObjectURL(f.blob);
         settle(f, 'ready');
       } catch {
-        settle(f, 'failed', 'δεν κατέβηκε');
+        settle(f, 'failed', 'η λήψη απέτυχε');
       }
     })();
     return f.wait;
@@ -668,7 +969,40 @@
     pdfjs.catch(() => { pdfjs = null; });
     return pdfjs;
   }
-  if (pdfCount) (window.requestIdleCallback || setTimeout)(() => loadPdfjs().catch(() => {}));
+  if (countOf('pdf')) (window.requestIdleCallback || setTimeout)(() => loadPdfjs().catch(() => {}));
+
+  // The first page of each PDF, drawn small, one file at a time so the
+  // downloads and the viewer are not held up.
+  let thumbChain = Promise.resolve();
+  function pdfThumb(f) {
+    thumbChain = thumbChain.then(async () => {
+      if (f.removed) return;
+      try {
+        const lib = await loadPdfjs();
+        const bytes = new Uint8Array(await f.blob.arrayBuffer());
+        const d = await lib.getDocument({
+          data: bytes,
+          isEvalSupported: false,
+          cMapUrl: PDFJS + 'cmaps/',
+          cMapPacked: true,
+          standardFontDataUrl: PDFJS + 'standard_fonts/',
+        }).promise;
+        try {
+          const page = await d.getPage(1);
+          const base = page.getViewport({ scale: 1 });
+          const vp = page.getViewport({ scale: Math.min(2, 360 / base.width) });
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.floor(vp.width);
+          canvas.height = Math.floor(vp.height);
+          canvas.setAttribute('aria-hidden', 'true');
+          await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+          if (!f.removed) f.row.thumb.append(canvas);
+        } finally {
+          d.destroy();
+        }
+      } catch {}
+    });
+  }
 
   // ── Viewer ──────────────────────────────────────────────────────────────
   const stage = $('stage');
@@ -881,13 +1215,129 @@
   $('next').addEventListener('click', () => step(1));
   window.addEventListener('popstate', () => closeViewer(true));
   document.addEventListener('keydown', (e) => {
-    if (!current) return;
+    if (!current || $('report').open) return;
     if (e.key === 'Escape') { e.preventDefault(); closeViewer(); }
     else if (e.key === 'ArrowLeft') step(-1);
     else if (e.key === 'ArrowRight') step(1);
     else if ((e.key === '+' || e.key === '=') && (e.ctrlKey || e.metaKey)) { e.preventDefault(); setZoom(zoom + zoomStep()); }
     else if (e.key === '-' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); setZoom(zoom - zoomStep()); }
   });
+  // ── Reports ─────────────────────────────────────────────────────────────
+  const dlg = $('report');
+  const reasonBox = $('report-reason');
+  let reporting = null;
+  let sending = false;
+
+  const resetFmt = new Intl.DateTimeFormat('el-GR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+
+  function reportMsg(text, tone) {
+    $('report-msg').textContent = text;
+    $('report-msg').dataset.tone = tone || '';
+  }
+  function reportBusy(on) {
+    sending = on;
+    $('report-send').disabled = on;
+    $('report-spin').hidden = !on;
+    $('report-label').textContent = on ? 'Έλεγχος…' : 'Αναφορά';
+  }
+  function leftText(n) {
+    if (typeof n !== 'number') return '';
+    if (n <= 0) return 'Δεν σου μένουν άλλες αναφορές αυτή την εβδομάδα.';
+    return 'Σου ' + plural(n, 'μένει 1 αναφορά', 'μένουν ' + n + ' αναφορές') + ' αυτή την εβδομάδα.';
+  }
+
+  function openReport(f, opener) {
+    reporting = { f, opener };
+    $('report-file').textContent = (f.caption ? f.caption + ' · ' : '') + f.name;
+    reasonBox.value = '';
+    $('report-count').textContent = '0/500';
+    reportMsg('');
+    reportBusy(false);
+    $('report-ask').hidden = false;
+    $('report-done').hidden = true;
+    dlg.showModal();
+    reasonBox.focus();
+  }
+
+  function removeFile(f) {
+    const at = files.indexOf(f);
+    if (at < 0) return;
+    f.removed = true;
+    files.splice(at, 1);
+    f.row.li.remove();
+    if (f.url) URL.revokeObjectURL(f.url);
+    if (current === f) closeViewer();
+    renderSummary();
+    syncTools();
+    applyFilter();
+    if (!files.length) progress();
+  }
+
+  function reportDone(title, text) {
+    $('report-done-title').textContent = title;
+    $('report-done-text').textContent = text;
+    $('report-ask').hidden = true;
+    $('report-done').hidden = false;
+    $('report-close').focus();
+  }
+
+  async function sendReport(e) {
+    e.preventDefault();
+    if (!reporting || sending) return;
+    const reason = reasonBox.value.trim();
+    if ([...reason].length < REPORT_MIN) {
+      reportMsg('Γράψε τουλάχιστον ' + REPORT_MIN + ' χαρακτήρες.', 'error');
+      reasonBox.focus();
+      return;
+    }
+    const f = reporting.f;
+    reportBusy(true);
+    reportMsg('Η αναφορά ελέγχεται μαζί με το αρχείο. Θα πάρει λίγα δευτερόλεπτα.');
+    try {
+      const res = await fetch('/s/report', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file: f.id, reason }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) {
+        const note = body.note ? body.note.replace(/[.\s]+$/, '') + '. ' : '';
+        if (body.status === 'pulled') {
+          removeFile(f);
+          reportDone('Η αναφορά έγινε δεκτή', 'Το αρχείο κρύφτηκε από τη σελίδα και θα το εξετάσουν οι διαχειριστές. ' + note + leftText(body.left));
+        } else {
+          reportDone('Η αναφορά δεν έγινε δεκτή', note + 'Το αρχείο μένει στη σελίδα. ' + leftText(body.left));
+        }
+        return;
+      }
+      if (res.status === 401) reportMsg('Η σελίδα έληξε. Άνοιξε νέο σύνδεσμο από το Discord για να στείλεις αναφορά.', 'error');
+      else if (res.status === 409) reportMsg('Έχεις ήδη αναφέρει αυτό το αρχείο.', 'error');
+      else if (res.status === 410) { removeFile(f); reportDone('Το αρχείο αφαιρέθηκε', 'Το αρχείο έχει ήδη αφαιρεθεί από τη σελίδα.'); }
+      else if (res.status === 429) {
+        reportMsg('Έφτασες το όριο των 5 αναφορών την εβδομάδα. Μπορείς να στείλεις ξανά από ' + (body.resets ? resetFmt.format(new Date(body.resets)) : 'την επόμενη εβδομάδα') + '.', 'error');
+      } else if (res.status === 503) reportMsg('Ο έλεγχος δεν είναι διαθέσιμος αυτή τη στιγμή. Δοκίμασε ξανά σε λίγο· αυτή η προσπάθεια δεν μετράει στο όριό σου.', 'error');
+      else if (body.error === 'reason') reportMsg('Ο λόγος πρέπει να έχει από ' + REPORT_MIN + ' έως 500 χαρακτήρες.', 'error');
+      else reportMsg('Κάτι πήγε στραβά. Δοκίμασε ξανά σε λίγο.', 'error');
+    } catch {
+      reportMsg('Δεν έχεις σύνδεση στο internet. Έλεγξέ την και δοκίμασε ξανά.', 'error');
+    } finally {
+      reportBusy(false);
+    }
+  }
+
+  reasonBox.addEventListener('input', () => {
+    $('report-count').textContent = [...reasonBox.value].length + '/500';
+    if ($('report-msg').dataset.tone === 'error') reportMsg('');
+  });
+  $('report-form').addEventListener('submit', sendReport);
+  $('report-cancel').addEventListener('click', () => dlg.close());
+  $('report-close').addEventListener('click', () => dlg.close());
+  dlg.addEventListener('cancel', (e) => { if (sending) e.preventDefault(); });
+  dlg.addEventListener('click', (e) => { if (e.target === dlg && !sending) dlg.close(); });
+  dlg.addEventListener('close', () => { reporting?.opener?.isConnected && reporting.opener.focus?.(); reporting = null; });
+  $('viewer-report').addEventListener('click', () => { if (current) openReport(current, $('viewer-report')); });
+
   let resizeTimer;
   window.addEventListener('resize', () => {
     clearTimeout(resizeTimer);
@@ -895,20 +1345,16 @@
   });
 </script>
 {{else}}
-<main class="narrow" aria-live="polite">
-  <div class="brand">
-    <div class="logo-wrap"><img class="logo" src="/verify/logo.png" alt="" width="36" height="36"></div>
-    <span>στέκι</span>
-  </div>
+<main class="sheet narrow" aria-live="polite">
   <div class="badge muted" aria-hidden="true">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 7v6M12 17h.01"/></svg>
   </div>
   {{if eq .State "error"}}
   <h1>Κάτι πήγε στραβά</h1>
-  <p>Δεν μπορέσαμε να φορτώσουμε τη σελίδα αυτή τη στιγμή. Δοκίμασε ξανά σε λίγο.</p>
+  <p>Η σελίδα δεν φόρτωσε. Δοκίμασε ξανά σε λίγο.</p>
   {{else}}
   <h1>Ο σύνδεσμος έληξε</h1>
-  <p>Αυτός ο σύνδεσμος δεν ισχύει πια. Ζήτησε έναν καινούριο από εκεί που τον βρήκες.</p>
+  <p>Ζήτα νέο σύνδεσμο από το μήνυμα όπου βρήκες αυτόν.</p>
   {{end}}
 </main>
 {{end}}

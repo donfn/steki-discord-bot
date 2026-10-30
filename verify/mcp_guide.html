@@ -11,240 +11,486 @@
 <link rel="icon" href="/verify/logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans+Extra+Condensed:wght@700;800&family=Fira+Sans:wght@400;500;700&family=JetBrains+Mono:wght@500;700&display=swap">
 <style>
+  /* Hallmark · genre: playful · macrostructure: Notice Board · nav: none · footer: none
+   * theme: custom (notebook yellow, warm ink, tomato marker) · enrichment: none
+   * paper oklch(0.855 0.172 87) · accent oklch(0.52 0.2 28) · Fira Sans Extra Condensed + Fira Sans
+   * axes: mid / display-condensed / warm */
   :root {
-    --brand: #FFC900;
-    --ink: #0B0B0C;
-    --bg: var(--brand);
-    --card: #FFFFFF;
-    --tile: #F6F5F1;
-    --text: var(--ink);
-    --muted: rgba(11, 11, 12, 0.62);
-    --hairline: rgba(11, 11, 12, 0.10);
-    --button: var(--ink);
-    --button-text: #FFFFFF;
-    --code: #0B0B0C;
-    --code-text: #FFE27A;
-    --warn: #B42318;
-    --shadow: 0 1px 2px rgba(60, 45, 0, 0.08), 0 12px 40px -12px rgba(60, 45, 0, 0.35);
-    --radius: 28px;
+    --color-brand: oklch(0.855 0.172 87);
+    --color-on-brand: oklch(0.2 0.012 80);
+    --color-paper: var(--color-brand);
+    --color-dot: oklch(0.2 0.012 80 / 0.2);
+    --color-sheet: oklch(0.986 0.012 95);
+    --color-tile: oklch(0.953 0.03 94);
+    --color-ink: oklch(0.2 0.012 80);
+    --color-muted: oklch(0.43 0.02 80);
+    --color-line: oklch(0.2 0.012 80);
+    --color-soft: oklch(0.2 0.012 80 / 0.16);
+    --color-shadow: oklch(0.2 0.012 80);
+    --color-marker: oklch(0.52 0.2 28);
+    --color-sky: oklch(0.5 0.16 255);
+    --color-tape: oklch(0.72 0.14 28 / 0.8);
+    --color-stage: oklch(0.9 0.025 92);
+    --color-page: oklch(1 0 0);
+    --color-code: oklch(0.2 0.012 80);
+    --color-scrim: oklch(0.2 0.012 80 / 0.6);
+
+    --font-display: "Fira Sans Extra Condensed", "Arial Narrow", system-ui, sans-serif;
+    --font-body: "Fira Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+    --space-3xs: 0.25rem;
+    --space-2xs: 0.5rem;
+    --space-xs: 0.75rem;
+    --space-sm: 1rem;
+    --space-md: 1.5rem;
+    --space-lg: 2rem;
+    --space-xl: 3rem;
+
+    --text-xs: 0.75rem;
+    --text-sm: 0.875rem;
+    --text-md: 1rem;
+    --text-lg: 1.25rem;
+    --text-display: clamp(2.2rem, 9vw, 3rem);
+
+    --radius-card: 10px;
+    --radius-ctl: 8px;
+    --border: 2px solid var(--color-line);
+    --shadow-card: 6px 6px 0 var(--color-shadow);
+    --shadow-ctl: 3px 3px 0 var(--color-shadow);
+
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --dur-short: 140ms;
+    --dur-med: 420ms;
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #0E0E0F;
-      --card: #1A1A1C;
-      --tile: #232326;
-      --text: #F5F5F7;
-      --muted: rgba(245, 245, 247, 0.62);
-      --hairline: rgba(255, 255, 255, 0.10);
-      --button: var(--brand);
-      --button-text: var(--ink);
-      --code: #0E0E0F;
-      --warn: #FF8A80;
-      --shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 20px 60px -20px rgba(0, 0, 0, 0.8);
+      --color-paper: oklch(0.17 0.008 80);
+      --color-dot: oklch(0.95 0.02 92 / 0.09);
+      --color-sheet: oklch(0.225 0.01 80);
+      --color-tile: oklch(0.275 0.012 80);
+      --color-ink: oklch(0.95 0.02 92);
+      --color-muted: oklch(0.77 0.02 90);
+      --color-line: oklch(0.95 0.02 92 / 0.9);
+      --color-soft: oklch(0.95 0.02 92 / 0.18);
+      --color-shadow: var(--color-brand);
+      --color-marker: oklch(0.76 0.15 28);
+      --color-sky: oklch(0.78 0.11 250);
+      --color-stage: oklch(0.13 0.006 80);
+      --color-code: oklch(0.12 0.006 80);
       color-scheme: dark;
     }
   }
+
   * { box-sizing: border-box; }
-  html { -webkit-text-size-adjust: 100%; }
+  html { -webkit-text-size-adjust: 100%; overflow-x: clip; }
   body {
     margin: 0;
     min-height: 100dvh;
-    padding: max(24px, env(safe-area-inset-top)) 16px max(32px, env(safe-area-inset-bottom));
-    background: var(--bg);
-    color: var(--text);
-    font: 500 1rem/1.55 Manrope, system-ui, -apple-system, "Segoe UI", sans-serif;
+    overflow-x: clip;
+    padding: max(28px, env(safe-area-inset-top)) 16px max(28px, env(safe-area-inset-bottom));
+    background-color: var(--color-paper);
+    background-image: radial-gradient(var(--color-dot) 1.3px, transparent 1.6px);
+    background-size: 22px 22px;
+    color: var(--color-ink);
+    font: 400 var(--text-md)/1.6 var(--font-body);
     -webkit-font-smoothing: antialiased;
   }
-  .wrap { width: min(100%, 720px); margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
-  .card {
-    background: var(--card);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    padding: 28px;
+
+  /* The card: a sheet pinned to the board. */
+  .sheet {
+    position: relative;
+    width: 100%;
+    background: var(--color-sheet);
+    border: var(--border);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+    padding: 2.25rem 1.75rem 1.75rem;
+    animation: arrive var(--dur-med) var(--ease-out) both;
   }
-  .hero { padding-top: 32px; }
-  .logo { display: block; width: 56px; height: 56px; margin: 0 0 20px; border-radius: 16px; }
-  h1 { margin: 0 0 10px; font-size: clamp(1.6rem, 5vw, 2.1rem); line-height: 1.12; font-weight: 800; letter-spacing: -0.025em; }
-  h2 { margin: 0 0 14px; font-size: 1.2rem; line-height: 1.25; font-weight: 800; letter-spacing: -0.015em; }
-  p { margin: 0 0 14px; color: var(--muted); }
+  .sheet::before {
+    content: "";
+    position: absolute;
+    top: -13px;
+    left: 50%;
+    width: 92px;
+    height: 24px;
+    margin-left: -46px;
+    background: var(--color-tape);
+    transform: rotate(-3deg);
+  }
+  @keyframes arrive { from { opacity: 0; transform: translateY(10px); } }
+  @media (max-width: 440px) { .sheet { padding: 2rem 1.25rem 1.5rem; box-shadow: 4px 4px 0 var(--color-shadow); } }
+
+  .logo-wrap {
+    width: 56px;
+    height: 56px;
+    margin-bottom: var(--space-md);
+    border: var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    transform: rotate(-4deg);
+    box-shadow: var(--shadow-ctl);
+    background: var(--color-brand);
+  }
+  /* The source image carries a dark matte at its corners; clip past it. */
+  .logo { display: block; width: 100%; height: 100%; transform: scale(1.1); }
+
+  h1 {
+    margin: 0 0 var(--space-xs);
+    font: 800 var(--text-display)/1.02 var(--font-display);
+    letter-spacing: -0.005em;
+    text-wrap: balance;
+    overflow-wrap: anywhere;
+  }
+  /* A highlighter swipe on one word. */
+  .mark {
+    padding: 0 0.12em;
+    margin: 0 -0.12em;
+    background: linear-gradient(transparent 52%, var(--color-brand) 52% 94%, transparent 94%);
+    color: var(--color-ink);
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+  @media (prefers-color-scheme: dark) { .mark { color: var(--color-on-brand); background: linear-gradient(transparent 14%, var(--color-brand) 14% 94%, transparent 94%); } }
+
+  p { margin: 0 0 var(--space-sm); color: var(--color-muted); text-wrap: pretty; }
+  p strong, p b { color: var(--color-ink); font-weight: 700; }
+  a { color: inherit; }
+
+  .note {
+    margin: var(--space-md) 0;
+    padding: 0.85rem 1rem 0.9rem;
+    border: 1.5px dashed var(--color-line);
+    border-radius: 6px;
+    background: var(--color-tile);
+    font-size: 0.9375rem;
+    line-height: 1.5;
+    color: var(--color-muted);
+  }
+  .tag {
+    display: inline-block;
+    margin-bottom: var(--space-3xs);
+    padding: 1px 8px;
+    border-radius: 4px;
+    background: var(--color-ink);
+    color: var(--color-sheet);
+    font: 700 var(--text-xs)/1.6 var(--font-mono);
+  }
+
+  .btn, button.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    width: 100%;
+    min-height: 52px;
+    padding: 0 1.25rem;
+    border: var(--border);
+    border-radius: var(--radius-ctl);
+    background: var(--color-brand);
+    color: var(--color-on-brand);
+    box-shadow: var(--shadow-ctl);
+    font: 700 1.0625rem/1 var(--font-body);
+    text-align: center;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform var(--dur-short) var(--ease-out), box-shadow var(--dur-short) var(--ease-out);
+  }
+  .btn:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--color-shadow); }
+  .btn:active { transform: translate(3px, 3px); box-shadow: 0 0 0 var(--color-shadow); }
+  .btn:focus-visible { outline: 3px solid var(--color-marker); outline-offset: 3px; }
+  .btn[disabled] { cursor: default; opacity: 0.7; transform: none; box-shadow: var(--shadow-ctl); }
+  .btn.ghost { background: transparent; color: var(--color-ink); box-shadow: none; border-color: transparent; font-weight: 500; }
+  .btn.ghost:hover { border-color: var(--color-line); transform: none; }
+
+  .status {
+    min-height: 1.4rem;
+    margin: var(--space-xs) 0 0;
+    font-size: var(--text-sm);
+    font-weight: 500;
+    color: var(--color-muted);
+  }
+  .status[data-tone="error"] { color: var(--color-marker); font-weight: 700; }
+
+  .footnote {
+    margin: var(--space-md) 0 0;
+    padding-top: var(--space-sm);
+    border-top: 1.5px dashed var(--color-soft);
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+  .credit { margin: var(--space-xs) 0 0; font-size: var(--text-xs); line-height: 1.5; }
+  .credit a, .footnote a { font-weight: 700; text-underline-offset: 0.15em; }
+
+  .view[hidden] { display: none; }
+  .view.entering { animation: swap 320ms var(--ease-out) both; }
+  @keyframes swap { from { opacity: 0; transform: translateY(6px); } }
+
+  /* The stamp: a result, slapped on. */
+  .badge {
+    display: grid;
+    place-items: center;
+    width: 64px;
+    height: 64px;
+    margin-bottom: var(--space-md);
+    border: var(--border);
+    border-radius: 14px;
+    background: var(--color-brand);
+    color: var(--color-on-brand);
+    box-shadow: var(--shadow-ctl);
+    transform: rotate(-5deg);
+  }
+  .badge.muted { background: var(--color-tile); color: var(--color-ink); }
+  .badge svg { width: 30px; height: 30px; }
+  .tick { stroke-dasharray: 30; stroke-dashoffset: 30; }
+  .entering .tick { animation: draw 420ms 120ms var(--ease-out) forwards; }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+
+  .spinner {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    animation: spin 700ms linear infinite;
+  }
+  .spinner[hidden] { display: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sheet, .view.entering { animation: fade 200ms ease both; }
+    .tick, .entering .tick { animation: none; stroke-dashoffset: 0; }
+    .spinner { animation-duration: 1.6s; }
+    .btn, .btn:hover, .btn:active { transition: none; }
+    @keyframes fade { from { opacity: 0; } }
+  }
+  @media (prefers-contrast: more) {
+    :root { --color-muted: var(--color-ink); --color-soft: var(--color-line); }
+  }
+
+  .wrap { width: min(100%, 720px); margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; padding-top: 10px; }
+  .wrap > .sheet:not(.hero)::before { display: none; }
+  .hero h1 { font-size: clamp(2.3rem, 8vw, 3.4rem); }
+  h2 { margin: 0 0 var(--space-sm); font: 800 1.75rem/1.05 var(--font-display); letter-spacing: -0.005em; }
   p:last-child { margin-bottom: 0; }
-  strong { color: var(--text); font-weight: 700; }
-  code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.88em; }
+  code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
   :not(pre) > code {
-    padding: 2px 7px; border-radius: 8px; background: var(--tile); color: var(--text);
+    padding: 1px 6px;
+    border: 1.5px solid var(--color-soft);
+    border-radius: 4px;
+    background: var(--color-tile);
+    color: var(--color-ink);
+    overflow-wrap: anywhere;
   }
 
   /* The address to copy */
   .url {
-    display: flex; align-items: center; gap: 10px;
-    margin: 18px 0 0; padding: 8px 8px 8px 16px;
-    background: var(--code); border-radius: 18px;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-top: 1.1rem;
+    padding: 0.45rem 0.45rem 0.45rem 1rem;
+    border: var(--border);
+    border-radius: var(--radius-ctl);
+    background: var(--color-code);
   }
   .url code {
-    flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap;
-    color: var(--code-text); font-size: 0.92rem; background: none; padding: 0;
+    flex: 1;
+    min-width: 0;
+    overflow-x: auto;
+    white-space: nowrap;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--color-brand);
+    font-size: 0.9rem;
     scrollbar-width: none;
   }
   .url code::-webkit-scrollbar { display: none; }
-  .copy {
-    flex: none; appearance: none; border: 0; cursor: pointer;
-    padding: 11px 18px; border-radius: 12px;
-    background: var(--brand); color: var(--ink);
-    font: 700 0.92rem/1 Manrope, system-ui, sans-serif;
-  }
-  .copy:focus-visible, label:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
-  .copy:active { transform: scale(0.97); }
+  .btn.copy { flex: none; width: auto; min-width: 7.5rem; min-height: 42px; padding: 0 1rem; font-size: 0.9rem; box-shadow: none; }
+  .btn.copy:active { transform: translate(1px, 1px); }
+  @media (max-width: 440px) { .btn.copy { min-width: 0; padding: 0 0.8rem; } }
 
   /* Tabs, without script */
-  .vh { position: absolute; opacity: 0; pointer-events: none; }
-  .tabs {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;
-    padding: 4px; margin-bottom: 22px; background: var(--tile); border-radius: 16px;
-  }
+  .vh { position: fixed; top: 0; left: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+  .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-bottom: 1.4rem; }
   .tabs label {
-    padding: 11px 6px; border-radius: 12px; text-align: center; cursor: pointer;
-    font-weight: 700; font-size: 0.95rem; color: var(--muted);
+    padding: 0.7rem 0.25rem;
+    border: var(--border);
+    border-radius: var(--radius-ctl);
+    background: var(--color-sheet);
+    color: var(--color-muted);
+    text-align: center;
+    font-weight: 700;
+    font-size: 0.9375rem;
+    white-space: nowrap;
+    cursor: pointer;
   }
   #t-claude:checked ~ .tabs [for="t-claude"],
   #t-chatgpt:checked ~ .tabs [for="t-chatgpt"],
   #t-dev:checked ~ .tabs [for="t-dev"] {
-    background: var(--card); color: var(--text);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+    background: var(--color-brand);
+    color: var(--color-on-brand);
+    box-shadow: 2px 2px 0 var(--color-shadow);
   }
   #t-claude:focus-visible ~ .tabs [for="t-claude"],
   #t-chatgpt:focus-visible ~ .tabs [for="t-chatgpt"],
-  #t-dev:focus-visible ~ .tabs [for="t-dev"] { outline: 3px solid var(--brand); outline-offset: 2px; }
+  #t-dev:focus-visible ~ .tabs [for="t-dev"] { outline: 3px solid var(--color-marker); outline-offset: 2px; }
   .panel { display: none; }
   #t-claude:checked ~ .p-claude,
   #t-chatgpt:checked ~ .p-chatgpt,
   #t-dev:checked ~ .p-dev { display: block; }
 
   /* Numbered steps */
-  ol.steps { list-style: none; counter-reset: step; margin: 0 0 18px; padding: 0; display: grid; gap: 12px; }
-  ol.steps li {
-    counter-increment: step; position: relative;
-    padding: 4px 0 4px 46px; min-height: 34px; color: var(--muted);
-  }
+  ol.steps { list-style: none; counter-reset: step; margin: 0 0 1.1rem; padding: 0; display: grid; gap: 0.9rem; }
+  ol.steps li { counter-increment: step; position: relative; padding: 0.15rem 0 0.15rem 3rem; min-height: 2.2rem; color: var(--color-muted); }
   ol.steps li::before {
     content: counter(step);
-    position: absolute; left: 0; top: 0;
-    display: grid; place-items: center; width: 32px; height: 32px;
-    border-radius: 50%; background: var(--brand); color: var(--ink);
-    font-weight: 800; font-size: 0.9rem;
+    position: absolute;
+    left: 0;
+    top: 0;
+    display: grid;
+    place-items: center;
+    width: 2.2rem;
+    height: 2.2rem;
+    border: var(--border);
+    border-radius: 8px;
+    background: var(--color-brand);
+    color: var(--color-on-brand);
+    box-shadow: 2px 2px 0 var(--color-shadow);
+    font: 800 1.2rem/1 var(--font-display);
   }
-  ol.steps li strong, ol.steps li b { color: var(--text); }
-  .note {
-    padding: 14px 16px; border-radius: 16px; background: var(--tile);
-    font-size: 0.9rem; color: var(--muted);
-  }
+  ol.steps li strong, ol.steps li b { color: var(--color-ink); }
   pre {
-    margin: 0 0 18px; padding: 16px; overflow-x: auto; border-radius: 16px;
-    background: var(--code); color: var(--code-text); font-size: 0.86rem; line-height: 1.6;
+    margin: 0 0 1.1rem;
+    padding: 1rem;
+    overflow-x: auto;
+    border: var(--border);
+    border-radius: var(--radius-ctl);
+    background: var(--color-code);
+    color: var(--color-brand);
+    font-size: 0.86rem;
+    line-height: 1.6;
   }
 
-  /* Tiles */
-  .grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
-  .tile { padding: 16px; border-radius: 18px; background: var(--tile); }
-  .tile h3 { margin: 0 0 4px; font-size: 0.98rem; font-weight: 800; }
+  /* Tools */
+  .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); }
+  .tile { padding: 1rem; border: var(--border); border-radius: 8px; background: var(--color-tile); }
+  .tile h3 { margin: 0 0 0.35rem; font-size: 0.9rem; font-weight: 700; overflow-wrap: anywhere; }
   .tile p { font-size: 0.9rem; }
-  .tile .mono { color: var(--text); font-weight: 700; }
-  .prompts { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+
+  /* Sample questions, as notes stuck on the page */
+  .prompts { list-style: none; margin: 0; padding: 0.25rem 0 0; display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); }
   .prompts li {
-    padding: 12px 16px; border-radius: 16px; background: var(--tile);
-    color: var(--text); font-weight: 600; font-size: 0.95rem;
+    padding: 1rem;
+    border: var(--border);
+    border-radius: 4px;
+    background: var(--color-brand);
+    color: var(--color-on-brand);
+    box-shadow: 3px 3px 0 var(--color-soft);
+    font-weight: 500;
+    font-size: 0.95rem;
+    line-height: 1.45;
   }
-  .prompts li::before { content: "“"; color: var(--muted); margin-right: 2px; }
-  .prompts li::after { content: "”"; color: var(--muted); margin-left: 2px; }
-  ul.checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
-  ul.checks li { position: relative; padding-left: 20px; color: var(--muted); }
+  .prompts li:nth-child(odd) { transform: rotate(-1.2deg); }
+  .prompts li:nth-child(even) { transform: rotate(1deg); }
+
+  ul.checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.7rem; }
+  ul.checks li { display: flex; gap: 0.75rem; color: var(--color-muted); }
   ul.checks li::before {
-    content: ""; position: absolute; left: 2px; top: 0.6em;
-    width: 8px; height: 8px; border-radius: 50%; background: var(--brand);
+    content: "";
+    flex: none;
+    width: 9px;
+    height: 9px;
+    margin-top: 0.55em;
+    border: 2px solid var(--color-line);
+    background: var(--color-brand);
+    transform: rotate(45deg);
   }
-  .gone { text-align: center; }
-  .gone h1 { color: var(--warn); }
-  @media (max-width: 440px) {
-    .card { padding: 22px 18px; }
-    .copy { padding: 11px 14px; }
-  }
-  @media (prefers-reduced-motion: no-preference) {
-    .copy, .tabs label { transition: transform 120ms ease, background-color 160ms ease; }
-  }
+  .gone { max-width: 27rem; margin: 10vh auto 0; text-align: center; }
+  .gone .logo-wrap { margin-inline: auto; }
+  @media (max-width: 440px) { .wrap > .sheet { padding-inline: 1.1rem; } }
 </style>
 </head>
 <body>
 <div class="wrap">
 {{if eq .State "ready"}}
-  <header class="card hero">
-    <img class="logo" src="/verify/logo.png" alt="" width="56" height="56">
-    <h1>Το υλικό του Steki στο Claude και στο ChatGPT</h1>
-    <p>Μπορείς να συνδέσεις το Claude ή το ChatGPT με το υλικό των μαθημάτων και να τους ζητάς να ψάξουν ή να διαβάσουν ένα αρχείο. Η σύνδεση γίνεται με τον λογαριασμό σου στο Discord και είναι μόνο για ανάγνωση.</p>
+  <header class="sheet hero">
+    <div class="logo-wrap"><img class="logo" src="/verify/logo.png" alt="" width="56" height="56"></div>
+    <h1>Το <span class="mark">υλικό</span> του Steki μέσα στο Claude και το ChatGPT</h1>
+    <p>Σύνδεσε το Claude ή το ChatGPT με το υλικό των μαθημάτων και ζήτα τους να ψάξουν ή να διαβάσουν αρχεία. Συνδέεσαι με τον λογαριασμό σου στο Discord και η πρόσβαση είναι μόνο για ανάγνωση.</p>
     <div class="url">
       <code id="mcp-url">{{.URL}}</code>
-      <button class="copy" type="button" data-copy="{{.URL}}">Αντιγραφή</button>
+      <button class="btn copy" type="button" data-copy="{{.URL}}">Αντιγραφή</button>
     </div>
   </header>
 
-  <section class="card">
-    <h2>Οδηγίες σύνδεσης</h2>
+  <section class="sheet">
+    <h2>Πώς θα το συνδέσεις</h2>
     <input class="vh" type="radio" name="tab" id="t-claude" checked>
     <input class="vh" type="radio" name="tab" id="t-chatgpt">
     <input class="vh" type="radio" name="tab" id="t-dev">
     <div class="tabs" role="presentation">
       <label for="t-claude">Claude</label>
       <label for="t-chatgpt">ChatGPT</label>
-      <label for="t-dev">Για developers</label>
+      <label for="t-dev">Dev</label>
     </div>
 
     <div class="panel p-claude">
       <ol class="steps">
-        <li>Άνοιξε το Claude (claude.ai ή την εφαρμογή) και πήγαινε στο <strong>Settings → Connectors</strong>.</li>
+        <li>Άνοιξε το Claude (claude.ai ή την εφαρμογή) και πήγαινε <strong>Settings → Connectors</strong>.</li>
         <li>Πάτα <strong>Add custom connector</strong>.</li>
-        <li>Στο όνομα γράψε <code>Steki</code> και στο URL επικόλλησε τη διεύθυνση από πάνω. Πάτα <strong>Add</strong>.</li>
-        <li>Πάτα <strong>Connect</strong>. Ανοίγει το Discord: συνδέσου και πάτα <strong>Επιτρέπω</strong>.</li>
-        <li>Σε μια νέα συνομιλία ενεργοποίησε το connector <strong>Steki</strong> από το μενού των εργαλείων και ρώτα ό,τι θέλεις.</li>
+        <li>Στο όνομα γράψε <code>Steki</code>, στο URL επικόλλησε τη διεύθυνση από πάνω και πάτα <strong>Add</strong>.</li>
+        <li>Πάτα <strong>Connect</strong>. Θα ανοίξει το Discord: συνδέσου και πάτα <strong>Επιτρέπω</strong>.</li>
+        <li>Σε μια νέα συζήτηση ενεργοποίησε το connector <strong>Steki</strong> από το μενού εργαλείων και ρώτα ό,τι θέλεις.</li>
       </ol>
-      <p class="note">Αν το Claude σου ανήκει σε οργανισμό, μπορεί να χρειαστεί να το προσθέσει ο διαχειριστής.</p>
+      <p class="note">Αν χρησιμοποιείς το Claude μέσω του οργανισμού σου, ίσως πρέπει να προσθέσει το connector ο διαχειριστής του.</p>
     </div>
 
     <div class="panel p-chatgpt">
       <ol class="steps">
-        <li>Στο ChatGPT πήγαινε στο <strong>Settings → Apps</strong> (σε παλιότερες εκδόσεις: Connectors) και άνοιξε τα <strong>Advanced settings</strong>.</li>
+        <li>Πήγαινε <strong>Settings → Apps</strong> (στις παλιότερες εκδόσεις λέγεται Connectors) και άνοιξε τα <strong>Advanced settings</strong>.</li>
         <li>Ενεργοποίησε το <strong>Developer mode</strong>.</li>
-        <li>Πάτα <strong>Create</strong> για νέα εφαρμογή, γράψε όνομα <code>Steki</code> και στο <strong>MCP server URL</strong> επικόλλησε τη διεύθυνση από πάνω.</li>
-        <li>Στο <strong>Authentication</strong> διάλεξε <strong>OAuth</strong>, δέξου την προειδοποίηση εμπιστοσύνης και πάτα <strong>Create</strong>.</li>
+        <li>Πάτα <strong>Create</strong>, γράψε όνομα <code>Steki</code> και στο <strong>MCP server URL</strong> επικόλλησε τη διεύθυνση από πάνω.</li>
+        <li>Στο <strong>Authentication</strong> διάλεξε <strong>OAuth</strong>, αποδέξου την προειδοποίηση εμπιστοσύνης και πάτα <strong>Create</strong>.</li>
         <li>Πάτα <strong>Connect</strong>, συνδέσου στο Discord και πάτα <strong>Επιτρέπω</strong>.</li>
-        <li>Σε νέα συνομιλία διάλεξε το <strong>Steki</strong> από το <strong>+ → More</strong> (με το Developer mode ενεργό) και ρώτα.</li>
+        <li>Σε νέα συζήτηση διάλεξε το <strong>Steki</strong> από το <strong>+ → More</strong> (με ενεργό το Developer mode) και ρώτα ό,τι θέλεις.</li>
       </ol>
-      <p class="note">Το Developer mode δεν υπάρχει σε όλα τα πλάνα και τα ονόματα στα μενού αλλάζουν. Αν δεν βρίσκεις μια επιλογή, ψάξε «connector» ή «MCP» στις ρυθμίσεις.</p>
+      <p class="note">Το Developer mode δεν υπάρχει σε όλα τα πλάνα και τα ονόματα των μενού αλλάζουν συχνά. Αν δεν βρίσκεις κάτι, ψάξε «connector» ή «MCP» στις ρυθμίσεις.</p>
     </div>
 
     <div class="panel p-dev">
-      <p>Ο server χρησιμοποιεί Streamable HTTP MCP με OAuth 2.1 (PKCE και dynamic client registration).</p>
+      <p>Ο server υποστηρίζει Streamable HTTP MCP με OAuth 2.1 (PKCE και dynamic client registration).</p>
       <p>Claude Code:</p>
       <pre><span class="mono">claude mcp add --transport http steki {{.URL}}</span></pre>
       <ol class="steps">
-        <li>Μέσα στο Claude Code γράψε <code>/mcp</code>, διάλεξε <strong>steki</strong> και <strong>Authenticate</strong>.</li>
-        <li>Συνδέσου στο Discord και πάτα <strong>Επιτρέπω</strong>. Ο browser γυρίζει στο τερματικό.</li>
+        <li>Μέσα στο Claude Code γράψε <code>/mcp</code>, διάλεξε <strong>steki</strong> και μετά <strong>Authenticate</strong>.</li>
+        <li>Συνδέσου στο Discord και πάτα <strong>Επιτρέπω</strong>. Μετά ο browser σε γυρνάει στο τερματικό.</li>
       </ol>
-      <p class="note">Άλλοι clients (Cursor, VS Code, MCP Inspector κ.ά.): πρόσθεσε έναν remote server τύπου HTTP με αυτό το URL. Το metadata βρίσκεται στο <code>/.well-known/oauth-authorization-server</code> και τα δημόσια κλειδιά (JWKS) στο <code>/.well-known/jwks.json</code>.</p>
+      <p class="note">Για άλλους clients (Cursor, VS Code, MCP Inspector κ.ά.) πρόσθεσε remote server τύπου HTTP με αυτό το URL. Το metadata είναι στο <code>/.well-known/oauth-authorization-server</code> και τα δημόσια κλειδιά (JWKS) στο <code>/.well-known/jwks.json</code>.</p>
     </div>
   </section>
 
-  <section class="card">
-    <h2>Εργαλεία</h2>
+  <section class="sheet">
+    <h2>Τι μπορεί να κάνει</h2>
     <div class="grid">
       <div class="tile"><h3 class="mono">list_course_channels</h3><p>Τα κανάλια των μαθημάτων και πόσα αρχεία έχει το καθένα.</p></div>
-      <div class="tile"><h3 class="mono">get_material_index</h3><p>Τα αρχεία ενός καναλιού, με όνομα, περιγραφή, ημερομηνία και αυτόν που τα ανέβασε.</p></div>
-      <div class="tile"><h3 class="mono">download_material</h3><p>Ένα PDF ή μια φωτογραφία, για να τη διαβάσει το AI.</p></div>
+      <div class="tile"><h3 class="mono">get_material_index</h3><p>Τα αρχεία ενός καναλιού: όνομα, περιγραφή, ημερομηνία και ποιος τα ανέβασε.</p></div>
+      <div class="tile"><h3 class="mono">download_material</h3><p>Κατεβάζει ένα PDF ή μια φωτογραφία για να το διαβάσει το AI.</p></div>
     </div>
   </section>
 
-  <section class="card">
-    <h2>Παραδείγματα</h2>
+  <section class="sheet">
+    <h2>Δοκίμασε να ρωτήσεις</h2>
     <ul class="prompts">
       <li>Για ποια μαθήματα υπάρχει υλικό;</li>
       <li>Βρες τα θέματα εξετάσεων που έχουν ανέβει για τους Αλγορίθμους.</li>
@@ -253,21 +499,21 @@
     </ul>
   </section>
 
-  <section class="card">
-    <h2>Ασφάλεια</h2>
+  <section class="sheet">
+    <h2>Τι πρέπει να ξέρεις</h2>
     <ul class="checks">
-      <li>Μόνο ανάγνωση: δεν μπορεί να γράψει, να διαγράψει ή να στείλει μηνύματα.</li>
-      <li>Βλέπει μόνο τα κανάλια που βλέπεις κι εσύ. Αν χάσεις τον ρόλο σου ή βγεις από τον server, σταματά να δουλεύει.</li>
-      <li>Η σύνδεση λήγει σε 30 ημέρες και τότε συνδέεσαι ξανά.</li>
-      <li>Από το Discord παίρνει μόνο το όνομά σου. Το bot δεν κρατά κωδικούς ή tokens του Discord.</li>
-      <li>Για να την ακυρώσεις, αφαίρεσε το connector από το Claude ή το ChatGPT.</li>
+      <li>Μπορεί μόνο να διαβάζει. Δεν γράφει, δεν σβήνει και δεν στέλνει μηνύματα.</li>
+      <li>Βλέπει μόνο τα κανάλια που βλέπεις κι εσύ. Αν χάσεις τον ρόλο σου ή φύγεις από τον server, η πρόσβαση σταματά.</li>
+      <li>Η σύνδεση λήγει μετά από 30 ημέρες και τότε συνδέεσαι ξανά.</li>
+      <li>Από το Discord παίρνουμε μόνο το όνομά σου. Το bot δεν αποθηκεύει κωδικούς ή tokens του Discord.</li>
+      <li>Για να σταματήσεις την πρόσβαση, αφαίρεσε το connector από το Claude ή το ChatGPT.</li>
     </ul>
   </section>
 {{else}}
-  <main class="card gone">
-    <img class="logo" src="/verify/logo.png" alt="" width="56" height="56" style="margin-inline:auto">
+  <main class="sheet gone">
+    <div class="logo-wrap"><img class="logo" src="/verify/logo.png" alt="" width="56" height="56"></div>
     <h1>Το link έληξε</h1>
-    <p>Πάτα ξανά το κουμπί στο μήνυμα του Steki για να ανοίξει νέο.</p>
+    <p>Πάτα ξανά το κουμπί στο μήνυμα του Steki στο Discord για νέο link.</p>
   </main>
 {{end}}
 </div>

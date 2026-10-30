@@ -82,6 +82,10 @@ func (h *Handler) onComponent(s *discordgo.Session, i *discordgo.InteractionCrea
 		h.onReviewButton(s, i)
 		return
 	}
+	if id := i.MessageComponentData().CustomID; strings.HasPrefix(id, reportRemovePrefix) || strings.HasPrefix(id, reportRestorePrefix) {
+		h.onReportButton(s, i)
+		return
+	}
 	switch i.MessageComponentData().CustomID {
 	case uploadButtonID:
 		h.openUploadForm(s, i)

@@ -25,7 +25,7 @@ func (h *Handler) cmdMemberBan(s *discordgo.Session, i *discordgo.InteractionCre
 
 	switch {
 	case user.Bot:
-		h.reply(s, i, "Τα bots δεν μπορούν να αποκλειστούν από εδώ.")
+		h.reply(s, i, "Δεν μπορείς να αποκλείσεις bot με αυτή την εντολή.")
 		return
 	case user.ID == by:
 		h.reply(s, i, "Δεν μπορείς να αποκλείσεις τον εαυτό σου.")
@@ -40,7 +40,7 @@ func (h *Handler) cmdMemberBan(s *discordgo.Session, i *discordgo.InteractionCre
 
 	if member, err := h.guildMember(ctx, s, i.GuildID, user.ID); err == nil {
 		if hasAnyRole(member, []string{staffRoleID, modRoleID}) {
-			h.reply(s, i, fmt.Sprintf("Ο <@%s> ανήκει στην Ομάδα Διαχείρισης και δεν αποκλείεται από την εντολή.", user.ID))
+			h.reply(s, i, fmt.Sprintf("Ο <@%s> ανήκει στην Ομάδα Διαχείρισης και δεν μπορεί να αποκλειστεί με αυτή την εντολή.", user.ID))
 			return
 		}
 	} else if !dc.IsMissingResource(err) {
@@ -81,7 +81,7 @@ func (h *Handler) cmdMemberBan(s *discordgo.Session, i *discordgo.InteractionCre
 		return
 	}
 	h.alertMods(s, "🔨 Ο <@%s> αποκλείστηκε από τον <@%s>.%s", user.ID, by, reasonLine(reason))
-	h.reply(s, i, fmt.Sprintf("🔨 Ο <@%s> αποκλείστηκε από τον server. Δεν μπορεί να εγγραφεί ξανά με: %s.", user.ID, addresses))
+	h.reply(s, i, fmt.Sprintf("🔨 Ο <@%s> αποκλείστηκε από τον server. Δεν μπορεί να ξαναγραφτεί με: %s.", user.ID, addresses))
 }
 
 func (h *Handler) cmdMemberUnban(s *discordgo.Session, i *discordgo.InteractionCreate, sub *discordgo.ApplicationCommandInteractionDataOption) {

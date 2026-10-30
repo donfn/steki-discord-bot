@@ -64,7 +64,7 @@ var commandDefs = []*discordgo.ApplicationCommand{
 			},
 			{
 				Name:        "reregister",
-				Description: "Αφαίρεση επαλήθευσης: ο χρήστης πρέπει να ξαναγραφτεί από την αρχή",
+				Description: "Ακύρωση επαλήθευσης: ο χρήστης πρέπει να ξαναγραφτεί από την αρχή",
 				Type:        discordgo.ApplicationCommandOptionSubCommand,
 				Options: []*discordgo.ApplicationCommandOption{
 					{
@@ -157,7 +157,7 @@ var commandDefs = []*discordgo.ApplicationCommand{
 					},
 					{
 						Name:        "unlink",
-						Description: "Αφαίρεση του κατόχου: το email μένει δεσμευμένο χωρίς κάτοχο",
+						Description: "Αφαίρεση κατόχου: το email μένει δεσμευμένο, χωρίς κάτοχο",
 						Type:        discordgo.ApplicationCommandOptionBoolean,
 					},
 					{
@@ -244,11 +244,11 @@ var commandDefs = []*discordgo.ApplicationCommand{
 		DefaultMemberPermissions: &staffOnly,
 		Options: []*discordgo.ApplicationCommandOption{{
 			Name:        "rescan",
-			Description: "Ελέγχει με AI όλες τις εικόνες που έχουν ήδη ανέβει και βγάζει όσες δεν είναι υλικό μαθήματος",
+			Description: "Ελέγχει με AI όσες εικόνες έχουν ήδη ανέβει και αφαιρεί όσες δεν είναι υλικό μαθήματος",
 			Type:        discordgo.ApplicationCommandOptionSubCommand,
 		}, {
 			Name:        "scan",
-			Description: "Διαβάζει το ιστορικό των καναλιών μαθημάτων για νέο υλικό και βάζει τα sticky",
+			Description: "Ψάχνει νέο υλικό στο ιστορικό των καναλιών μαθημάτων και ανανεώνει τα sticky",
 			Type:        discordgo.ApplicationCommandOptionSubCommand,
 		}, {
 			Name:        "remove",
@@ -278,7 +278,7 @@ var commandDefs = []*discordgo.ApplicationCommand{
 				Name: "reason", Description: "Ο λόγος (φαίνεται στο audit log)",
 				Type: discordgo.ApplicationCommandOptionString,
 			}, {
-				Name: "email", Description: "Επιπλέον email που να αποκλειστεί",
+				Name: "email", Description: "Επιπλέον email για αποκλεισμό",
 				Type: discordgo.ApplicationCommandOptionString,
 			}},
 		}, {
@@ -289,7 +289,7 @@ var commandDefs = []*discordgo.ApplicationCommand{
 				Name: "user", Description: "Ο χρήστης",
 				Type: discordgo.ApplicationCommandOptionUser, Required: true,
 			}, {
-				Name: "email", Description: "Επιπλέον email που να ελευθερωθεί",
+				Name: "email", Description: "Επιπλέον email για αποδέσμευση",
 				Type: discordgo.ApplicationCommandOptionString,
 			}},
 		}},
@@ -655,7 +655,7 @@ func (h *Handler) cmdRegRestart(s *discordgo.Session, i *discordgo.InteractionCr
 		return
 	}
 	if reg.ChannelID == nil {
-		h.reply(s, i, "Η εγγραφή δεν έχει κανάλι. Θα το φτιάξει ο reconciler.")
+		h.reply(s, i, "Η εγγραφή δεν έχει κανάλι. Θα δημιουργηθεί αυτόματα σε λίγο.")
 		return
 	}
 
@@ -729,15 +729,15 @@ func (h *Handler) cmdRegReregister(s *discordgo.Session, i *discordgo.Interactio
 
 	h.audit(user.ID, "", store.EventModAction,
 		map[string]any{"action": "reregister", "release_email": release, "released": released}, actorID(i))
-	note := "Κράτησε το email του, οπότε μπορεί να ξαναγραφτεί μόνο με αυτό."
+	note := "Το email του μένει δεσμευμένο, οπότε μπορεί να ξαναγραφτεί μόνο με αυτό."
 	if release {
 		note = fmt.Sprintf("Αποδεσμεύτηκαν %d email.", released)
 	}
-	h.alertMods(s, "🔁 Ο <@%s> έστειλε τον <@%s> να ξαναγραφτεί. %s", actorID(i), user.ID, note)
+	h.alertMods(s, "🔁 Ο <@%s> ακύρωσε την επαλήθευση του <@%s>, που πρέπει να ξαναγραφτεί. %s", actorID(i), user.ID, note)
 
-	msg := fmt.Sprintf("🔁 Ο <@%s> πρέπει πλέον να ξαναγραφτεί και πήρε νέο κανάλι εγγραφής. %s", user.ID, note)
+	msg := fmt.Sprintf("🔁 Ο <@%s> πρέπει να ξαναγραφτεί και πήρε νέο κανάλι εγγραφής. %s", user.ID, note)
 	if len(kept) > 0 {
-		msg += fmt.Sprintf("\n⚠️ Δεν μπόρεσα να αφαιρέσω: %s. Αφαίρεσέ τους χειροκίνητα.", strings.Join(kept, ", "))
+		msg += fmt.Sprintf("\n⚠️ Δεν μπόρεσα να αφαιρέσω τους ρόλους: %s. Αφαίρεσέ τους χειροκίνητα.", strings.Join(kept, ", "))
 	}
 	h.reply(s, i, msg)
 }
@@ -809,7 +809,7 @@ func (h *Handler) cmdRegForget(s *discordgo.Session, i *discordgo.InteractionCre
 	switch {
 	case err == nil:
 		h.reply(s, i, fmt.Sprintf(
-			"Ο <@%s> είναι ακόμα στον server. Η διαγραφή γίνεται μόνο για όσους έφυγαν· για επανεκκίνηση χρησιμοποίησε `/reg reregister`.", user.ID))
+			"Ο <@%s> είναι ακόμα στον server. Η διαγραφή είναι μόνο για όσους έχουν φύγει· για νέα εγγραφή χρησιμοποίησε `/reg reregister`.", user.ID))
 		return
 	case !dc.IsMissingResource(err):
 		h.reply(s, i, fmt.Sprintf("Δεν μπόρεσα να ελέγξω αν ο <@%s> είναι στον server: %v", user.ID, err))
@@ -887,7 +887,7 @@ func (h *Handler) cmdEmailWhois(s *discordgo.Session, i *discordgo.InteractionCr
 			h.dbError(s, i, err)
 		case use.Legacy:
 			h.reply(s, i, fmt.Sprintf(
-				"Το `%s` υπάρχει μόνο ως παλιό hash (πριν τη μετάβαση σε Postgres). Κάτοχος άγνωστος.", email))
+				"Το `%s` υπάρχει μόνο ως παλιό hash (από πριν τη μετάβαση σε Postgres) και ο κάτοχός του είναι άγνωστος.", email))
 		default:
 			h.reply(s, i, fmt.Sprintf("Το `%s` δεν έχει χρησιμοποιηθεί.", email))
 		}
@@ -967,13 +967,13 @@ func (h *Handler) cmdEmailUpdate(s *discordgo.Session, i *discordgo.InteractionC
 
 	switch {
 	case user == nil && !unlink && newEmail == "":
-		h.reply(s, i, "Δώσε τι να αλλάξει: `user`, `unlink` ή `new_email`.")
+		h.reply(s, i, "Πες τι να αλλάξει: `user`, `unlink` ή `new_email`.")
 		return
 	case user != nil && unlink:
 		h.reply(s, i, "Δώσε είτε `user` είτε `unlink`, όχι και τα δύο.")
 		return
 	case newEmail != "" && isHash:
-		h.reply(s, i, "Ένα hash δεν έχει διεύθυνση να διορθωθεί. Πρόσθεσε το σωστό email με `/email add`.")
+		h.reply(s, i, "Ένα hash δεν έχει διεύθυνση για διόρθωση. Πρόσθεσε το σωστό email με `/email add`.")
 		return
 	case newEmail != "" && store.EmailDomain(newEmail) == "":
 		h.reply(s, i, fmt.Sprintf("Το `%s` δεν είναι διεύθυνση email.", newEmail))

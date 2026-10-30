@@ -89,6 +89,7 @@ func (v *Server) Register(mux *http.ServeMux) {
 		mux.HandleFunc("GET "+entryPath, v.materialsPage)
 		mux.HandleFunc("GET "+pagePath, v.sessionPage)
 		mux.HandleFunc("GET "+filesPath+"{id}", v.materialFile)
+		mux.HandleFunc("POST "+reportPath, v.reportFile)
 	}
 	if v.mcpURL != "" {
 		mux.HandleFunc("GET "+MCPGuidePath, v.mcpGuidePage)

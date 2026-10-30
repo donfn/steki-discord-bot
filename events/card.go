@@ -75,14 +75,14 @@ func stripBold(s string) string { return strings.ReplaceAll(s, "**", "") }
 func (c card) status() string {
 	entered := ""
 	if c.email != "" {
-		entered = fmt.Sprintf("Έστειλες το `%s` για email.\n", moderation.Quote(c.email))
+		entered = fmt.Sprintf("Έγραψες: `%s`\n", moderation.Quote(c.email))
 	}
 	switch c.state {
 	case cardSending:
 		return entered + "Στέλνω το email…"
 	case cardSent:
 		s := entered + "📬 **Σου έστειλα email.** Άνοιξέ το και πάτα **Σύνδεση λογαριασμού**.\n" +
-			fmt.Sprintf("-# Ο σύνδεσμος λήγει σε %d λεπτά. Αν δεν το βρίσκεις, κοίτα και στα spam.", int(linkTTL.Minutes()))
+			fmt.Sprintf("-# Ο σύνδεσμος λήγει σε %d λεπτά. Αν δεν το βλέπεις, κοίτα και στα spam.", int(linkTTL.Minutes()))
 		if role, _ := classifyEmail(c.email); role == outsiderRoleID {
 			s += "\n-# Είσαι από άλλο τμήμα, οπότε θα μπεις ως Verified Outsider."
 		}
@@ -95,7 +95,7 @@ func (c card) status() string {
 			"Αν είναι δικό σου, πάτα **Χρειάζομαι βοήθεια**."
 	case cardTooMany:
 		return entered + "✋ **Έχεις ζητήσει πολλά email.**\n" +
-			"Πάτα **Χρειάζομαι βοήθεια** και θα σε βοηθήσουμε."
+			"Πάτα **Χρειάζομαι βοήθεια** για να μιλήσεις με την ομάδα."
 	case cardFailed:
 		return entered + "⚠️ **Κάτι πήγε στραβά.** Δοκίμασε ξανά σε λίγο."
 	case cardExpired:
@@ -156,7 +156,7 @@ func (c card) components() []discordgo.MessageComponent {
 		AccentColor: &color,
 		Components: []discordgo.MessageComponent{
 			discordgo.TextDisplay{Content: fmt.Sprintf("## Καλώς ήρθες στο Steki 👋\n"+
-				"<@%s>, για να μπεις πρέπει να επιβεβαιώσουμε ότι είσαι φοιτητής. Είναι 3 βήματα:", c.userID)},
+				"<@%s>, για να μπεις πρέπει να επιβεβαιώσουμε ότι είσαι φοιτητής. Χρειάζονται 3 βήματα:", c.userID)},
 			discordgo.TextDisplay{Content: c.steps()},
 			discordgo.Separator{Spacing: &small},
 			discordgo.TextDisplay{Content: c.status()},

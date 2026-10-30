@@ -71,6 +71,8 @@ func (h *Handler) linkEmail(u *discordgo.User, email, token string) mail.Link {
 		UniName:    uni.Name,
 		UniLogoURL: h.cfg.PublicURL + "/verify/uni/" + uni.Logo,
 		LogoURL:    h.cfg.PublicURL + "/verify/logo.png",
+		Logo:       verify.Logo(),
+		UniLogo:    verify.UniLogo(uni.Logo),
 		ValidFor:   linkTTL,
 	}
 }

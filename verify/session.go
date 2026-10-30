@@ -15,8 +15,10 @@ import (
 // A session is built to be used once. The page can be fetched a single time,
 // so a refresh finds nothing; only the files that were on that page can be
 // downloaded; and once every one of them has been sent in full the session is
-// revoked. Whatever is left is cut off at sessionTTL. Sessions live in memory,
-// so a restart revokes them all, which costs a visitor one more click.
+// closed: no more downloads. A closed session can still file reports about
+// the files that were on its page, since the page stays open and reading is
+// when problems show up, until sessionTTL cuts it off. Sessions live in
+// memory, so a restart revokes them all, which costs a visitor one more click.
 const (
 	// sessionCookie is the cookie's name. It says nothing about what it guards.
 	sessionCookie = "s"
@@ -32,6 +34,9 @@ const (
 	// must match the edge rule and shield.MaterialFilesPrefix.
 	pagePath  = "/s"
 	filesPath = "/s/f/"
+
+	// reportPath takes a report about one of the page's files.
+	reportPath = "/s/report"
 )
 
 // session is one visitor's access to one course channel's files.
@@ -44,6 +49,8 @@ type session struct {
 	served bool
 	want   map[string]bool
 	done   map[string]bool
+	// closed is set once every listed file was sent: nothing more downloads.
+	closed bool
 }
 
 // sessions is the set of open sessions.
@@ -153,25 +160,37 @@ func (s *sessions) authorize(id, fileID string, now time.Time) (channelID, subje
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	sess := s.live(id, now)
+	if sess == nil || sess.closed || !sess.served || !sess.want[fileID] {
+		return "", "", false
+	}
+	return sess.channelID, sess.subject, true
+}
+
+// authorizeReport checks that a session may report a file: it has shown its
+// page and that page listed the file. It works after the downloads are over.
+func (s *sessions) authorizeReport(id, fileID string, now time.Time) (channelID, subject string, ok bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sess := s.live(id, now)
 	if sess == nil || !sess.served || !sess.want[fileID] {
 		return "", "", false
 	}
 	return sess.channelID, sess.subject, true
 }
 
-// complete notes that a file was sent in full and revokes the session once
+// complete notes that a file was sent in full and closes the session once
 // every file on its page has been. It reports whether it did.
 func (s *sessions) complete(id, fileID string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	sess := s.m[id]
-	if sess == nil || !sess.want[fileID] {
+	if sess == nil || sess.closed || !sess.want[fileID] {
 		return false
 	}
 	sess.done[fileID] = true
 	if len(sess.done) < len(sess.want) {
 		return false
 	}
-	delete(s.m, id)
+	sess.closed = true
 	return true
 }

@@ -252,7 +252,7 @@ func newShield(cfg *config.Config, sess *discordgo.Session, logger *slog.Logger)
 		logger.Warn("RAILWAY_SERVICE_ID not set; the Railway CLI will have to infer the service")
 	}
 	notify := func(reason string, err error) {
-		msg := "🛡️ Under Attack Mode on για 1 ώρα. Λόγος: " + reason
+		msg := "🛡️ Ενεργοποιήθηκε το Under Attack Mode για 1 ώρα. Λόγος: " + reason
 		if err != nil {
 			msg = "⚠️ Δεν μπόρεσα να ενεργοποιήσω το Under Attack Mode (" + reason + "). Ξαναπροσπαθώ σε λίγα λεπτά."
 		}

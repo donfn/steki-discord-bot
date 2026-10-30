@@ -32,6 +32,15 @@ type University struct {
 	Logo string // path under /verify/uni/
 }
 
+// Logo is the Steki logo PNG.
+func Logo() []byte { return logoPNG }
+
+// UniLogo is the PNG of a University's Logo, or nil.
+func UniLogo(name string) []byte {
+	b, _ := uniFS.ReadFile("uni/" + name)
+	return b
+}
+
 // Universities are keyed by the value of Consent.University.
 var Universities = map[string]University{
 	"hmu": {Name: "Ελληνικό Μεσογειακό Πανεπιστήμιο", Logo: "hmu.png"},

@@ -411,7 +411,7 @@ func TestLoginRefusedWithoutTheRole(t *testing.T) {
 	resp, _ := e.get(e.srv.URL + pathAuthorize + "?" + q.Encode())
 	loc, _ := url.Parse(resp.Header.Get("Location"))
 	resp, body := e.get(e.srv.URL + pathCallback + "?code=discord-code&state=" + url.QueryEscape(loc.Query().Get("state")))
-	if resp.StatusCode != http.StatusForbidden || !strings.Contains(body, "επαληθευμένα μέλη") || approveRE.MatchString(body) {
+	if resp.StatusCode != http.StatusForbidden || !strings.Contains(body, "Verified Outsiders") || approveRE.MatchString(body) {
 		t.Errorf("callback: %d %s", resp.StatusCode, body)
 	}
 }
