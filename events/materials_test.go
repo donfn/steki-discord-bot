@@ -45,9 +45,9 @@ func TestExamTitle(t *testing.T) {
 }
 
 func TestStickyCard(t *testing.T) {
-	embeds, comps := stickyCard(12, "https://x/materials?t=abc")
-	if len(embeds) != 1 || embeds[0].Title == "" || embeds[0].Color != stickyColor {
-		t.Errorf("card: %+v", embeds)
+	comps := stickyCard(12, "https://x/materials?t=abc")
+	if len(comps) != 1 {
+		t.Errorf("card has %d rows, want only the one with the buttons", len(comps))
 	}
 	row := comps[0].(discordgo.ActionsRow)
 	view, upload := row.Components[0].(discordgo.Button), row.Components[1].(discordgo.Button)
@@ -150,5 +150,22 @@ func TestUploadFormJSON(t *testing.T) {
 func TestEscapeMarkdown(t *testing.T) {
 	if got := escapeMarkdown("**hi** @everyone"); got != `\*\*hi\*\* @everyone` {
 		t.Errorf("%q", got)
+	}
+}
+
+func TestMessageIDFrom(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://discord.com/channels/886976948172124160/938731151705649152/1234567890123456789":     "1234567890123456789",
+		"https://discord.com/channels/886976948172124160/938731151705649152/1234567890123456789?x=1": "1234567890123456789",
+		" 1234567890123456789 ": "1234567890123456789",
+	} {
+		if got, ok := messageIDFrom(in); !ok || got != want {
+			t.Errorf("messageIDFrom(%q) = %q, %v", in, got, ok)
+		}
+	}
+	for _, in := range []string{"", "abc", "https://discord.com/channels/1/2/x", "12345"} {
+		if _, ok := messageIDFrom(in); ok {
+			t.Errorf("messageIDFrom(%q) accepted", in)
+		}
 	}
 }

@@ -258,6 +258,27 @@ func jsonList(ids []string) string {
 	return string(b)
 }
 
+// MaterialsOfMessage lists the files recorded for a message, deleted or not.
+func (s *Store) MaterialsOfMessage(ctx context.Context, messageID string) ([]*Material, error) {
+	rows, err := s.db.QueryContext(ctx, `select `+materialColumns+` from materials
+		where message_id = ?1 order by attachment_id`, messageID)
+	if err != nil {
+		return nil, err
+	}
+	return collectMaterials(rows)
+}
+
+// RemoveMaterial is an admin taking a file down for good: it is unlisted,
+// leaves the backup queue and cannot come back, since the row stays and the
+// history scan never re-adds a known attachment. The caller has already
+// removed the bucket copy.
+func (s *Store) RemoveMaterial(ctx context.Context, attachmentID, note string) error {
+	_, err := s.db.ExecContext(ctx, `update materials
+		set status = ?2, screen_note = ?3, screened_at = ?4, backed_up_at = null
+		where attachment_id = ?1`, attachmentID, MaterialRejected, nullStr(note), ms(time.Now()))
+	return err
+}
+
 // CountUnchecked counts the listed JPEGs of courseIDs the content check has
 // not seen.
 func (s *Store) CountUnchecked(ctx context.Context, courseIDs []string) (int, error) {

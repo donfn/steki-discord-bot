@@ -216,3 +216,98 @@ func (h *Handler) cmdMaterialsRescan(s *discordgo.Session, i *discordgo.Interact
 		"βγαίνουν από τη σελίδα και το bucket και έρχονται εδώ για έγκριση. Αν τελειώσει το quota του Gemini, "+
 		"ο έλεγχος περιμένει και συνεχίζει μόνος του. Αν γίνει επανεκκίνηση πριν τελειώσει, τρέξε ξανά την εντολή.", n))
 }
+
+// messageIDFrom reads a message ID from a Discord message link or a bare ID.
+func messageIDFrom(v string) (string, bool) {
+	v = strings.TrimSpace(v)
+	if i := strings.LastIndex(v, "/"); i >= 0 {
+		v = v[i+1:]
+	}
+	v = strings.SplitN(v, "?", 2)[0]
+	return v, isSnowflake(v)
+}
+
+func isSnowflake(v string) bool {
+	if len(v) < 15 || len(v) > 21 {
+		return false
+	}
+	for _, r := range v {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// cmdMaterialsRemove takes the material of a message off the pages and out of
+// the bucket for good, whatever its state.
+func (h *Handler) cmdMaterialsRemove(s *discordgo.Session, i *discordgo.InteractionCreate, sub *discordgo.ApplicationCommandInteractionDataOption) {
+	if h.mat == nil {
+		h.reply(s, i, "Το υλικό είναι ανενεργό: λείπει το bucket.")
+		return
+	}
+	msgOpt := findOpt(sub.Options, "message")
+	if msgOpt == nil {
+		h.reply(s, i, "Δώσε το link ή το ID του μηνύματος.")
+		return
+	}
+	messageID, ok := messageIDFrom(msgOpt.StringValue())
+	if !ok {
+		h.reply(s, i, "Δεν κατάλαβα το μήνυμα. Δώσε το link του (δεξί κλικ → Copy Message Link) ή το ID του.")
+		return
+	}
+	filter := ""
+	if f := findOpt(sub.Options, "file"); f != nil {
+		filter = strings.ToLower(strings.TrimSpace(f.StringValue()))
+	}
+	ctx, cancel := h.ctxTimeout(flowTimeout)
+	defer cancel()
+
+	rows, err := h.st.MaterialsOfMessage(ctx, messageID)
+	if err != nil {
+		h.reply(s, i, fmt.Sprintf("Δεν μπόρεσα να ψάξω: %v", err))
+		return
+	}
+	var removed, skipped []string
+	homes := map[string]bool{}
+	for _, m := range rows {
+		if filter != "" && !strings.Contains(strings.ToLower(m.Filename), filter) {
+			continue
+		}
+		if m.Status == store.MaterialRejected && m.BackedUpAt == nil {
+			skipped = append(skipped, m.Filename)
+			continue
+		}
+		// The bucket copy goes first: if that fails nothing changes and the
+		// command can be run again.
+		if err := h.mat.Bucket().Delete(ctx, m.ObjectKey); err != nil {
+			h.log.Error("materials: remove from bucket", "attachment_id", m.AttachmentID, "error", err)
+			h.reply(s, i, fmt.Sprintf("Δεν μπόρεσα να σβήσω το `%s` από το bucket: %v", m.Filename, err))
+			return
+		}
+		if err := h.st.RemoveMaterial(ctx, m.AttachmentID, "αφαιρέθηκε από <@"+actorID(i)+">"); err != nil {
+			h.log.Error("materials: remove", "attachment_id", m.AttachmentID, "error", err)
+			h.reply(s, i, fmt.Sprintf("Σβήστηκε από το bucket αλλά όχι από τη βάση (`%s`): %v. Τρέξε ξανά την εντολή.", m.Filename, err))
+			return
+		}
+		removed = append(removed, m.Filename)
+		homes[m.HomeChannelID] = true
+	}
+	for home := range homes {
+		h.refreshSticky(s, home)
+	}
+	h.log.Info("materials: removed by admin", "message_id", messageID, "files", len(removed), "user_id", actorID(i))
+
+	switch {
+	case len(removed) > 0:
+		msg := "🗑️ Αφαιρέθηκαν από τη σελίδα και το bucket: " + "`" + strings.Join(removed, "`, `") + "`."
+		if len(skipped) > 0 {
+			msg += " Ήταν ήδη αφαιρεμένα: `" + strings.Join(skipped, "`, `") + "`."
+		}
+		h.reply(s, i, msg+"\nΤο μήνυμα στο Discord δεν αγγίχτηκε.")
+	case len(skipped) > 0:
+		h.reply(s, i, "Το υλικό αυτού του μηνύματος είναι ήδη αφαιρεμένο.")
+	default:
+		h.reply(s, i, "Δεν βρήκα υλικό για αυτό το μήνυμα"+map[bool]string{true: " με αυτό το όνομα αρχείου", false: ""}[filter != ""]+".")
+	}
+}

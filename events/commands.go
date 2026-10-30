@@ -246,6 +246,17 @@ var commandDefs = []*discordgo.ApplicationCommand{
 			Name:        "rescan",
 			Description: "Ελέγχει με AI όλες τις εικόνες που έχουν ήδη ανέβει και βγάζει όσες δεν είναι υλικό μαθήματος",
 			Type:        discordgo.ApplicationCommandOptionSubCommand,
+		}, {
+			Name:        "remove",
+			Description: "Αφαιρεί οριστικά υλικό από τη σελίδα και το bucket",
+			Type:        discordgo.ApplicationCommandOptionSubCommand,
+			Options: []*discordgo.ApplicationCommandOption{{
+				Name: "message", Description: "Το link ή το ID του μηνύματος με το αρχείο",
+				Type: discordgo.ApplicationCommandOptionString, Required: true,
+			}, {
+				Name: "file", Description: "Μέρος του ονόματος αρχείου, αν το μήνυμα έχει πολλά",
+				Type: discordgo.ApplicationCommandOptionString,
+			}},
 		}},
 	},
 	{
@@ -306,6 +317,7 @@ var commandRoutes = map[string]commandFunc{
 	"mcp announce":     (*Handler).cmdMCPAnnounce,
 	"rules post":       (*Handler).cmdRulesPost,
 	"materials rescan": (*Handler).cmdMaterialsRescan,
+	"materials remove": (*Handler).cmdMaterialsRemove,
 	"guard status":     (*Handler).cmdGuardStatus,
 	"guard restrict":   (*Handler).cmdGuardRestrict,
 	"guard ungrace":    (*Handler).cmdGuardUngrace,

@@ -147,6 +147,41 @@ func TestContentCheckIsLimitedToCourseChannels(t *testing.T) {
 	}
 }
 
+func TestRemoveMaterial(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	addTestMaterial(t, s, "1", "m1", "c", false, now)
+	addTestMaterial(t, s, "2", "m1", "c", false, now.Add(time.Minute))
+	for _, id := range []string{"1", "2"} {
+		if err := s.MarkBackedUp(ctx, id, now); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.SetScreening(ctx, id, MaterialApproved, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, err := s.MaterialsOfMessage(ctx, "m1")
+	if err != nil || len(rows) != 2 {
+		t.Fatalf("rows = %+v, %v", rows, err)
+	}
+	if err := s.RemoveMaterial(ctx, "1", "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.ChannelMaterials(ctx, "c"); len(got) != 1 || got[0].AttachmentID != "2" {
+		t.Errorf("listed after removal = %+v", got)
+	}
+	// It is not queued for backup again, and the history scan cannot re-add it.
+	if got, _ := s.MaterialBacklog(ctx, 3, Cursor{}, 10, nil); len(got) != 0 {
+		t.Errorf("removed file queued for backup: %+v", got)
+	}
+	if ok, _ := s.AddMaterial(ctx, &Material{AttachmentID: "1", MessageID: "m1", ChannelID: "c", HomeChannelID: "c",
+		GuildID: "g", UploaderID: "u", Filename: "1.pdf", ContentType: "application/pdf", SourceURL: "u",
+		ObjectKey: "k", PostedAt: now}); ok {
+		t.Error("a removed attachment was added again")
+	}
+}
+
 func TestCourseMaterialStats(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()

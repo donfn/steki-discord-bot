@@ -122,15 +122,14 @@ func (h *Handler) runSticky(s *discordgo.Session, channelID string) {
 // stickyColor is the brand yellow of the card's edge.
 const stickyColor = 0xFFC900
 
-// stickyCard is the sticky's card and buttons for a count of member files and
-// the current link to the material page.
-func stickyCard(count int, link string) ([]*discordgo.MessageEmbed, []discordgo.MessageComponent) {
-	embeds := []*discordgo.MessageEmbed{{
-		Title: "📚 Υλικό μαθήματος",
-		Description: "Σημειώσεις, θέματα και αρχεία που έχουν μοιραστεί μέλη του server, μαζεμένα σε μία σελίδα " +
-			"με προβολή μέσα στον browser.\n\nΜπορείς να προσθέσεις και εσύ υλικό με το κουμπί **Ανέβασμα υλικού**.",
-		Color: stickyColor,
-	}}
+// stickyFlags mark the sticky as a components-only message, the one kind
+// Discord lets carry buttons with no text or embed, and as silent.
+const stickyFlags = discordgo.MessageFlagsIsComponentsV2 | discordgo.MessageFlagsSuppressNotifications
+
+// stickyCard is the sticky's buttons for a count of member files and the
+// current link to the material page. It is only buttons: the card sits at the
+// bottom of a busy channel, so it takes as little room as it can.
+func stickyCard(count int, link string) []discordgo.MessageComponent {
 	components := []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{
 		discordgo.Button{
 			Label: fmt.Sprintf("Προβολή υλικού μαθήματος (%d)", count),
@@ -145,17 +144,15 @@ func stickyCard(count int, link string) ([]*discordgo.MessageEmbed, []discordgo.
 			Emoji:    &discordgo.ComponentEmoji{Name: "📤"},
 		},
 	}}}
-	return embeds, components
+	return components
 }
 
 // silentSend posts a sticky as a silent message and confirms Discord kept it
 // silent. Mentions are disabled too, though the text has none.
 func silentSend(ctx context.Context, s *discordgo.Session, channelID string, count int, link string) (*discordgo.Message, error) {
-	embeds, components := stickyCard(count, link)
 	return s.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
-		Embeds:          embeds,
-		Components:      components,
-		Flags:           discordgo.MessageFlagsSuppressNotifications,
+		Components:      stickyCard(count, link),
+		Flags:           stickyFlags,
 		AllowedMentions: &discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}},
 	}, discordgo.WithContext(ctx))
 }
@@ -214,22 +211,25 @@ func (h *Handler) syncSticky(ctx context.Context, s *discordgo.Session, channelI
 			}
 		}
 		if !repost {
-			embeds, components := stickyCard(count, link)
-			// An empty content clears the plain text older stickies carried.
+			components := stickyCard(count, link)
+			// Empty content and embeds clear what older stickies carried.
 			_, err := s.ChannelMessageEditComplex(&discordgo.MessageEdit{
 				ID:         old,
 				Channel:    channelID,
 				Content:    ptr(""),
-				Embeds:     &embeds,
+				Embeds:     &[]*discordgo.MessageEmbed{},
 				Components: &components,
+				Flags:      stickyFlags,
 			}, discordgo.WithContext(ctx))
 			if err == nil {
 				return nil
 			}
 			if !dc.IsMissingResource(err) && dc.APICode(err) != discordgo.ErrCodeUnknownMessage {
-				return err
+				// Most likely an older sticky Discord will not turn into a
+				// buttons-only message; a new one replaces it.
+				h.log.Warn("sticky: edit failed; posting a new one", "channel_id", channelID, "error", err)
 			}
-			// Someone deleted it; fall through to a new one.
+			// Deleted or not editable: fall through to a new one.
 		}
 	}
 
