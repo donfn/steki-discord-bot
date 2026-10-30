@@ -10,6 +10,7 @@ const (
 	hmuRoleID      = "886993717725102103"
 	outsiderRoleID = "993612908074381352"
 	goldenRoleID   = "943889393863774279"
+	ghostRoleID    = "1565626375941918850" // members silent for three months
 )
 
 // verifiedRoleIDs are the roles that mean a member has completed registration.
