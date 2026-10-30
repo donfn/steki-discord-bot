@@ -34,8 +34,6 @@ import (
 
 const (
 	uploadButtonID = "materials:upload"
-	// activityButtonID opens the material page as a Discord Activity.
-	activityButtonID = "materials:activity"
 
 	stickyQuiet   = 2 * time.Second
 	stickyMaxWait = 10 * time.Second
@@ -135,47 +133,30 @@ const stickyFlags = discordgo.MessageFlagsIsComponentsV2 | discordgo.MessageFlag
 
 // stickyCard is the sticky's buttons for a count of member files and the
 // current link to the material page. It is only buttons: the card sits at the
-// bottom of a busy channel, so it takes as little room as it can. With
-// activity the count goes on the button that opens the page as a Discord
-// Activity, and the link stays beside it for the browser.
-func stickyCard(count int, link string, activity bool) []discordgo.MessageComponent {
-	view := discordgo.Button{
-		Label: fmt.Sprintf("Προβολή υλικού μαθήματος (%d)", count),
-		Style: discordgo.LinkButton,
-		URL:   link,
-		Emoji: &discordgo.ComponentEmoji{Name: "📚"},
-	}
-	buttons := []discordgo.MessageComponent{view}
-	if activity {
-		buttons = []discordgo.MessageComponent{
-			discordgo.Button{
-				Label:    view.Label,
-				Style:    discordgo.PrimaryButton,
-				CustomID: activityButtonID,
-				Emoji:    view.Emoji,
-			},
-			discordgo.Button{
-				Label: "Στον browser",
-				Style: discordgo.LinkButton,
-				URL:   link,
-				Emoji: &discordgo.ComponentEmoji{Name: "🌐"},
-			},
-		}
-	}
-	buttons = append(buttons, discordgo.Button{
-		Label:    "Ανέβασμα υλικού",
-		Style:    discordgo.SecondaryButton,
-		CustomID: uploadButtonID,
-		Emoji:    &discordgo.ComponentEmoji{Name: "📤"},
-	})
-	return []discordgo.MessageComponent{discordgo.ActionsRow{Components: buttons}}
+// bottom of a busy channel, so it takes as little room as it can.
+func stickyCard(count int, link string) []discordgo.MessageComponent {
+	components := []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+		discordgo.Button{
+			Label: fmt.Sprintf("Προβολή υλικού μαθήματος (%d)", count),
+			Style: discordgo.LinkButton,
+			URL:   link,
+			Emoji: &discordgo.ComponentEmoji{Name: "📚"},
+		},
+		discordgo.Button{
+			Label:    "Ανέβασμα υλικού",
+			Style:    discordgo.SecondaryButton,
+			CustomID: uploadButtonID,
+			Emoji:    &discordgo.ComponentEmoji{Name: "📤"},
+		},
+	}}}
+	return components
 }
 
 // silentSend posts a sticky as a silent message and confirms Discord kept it
 // silent. Mentions are disabled too, though the text has none.
-func silentSend(ctx context.Context, s *discordgo.Session, channelID string, components []discordgo.MessageComponent) (*discordgo.Message, error) {
+func silentSend(ctx context.Context, s *discordgo.Session, channelID string, count int, link string) (*discordgo.Message, error) {
 	return s.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
-		Components:      components,
+		Components:      stickyCard(count, link),
 		Flags:           stickyFlags,
 		AllowedMentions: &discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}},
 	}, discordgo.WithContext(ctx))
@@ -218,7 +199,6 @@ func (h *Handler) syncSticky(ctx context.Context, s *discordgo.Session, channelI
 	if err != nil {
 		return err
 	}
-	components := stickyCard(count, link, h.activityEnabled())
 
 	if old != "" {
 		if repost {
@@ -236,6 +216,7 @@ func (h *Handler) syncSticky(ctx context.Context, s *discordgo.Session, channelI
 			}
 		}
 		if !repost {
+			components := stickyCard(count, link)
 			// Empty content and embeds clear what older stickies carried.
 			_, err := s.ChannelMessageEditComplex(&discordgo.MessageEdit{
 				ID:         old,
@@ -257,7 +238,7 @@ func (h *Handler) syncSticky(ctx context.Context, s *discordgo.Session, channelI
 		}
 	}
 
-	msg, err := silentSend(ctx, s, channelID, components)
+	msg, err := silentSend(ctx, s, channelID, count, link)
 	if err != nil {
 		return err
 	}

@@ -26,9 +26,6 @@ See `.env.example`.
 | `PORT`          | no       | HTTP port for the pages and `/healthz` (default `8080`) |
 | `RAILWAY_TOKEN` | no       | Railway project token; enables automatic Under Attack Mode (see below) |
 | `BUCKET_NAME`, `BUCKET_ENDPOINT`, `BUCKET_REGION`, `BUCKET_ACCESS_KEY_ID`, `BUCKET_SECRET_ACCESS_KEY` | no | S3 bucket for course material (see below). On Railway these reference the `steki-backups` bucket's variables |
-| `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` | no | Discord application OAuth2 credentials: the MCP login and the study space Activity |
-| `DISCORD_PUBLIC_KEY` | no | The application's public key (hex). The Activity then only answers requests signed by Discord's proxy (proxy authentication) |
-| `DISCORD_ACTIVITY` | no | `on` puts the Activity button on the course stickies, once the Developer Portal is set up (see below) |
 
 Discord channel, category and role IDs are compile-time constants in
 `config/config.go` and `events/constants.go`. The guild ID is learned from the
@@ -70,37 +67,6 @@ return `pending` to decide asynchronously; rejected files stay in the bucket.
 
 The bot needs Read Message History everywhere it should back up, and Manage
 Messages (or Pin Messages) in course channels to pin uploads.
-
-### The study space Activity
-
-The material page also runs inside Discord as an Activity, the
-«Χώρος μελέτης» (`verify/activity.go`, `events/activity.go`). With
-`DISCORD_ACTIVITY=on` the sticky's first button launches it in the course
-channel, opening on that channel's page; the link button stays beside it for
-the browser. Launched anywhere else it opens on an index of every course
-channel the member can see. The page signs in through the Embedded App SDK,
-gets a 30-minute token from `POST /activity/token`, and sends it as a Bearer
-header; every request checks again that the member holds a verified role and
-can see the channel. There are no single-use sessions: it can be reopened
-and refreshed freely.
-
-Inside Discord only the Activity's own origin is reachable, so pdf.js, the SDK
-and the fonts are vendored in `verify/static` and embedded in the binary.
-`scripts/vendor-activity.sh` rebuilds them; the YouTube study music is not
-available in the Activity.
-
-Developer Portal set-up for the application:
-
-1. Activities → Settings: enable Activities.
-2. Activities → URL Mappings: root mapping `/` → `<public host>/activity/`
-   (the bot logs the exact target at start-up). No other mappings are needed.
-3. Activities → proxy authentication on, and `DISCORD_PUBLIC_KEY` set to the
-   application's public key.
-4. Set `DISCORD_ACTIVITY=on` and redeploy; the stickies pick up the button on
-   their next edit (within a minute).
-
-The edge rule must let through `/activity`, `/activity/` and everything under
-`/activity/` (`token`, `data`, `courses`, `report`, `f/*`, `static/*`).
 
 ## Automatic Under Attack Mode
 

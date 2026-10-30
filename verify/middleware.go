@@ -85,11 +85,6 @@ func clientIP(r *http.Request) string {
 	return host
 }
 
-// isActivityPath reports whether path belongs to the Discord Activity.
-func isActivityPath(path string) bool {
-	return path == ActivityPath || strings.HasPrefix(path, ActivityPath+"/")
-}
-
 // Harden wraps h with the protections every response needs, whichever route
 // it reaches: panic recovery, security headers (including on 404s), a global
 // concurrency cap, per-address rate limiting, and cross-site and content-type
@@ -110,12 +105,7 @@ func Harden(h http.Handler, logger *slog.Logger) http.Handler {
 		budget := lim
 		// Assistants call the MCP endpoint in bursts, and the hosted ones share
 		// addresses between many members; every call needs a valid token.
-		// The Activity reaches the server through Discord's proxy, so its
-		// members share that proxy's few addresses; its data needs a valid
-		// token too, and the rest is cached static files. Only the login,
-		// which calls Discord, keeps the page budget.
-		if strings.HasPrefix(r.URL.Path, filesPath) || r.URL.Path == mcpPath ||
-			(isActivityPath(r.URL.Path) && r.URL.Path != activityTokenPath) {
+		if strings.HasPrefix(r.URL.Path, filesPath) || r.URL.Path == mcpPath {
 			budget = files
 		}
 		if r.URL.Path != "/healthz" && !budget.allow(clientIP(r), time.Now()) {
@@ -133,16 +123,11 @@ func Harden(h http.Handler, logger *slog.Logger) http.Handler {
 		}
 
 		if r.Method == http.MethodPost {
-			// The Activity's writes are authorised by a Bearer token (and the
-			// proxy's signature), never by a cookie, so another site cannot
-			// make them on a member's behalf; and what Discord's proxy sends as
-			// their origin is not documented. They skip the cross-site checks.
-			if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && !isActivityPath(r.URL.Path) {
+			if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" {
 				http.Error(w, "forbidden", http.StatusForbidden)
 				return
 			}
-			if origin := r.Header.Get("Origin"); origin != "" && origin != "https://"+r.Host && origin != "http://"+r.Host &&
-				!isActivityPath(r.URL.Path) {
+			if origin := r.Header.Get("Origin"); origin != "" && origin != "https://"+r.Host && origin != "http://"+r.Host {
 				http.Error(w, "forbidden", http.StatusForbidden)
 				return
 			}

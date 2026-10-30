@@ -148,28 +148,3 @@ func TestRailwayEnablerArgs(t *testing.T) {
 		t.Fatal("missing binary should fail")
 	}
 }
-
-func TestActivityDownloadsAndStaticFilesAreNotCounted(t *testing.T) {
-	d := newTest()
-	status := http.StatusOK
-	h := d.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(status) }))
-	for _, path := range []string{"/activity/f/11?channel=1", "/activity/static/sdk-2.5.0.mjs"} {
-		for i := 0; i < 100; i++ {
-			h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", path, nil))
-		}
-	}
-	d.mu.Lock()
-	counted := d.secs != [rateSeconds]second{}
-	d.mu.Unlock()
-	if counted {
-		t.Fatal("successful activity downloads were counted")
-	}
-	// Refused ones count, like any other request.
-	status = http.StatusUnauthorized
-	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/activity/f/11", nil))
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if d.secs == [rateSeconds]second{} {
-		t.Fatal("a refused activity download was not counted")
-	}
-}
