@@ -143,10 +143,11 @@ func scanReport(row scanner) (*Report, error) {
 	return &r, nil
 }
 
-// ReportsToAnnounce lists valid reports whose admin card is not posted yet.
+// ReportsToAnnounce lists settled reports, valid or not, whose admin card is
+// not posted yet.
 func (s *Store) ReportsToAnnounce(ctx context.Context, limit int) ([]*Report, error) {
 	rows, err := s.db.QueryContext(ctx, `select `+reportColumns+` from material_reports
-		where status = ?1 and card_message_id is null order by id limit ?2`, ReportValid, limit)
+		where status in (?1, ?2) and card_message_id is null order by id limit ?3`, ReportValid, ReportInvalid, limit)
 	if err != nil {
 		return nil, err
 	}

@@ -56,7 +56,7 @@ func TestReportEndpoint(t *testing.T) {
 	reason := `αυτό είναι ένα meme, όχι υλικό`
 
 	res, out := postReport(t, c, e.srv.URL, `{"file":"11","reason":"`+reason+`"}`)
-	if res.StatusCode != http.StatusOK || out["status"] != "pulled" || out["left"] != float64(4) {
+	if res.StatusCode != http.StatusOK || out["status"] != "received" || out["note"] != nil || out["left"] != float64(4) {
 		t.Fatalf("pulled report: %d %v", res.StatusCode, out)
 	}
 	if len(fr.got) != 1 || fr.got[0] != "u1/100/11/"+reason {
@@ -64,7 +64,7 @@ func TestReportEndpoint(t *testing.T) {
 	}
 
 	fr.res = &ReportResult{Note: "το αρχείο είναι κανονικό υλικό", Left: 3}
-	if _, out := postReport(t, c, e.srv.URL, `{"file":"12","reason":"`+reason+`"}`); out["status"] != "declined" || out["note"] == "" {
+	if _, out := postReport(t, c, e.srv.URL, `{"file":"12","reason":"`+reason+`"}`); out["status"] != "received" || out["note"] != nil {
 		t.Fatalf("declined report: %v", out)
 	}
 
@@ -129,7 +129,7 @@ func TestReportsWorkAfterTheDownloadsAreDone(t *testing.T) {
 		t.Fatalf("download after completion: %d", res.StatusCode)
 	}
 	res, out := postReport(t, c, e.srv.URL, `{"file":"11","reason":"αυτό είναι ένα meme, όχι υλικό"}`)
-	if res.StatusCode != http.StatusOK || out["status"] != "pulled" {
+	if res.StatusCode != http.StatusOK || out["status"] != "received" {
 		t.Fatalf("report after completion: %d %v", res.StatusCode, out)
 	}
 }

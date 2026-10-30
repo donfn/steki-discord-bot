@@ -134,7 +134,7 @@ func (h *Handler) kickAbandoned(ctx context.Context, s *discordgo.Session, guild
 	})
 	if err != nil && !dc.IsMissingResource(err) {
 		h.log.Error("kick failed", "user_id", reg.UserID, "error", err)
-		h.alertMods(s, "⚠️ Δεν μπόρεσα να αφαιρέσω τον <@%s> μετά από 6 ώρες αδράνειας: ```%v```",
+		h.urgentMods(s, "⚠️ Δεν μπόρεσα να αφαιρέσω τον <@%s> μετά από 6 ώρες αδράνειας: ```%v```",
 			reg.UserID, err)
 		return
 	}
@@ -189,7 +189,7 @@ func (h *Handler) restoreVerifiedRole(ctx context.Context, s *discordgo.Session,
 		if terr := h.st.Touch(ctx, reg.ID); terr != nil {
 			h.log.Warn("touch registration failed", "reg_id", reg.ID, "error", terr)
 		}
-		h.alertMods(s, "⚠️ <@&%s> Ο <@%s> είναι επαληθευμένος στη βάση (`%s`) αλλά δεν έχει ρόλο "+
+		h.urgentMods(s, "⚠️ <@&%s> Ο <@%s> είναι επαληθευμένος στη βάση (`%s`) αλλά δεν έχει ρόλο "+
 			"και δεν μπόρεσα να του τον δώσω, οπότε δεν τον αφαίρεσα. %v",
 			staffRoleID, reg.UserID, email, err)
 		return true, nil

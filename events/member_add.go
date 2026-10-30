@@ -27,7 +27,7 @@ func (h *Handler) onMemberAdd(s *discordgo.Session, m *discordgo.GuildMemberAdd)
 		h.log.Error("record member join failed", "user_id", m.User.ID, "error", err)
 	}
 	if !h.gate.allow("joins", joinsPerWindow, joinWindow) {
-		h.alertModsOnce(s, "raid", "🚨 Ασυνήθιστα πολλές είσοδοι (πάνω από %d σε %d λεπτά). Ίσως πρόκειται για raid· ελέγξτε τον server.",
+		h.urgentModsOnce(s, "raid", "🚨 Ασυνήθιστα πολλές είσοδοι (πάνω από %d σε %d λεπτά). Ίσως πρόκειται για raid· ελέγξτε τον server.",
 			joinsPerWindow, int(joinWindow.Minutes()))
 	}
 	h.audit(m.User.ID, "", store.EventJoined, map[string]any{"username": m.User.Username}, "")
@@ -52,13 +52,13 @@ func (h *Handler) ensureRegisterChannel(s *discordgo.Session, guildID string, us
 
 	if err := h.st.EnsureMember(ctx, user.ID, user.Username); err != nil {
 		h.log.Error("ensure member failed", "user_id", user.ID, "error", err)
-		h.alertMods(s, "⚠️ Δεν μπόρεσα να ανοίξω εγγραφή για τον <@%s>: ```%v```", user.ID, err)
+		h.urgentMods(s, "⚠️ Δεν μπόρεσα να ανοίξω εγγραφή για τον <@%s>: ```%v```", user.ID, err)
 		return
 	}
 	reg, created, err := h.st.EnsureOpenRegistration(ctx, user.ID, guildID)
 	if err != nil {
 		h.log.Error("ensure registration failed", "user_id", user.ID, "error", err)
-		h.alertMods(s, "⚠️ Δεν μπόρεσα να ανοίξω εγγραφή για τον <@%s>: ```%v```", user.ID, err)
+		h.urgentMods(s, "⚠️ Δεν μπόρεσα να ανοίξω εγγραφή για τον <@%s>: ```%v```", user.ID, err)
 		return
 	}
 

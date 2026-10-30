@@ -166,7 +166,7 @@ func (h *Handler) sweepGhosts(s *discordgo.Session) {
 		case err != nil:
 			h.log.Warn("ghosts: add role", "user_id", id, "error", err)
 			if streak++; streak >= ghostMaxConsecutiveFailures {
-				h.alertModsOnce(s, "ghost-role", "⚠️ Δεν μπορώ να δώσω τον ρόλο Ghost (%d αποτυχίες στη σειρά): ```%v```", streak, err)
+				h.urgentModsOnce(s, "ghost-role", "⚠️ Δεν μπορώ να δώσω τον ρόλο Ghost (%d αποτυχίες στη σειρά): ```%v```", streak, err)
 				return
 			}
 			continue

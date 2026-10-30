@@ -7,7 +7,10 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"steki-bot/analytics"
 )
@@ -169,6 +172,7 @@ func (v *Server) sessionPage(w http.ResponseWriter, r *http.Request) {
 	v.renderMaterials(w, http.StatusOK, map[string]any{
 		"State":   stateReady,
 		"Channel": ch.Name,
+		"Course":  courseName(ch.Name),
 		"Files":   files,
 		"Total":   total,
 	})
@@ -263,4 +267,15 @@ func isSnowflake(s string) bool {
 		}
 	}
 	return true
+}
+
+// courseName turns a channel name such as "δομές-δεδομένων" into the course's
+// name as a sentence: "Δομές δεδομένων".
+func courseName(channel string) string {
+	name := strings.Join(strings.Fields(strings.ReplaceAll(channel, "-", " ")), " ")
+	r, size := utf8.DecodeRuneInString(name)
+	if r == utf8.RuneError {
+		return name
+	}
+	return string(unicode.ToUpper(r)) + name[size:]
 }

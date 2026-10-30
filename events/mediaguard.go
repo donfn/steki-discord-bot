@@ -110,7 +110,7 @@ func (h *Handler) restrict(s *discordgo.Session, userID, guildID, channelID, rea
 	})
 	if err != nil {
 		h.log.Warn("media guard: timeout failed", "user_id", userID, "error", err)
-		h.alertMods(s, "⚠️ %s, αλλά το timeout απέτυχε: `%v`", subject, err)
+		h.urgentMods(s, "⚠️ %s, αλλά το timeout απέτυχε: `%v`", subject, err)
 		return restrictResult{}, fmt.Errorf("timeout: %w", err)
 	}
 
@@ -129,7 +129,7 @@ func (h *Handler) restrict(s *discordgo.Session, userID, guildID, channelID, rea
 	dm, err := h.sendGuardDM(s, userID, reason, res.Link)
 	if err != nil {
 		h.log.Info("media guard: DM failed", "user_id", userID, "error", err)
-		h.alertMods(s, "🛡️ %s. Timeout 24 ωρών, αλλά **δεν δέχεται DM**, οπότε δεν πήρε τον σύνδεσμο "+
+		h.urgentMods(s, "🛡️ %s. Timeout 24 ωρών, αλλά **δεν δέχεται DM**, οπότε δεν πήρε τον σύνδεσμο "+
 			"επιβεβαίωσης. Μπορείτε να του τον στείλετε ή να αφαιρέσετε το timeout χειροκίνητα:\n<%s>",
 			subject, res.Link)
 		return res, nil

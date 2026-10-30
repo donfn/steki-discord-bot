@@ -30,12 +30,22 @@ func NewLog(channelID string, logger *slog.Logger) *Log {
 	return &Log{channelID: channelID, log: logger}
 }
 
-// Post sends a message, splitting anything over Discord's length limit so a
-// long error dump is truncated rather than dropped entirely.
+// Post sends a message silently: it shows in the channel but notifies no
+// one. Anything over Discord's length limit is split, so a long error dump is
+// truncated rather than dropped entirely.
 func (b *Log) Post(s *discordgo.Session, message string) {
+	b.send(s, message, discordgo.MessageFlagsSuppressNotifications)
+}
+
+// Alert sends a message with a notification, for posts an admin has to act on.
+func (b *Log) Alert(s *discordgo.Session, message string) {
+	b.send(s, message, 0)
+}
+
+func (b *Log) send(s *discordgo.Session, message string, flags discordgo.MessageFlags) {
 	for _, chunk := range splitMessage(message) {
 		if _, err := s.ChannelMessageSendComplex(b.channelID, &discordgo.MessageSend{
-			Content: chunk, AllowedMentions: SafeMentions,
+			Content: chunk, AllowedMentions: SafeMentions, Flags: flags,
 		}); err != nil {
 			b.log.Error("mod log delivery failed",
 				"channel_id", b.channelID, "error", err)
