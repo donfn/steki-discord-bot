@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"steki-bot/store"
@@ -48,28 +49,54 @@ type Worker struct {
 	// changed is called with a home channel whenever its listed files change,
 	// so its sticky message can show the new count.
 	changed func(homeChannelID string)
-	http    *http.Client
-	log     *slog.Logger
-	wake    chan struct{}
+	// held is called when a file is held for review, so its admin card can be
+	// posted.
+	held func()
+	http *http.Client
+	log  *slog.Logger
+	wake chan struct{}
+
+	// imagesFirst is set when the screener looks at image content: images are
+	// then screened from Discord's copy and reach the bucket only if approved.
+	imagesFirst bool
+	// rescan makes the screening pass visit listed images the content check
+	// has never seen. It is set by the rescan command.
+	rescan atomic.Bool
+	// pausedUntil is when screening resumes after the screener ran out of
+	// quota. Only the worker's own goroutine touches it.
+	pausedUntil time.Time
 }
 
 // NewWorker returns a Worker. Call Run to start it.
 func NewWorker(st *store.Store, bucket *Bucket, screener Screener, refresh Refresher,
-	changed func(homeChannelID string), logger *slog.Logger) *Worker {
+	changed func(homeChannelID string), held func(), logger *slog.Logger) *Worker {
+	ps, _ := screener.(PreScreener)
 	return &Worker{
-		st:       st,
-		bucket:   bucket,
-		screener: screener,
-		refresh:  refresh,
-		changed:  changed,
-		http:     &http.Client{Timeout: copyTimeout},
-		log:      logger,
-		wake:     make(chan struct{}, 1),
+		held:        held,
+		imagesFirst: ps != nil && ps.PreScreens(TypeJPEG),
+		st:          st,
+		bucket:      bucket,
+		screener:    screener,
+		refresh:     refresh,
+		changed:     changed,
+		http:        &http.Client{Timeout: copyTimeout},
+		log:         logger,
+		wake:        make(chan struct{}, 1),
 	}
 }
 
 // Bucket is the bucket the worker copies into.
 func (w *Worker) Bucket() *Bucket { return w.bucket }
+
+// Vision reports whether images are checked by content.
+func (w *Worker) Vision() bool { return w.imagesFirst }
+
+// Rescan queues every listed image the content check has not seen yet. The
+// queue is the database, so a restart only needs the command run again.
+func (w *Worker) Rescan() {
+	w.rescan.Store(true)
+	w.Wake()
+}
 
 // Wake asks the worker to look for new work now. It never blocks.
 func (w *Worker) Wake() {
@@ -81,27 +108,38 @@ func (w *Worker) Wake() {
 
 // Run processes the backlog until ctx is cancelled.
 func (w *Worker) Run(ctx context.Context) {
-	ticker := time.NewTicker(passEvery)
-	defer ticker.Stop()
 	for {
 		w.pass(ctx)
+		// Come back when the quota is expected to be back, if that is sooner
+		// than the regular pass.
+		wait := passEvery
+		if d := time.Until(w.pausedUntil); d > 0 && d < wait {
+			wait = d
+		}
+		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
 		case <-w.wake:
-		case <-ticker.C:
+		case <-timer.C:
 		}
+		timer.Stop()
 	}
 }
 
-// pass works through everything currently waiting: backups first, since a
-// file can only be screened once it is in the bucket.
+// pass works through everything currently waiting. Images are screened
+// first when the screener reads their content, since a flagged one must not
+// be copied; then backups, since a PDF can only be screened once it is in the
+// bucket; then whatever is left to screen.
 func (w *Worker) pass(ctx context.Context) {
+	w.screenPass(ctx)
+
 	// Failures are retried on later passes, not within this one, so each
 	// sweep walks the backlog once with a cursor.
 	var cur store.Cursor
 	for ctx.Err() == nil {
-		rows, err := w.st.MaterialBacklog(ctx, MaxBackupAttempts, cur, batch)
+		rows, err := w.st.MaterialBacklog(ctx, MaxBackupAttempts, cur, batch, w.imagesFirst)
 		if err != nil {
 			w.log.Error("materials: read backup backlog", "error", err)
 			return
@@ -115,22 +153,37 @@ func (w *Worker) pass(ctx context.Context) {
 		}
 	}
 
-	cur = store.Cursor{}
-	for ctx.Err() == nil {
-		rows, err := w.st.ScreeningBacklog(ctx, cur, batch)
+	w.screenPass(ctx)
+}
+
+// screenPass screens the waiting files, oldest first. When the screener runs
+// out of quota the pass stops and the files stay queued until it is back.
+func (w *Worker) screenPass(ctx context.Context) {
+	var cur store.Cursor
+	for ctx.Err() == nil && !w.paused() {
+		rows, err := w.st.ScreeningBacklog(ctx, cur, batch, w.imagesFirst, w.rescan.Load())
 		if err != nil {
 			w.log.Error("materials: read screening backlog", "error", err)
 			return
 		}
 		for _, m := range rows {
+			if w.paused() || ctx.Err() != nil {
+				return
+			}
 			w.screen(ctx, m)
 			cur = cur.Next(m)
 		}
 		if len(rows) < batch {
-			break
+			if w.rescan.Load() && !w.paused() {
+				w.rescan.Store(false) // everything has been seen
+				w.log.Info("materials: rescan finished")
+			}
+			return
 		}
 	}
 }
+
+func (w *Worker) paused() bool { return time.Now().Before(w.pausedUntil) }
 
 // backup copies one attachment from Discord into the bucket.
 func (w *Worker) backup(ctx context.Context, m *store.Material) {
@@ -170,6 +223,10 @@ func (w *Worker) backup(ctx context.Context, m *store.Material) {
 		return
 	}
 	log.Info("materials: backed up", "bytes", m.Size)
+	// An image approved before its backup is listed only now.
+	if m.Status == store.MaterialApproved && w.changed != nil {
+		w.changed(m.HomeChannelID)
+	}
 }
 
 type httpStatusError struct{ code int }
@@ -200,7 +257,8 @@ func (w *Worker) copy(ctx context.Context, m *store.Material, url string) error 
 	return nil
 }
 
-// screen asks the screener about one backed-up file and records the verdict.
+// screen asks the screener about one file and records the verdict. A file
+// not in the bucket yet is read from Discord.
 func (w *Worker) screen(ctx context.Context, m *store.Material) {
 	log := w.log.With("attachment_id", m.AttachmentID, "channel_id", m.ChannelID)
 	ctx, cancel := context.WithTimeout(ctx, screenTimeout)
@@ -210,7 +268,19 @@ func (w *Worker) screen(ctx context.Context, m *store.Material) {
 		r, _, err := w.bucket.Open(ctx, m.ObjectKey)
 		return r, err
 	}
+	if m.BackedUpAt == nil {
+		open = func(ctx context.Context) (io.ReadCloser, error) { return w.openSource(ctx, m) }
+	}
 	v, err := w.screener.Screen(ctx, m, open)
+	var limit *RateLimitError
+	switch {
+	case errors.As(err, &limit):
+		w.pausedUntil = time.Now().Add(limit.RetryAfter)
+		return
+	case errors.Is(err, ErrSourceGone):
+		// Deleted before it could be looked at: there is nothing to list.
+		v, err = Verdict{Status: store.MaterialRejected, Note: "deleted before it could be screened"}, nil
+	}
 	if err != nil {
 		log.Warn("materials: screening failed; will retry", "error", err)
 		return
@@ -218,20 +288,93 @@ func (w *Worker) screen(ctx context.Context, m *store.Material) {
 	switch v.Status {
 	case store.MaterialPending:
 		return
-	case store.MaterialApproved, store.MaterialRejected:
+	case store.MaterialApproved, store.MaterialRejected, store.MaterialReview:
 	default:
 		log.Error("materials: screener returned an unknown status", "status", v.Status)
 		return
 	}
-	if err := w.st.SetScreening(ctx, m.AttachmentID, v.Status, v.Note); err != nil {
-		log.Error("materials: record screening", "error", err)
+	if v.Status == store.MaterialReview {
+		w.hold(ctx, m, v.Note)
 		return
+	}
+	if m.Status != v.Status { // a rescan of a listed file that passes changes nothing
+		if err := w.st.SetScreening(ctx, m.AttachmentID, v.Status, v.Note); err != nil {
+			log.Error("materials: record screening", "error", err)
+			return
+		}
+	}
+	if v.Checked {
+		if err := w.st.MarkVisionChecked(ctx, m.AttachmentID); err != nil {
+			log.Error("materials: record content check", "error", err)
+		}
 	}
 	if v.Status == store.MaterialRejected {
 		log.Warn("materials: file rejected by screening", "note", v.Note, "filename", m.Filename)
 		return
 	}
-	if w.changed != nil {
+	// A file still to be copied is listed once the backup is done.
+	if m.BackedUpAt != nil && m.Status != store.MaterialApproved && w.changed != nil {
 		w.changed(m.HomeChannelID)
 	}
+	if m.BackedUpAt == nil {
+		w.Wake() // the backup is next
+	}
+}
+
+// hold takes a flagged file off the page and out of the bucket and asks for an
+// admin's decision.
+func (w *Worker) hold(ctx context.Context, m *store.Material, note string) {
+	log := w.log.With("attachment_id", m.AttachmentID, "channel_id", m.ChannelID)
+	if m.BackedUpAt != nil {
+		if err := w.bucket.Delete(ctx, m.ObjectKey); err != nil {
+			log.Error("materials: remove flagged file from the bucket; will retry", "error", err)
+			return
+		}
+	}
+	if err := w.st.HoldMaterial(ctx, m.AttachmentID, note); err != nil {
+		log.Error("materials: hold flagged file", "error", err)
+		return
+	}
+	log.Warn("materials: file held for review", "note", note, "filename", m.Filename)
+	if m.BackedUpAt != nil && m.Status == store.MaterialApproved && w.changed != nil {
+		w.changed(m.HomeChannelID)
+	}
+	if w.held != nil {
+		w.held()
+	}
+}
+
+// openSource reads a file from Discord, refreshing its signed link once if it
+// has expired.
+func (w *Worker) openSource(ctx context.Context, m *store.Material) (io.ReadCloser, error) {
+	r, err := w.get(ctx, m.SourceURL)
+	var expired *httpStatusError
+	if errors.As(err, &expired) && (expired.code == http.StatusForbidden || expired.code == http.StatusNotFound) {
+		url, rerr := w.refresh(ctx, m)
+		if rerr != nil {
+			return nil, rerr // includes ErrSourceGone
+		}
+		if serr := w.st.SetMaterialSource(ctx, m.AttachmentID, url); serr != nil {
+			w.log.Warn("materials: save refreshed link", "error", serr)
+		}
+		return w.get(ctx, url)
+	}
+	return r, err
+}
+
+// get starts a download; the caller closes the body.
+func (w *Worker) get(ctx context.Context, url string) (io.ReadCloser, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := w.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("download: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, &httpStatusError{code: resp.StatusCode}
+	}
+	return resp.Body, nil
 }

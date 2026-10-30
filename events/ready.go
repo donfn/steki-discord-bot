@@ -75,6 +75,8 @@ func (h *Handler) startMaterials(s *discordgo.Session) {
 		}
 		h.goLoopAfter("sticky_links", materialLinkRotate, func() { h.rotateStickyLinks(s) })
 	})
+	// Cards for flagged images the worker's hook did not get to post.
+	h.goLoop("material_review", reviewEvery, func() { h.announceReviews(s) })
 	h.goLoop("material_scan", rescanEvery, func() { h.scanMaterials(s) })
 	// The MCP announcements' button links, replaced like the stickies'.
 	h.goLoop("mcp_links", materialLinkRotate, func() { h.rotateMCPLinks(s) })

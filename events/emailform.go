@@ -78,6 +78,10 @@ func (h *Handler) ownRegistration(s *discordgo.Session, i *discordgo.Interaction
 
 // onComponent handles the register channel buttons.
 func (h *Handler) onComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	if id := i.MessageComponentData().CustomID; strings.HasPrefix(id, reviewApprovePrefix) || strings.HasPrefix(id, reviewRejectPrefix) {
+		h.onReviewButton(s, i)
+		return
+	}
 	switch i.MessageComponentData().CustomID {
 	case uploadButtonID:
 		h.openUploadForm(s, i)

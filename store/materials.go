@@ -14,6 +14,9 @@ const (
 	MaterialPending  = "pending"
 	MaterialApproved = "approved"
 	MaterialRejected = "rejected"
+	// MaterialReview holds a file the content check flagged until an admin
+	// decides. It is unlisted and kept out of the bucket meanwhile.
+	MaterialReview = "review"
 )
 
 // Material is one PDF or JPEG attachment posted in the guild.
@@ -43,11 +46,17 @@ type Material struct {
 	ScreenNote *string
 
 	DeletedAt *time.Time
+
+	// VisionAt is when the content check passed the file; ReviewMessageID is
+	// the admin card of a flagged one.
+	VisionAt        *time.Time
+	ReviewMessageID *string
 }
 
 const materialColumns = `attachment_id, message_id, channel_id, home_channel_id, guild_id,
 	uploader_id, uploader_bot, filename, content_type, size, caption, source_url, object_key, posted_at, discovered_at,
-	backed_up_at, backup_attempts, backup_error, status, screened_at, screen_note, deleted_at`
+	backed_up_at, backup_attempts, backup_error, status, screened_at, screen_note, deleted_at,
+	vision_at, review_message_id`
 
 func scanMaterial(row scanner) (*Material, error) {
 	var m Material
@@ -56,7 +65,7 @@ func scanMaterial(row scanner) (*Material, error) {
 		&m.UploaderID, &m.UploaderBot, &m.Filename, &m.ContentType, &m.Size, &caption, &m.SourceURL, &m.ObjectKey,
 		timeDest{&m.PostedAt}, timeDest{&m.DiscoveredAt}, nullTimeDest{&m.BackedUpAt},
 		&m.BackupAttempts, &m.BackupError, &m.Status, nullTimeDest{&m.ScreenedAt}, &m.ScreenNote,
-		nullTimeDest{&m.DeletedAt})
+		nullTimeDest{&m.DeletedAt}, nullTimeDest{&m.VisionAt}, &m.ReviewMessageID)
 	if err != nil {
 		return nil, noRows(err)
 	}
@@ -111,11 +120,16 @@ func (Cursor) Next(m *Material) Cursor { return Cursor{postedAt: ms(m.PostedAt),
 // failed fewer than maxAttempts times, oldest first, after cur. Deleted
 // materials are included: the bucket is a backup and keeps everything that
 // was posted.
-func (s *Store) MaterialBacklog(ctx context.Context, maxAttempts int, cur Cursor, limit int) ([]*Material, error) {
+//
+// With imagesFirst, a JPEG is copied only once the content check approved it
+// (flagged ones never reach the bucket); PDFs are copied as soon as they are
+// seen and screened afterwards.
+func (s *Store) MaterialBacklog(ctx context.Context, maxAttempts int, cur Cursor, limit int, imagesFirst bool) ([]*Material, error) {
 	rows, err := s.db.QueryContext(ctx, `select `+materialColumns+` from materials
 		where backed_up_at is null and backup_attempts < ?1
 			and (posted_at, attachment_id) > (?2, ?3)
-		order by posted_at, attachment_id limit ?4`, maxAttempts, cur.postedAt, cur.id, limit)
+			and (not ?5 or status = 'approved' or (status = 'pending' and content_type <> 'image/jpeg'))
+		order by posted_at, attachment_id limit ?4`, maxAttempts, cur.postedAt, cur.id, limit, imagesFirst)
 	if err != nil {
 		return nil, err
 	}
@@ -146,13 +160,17 @@ func (s *Store) SetMaterialSource(ctx context.Context, attachmentID, url string)
 	return err
 }
 
-// ScreeningBacklog lists backed-up materials still waiting for a screening
-// verdict, oldest first, after cur.
-func (s *Store) ScreeningBacklog(ctx context.Context, cur Cursor, limit int) ([]*Material, error) {
+// ScreeningBacklog lists materials waiting for a screening verdict, oldest
+// first, after cur: backed-up ones, plus with imagesFirst the JPEGs not yet in
+// the bucket. With rescan it also lists the listed JPEGs the content check has
+// never seen, which is how files uploaded before it existed get checked.
+func (s *Store) ScreeningBacklog(ctx context.Context, cur Cursor, limit int, imagesFirst, rescan bool) ([]*Material, error) {
 	rows, err := s.db.QueryContext(ctx, `select `+materialColumns+` from materials
-		where status = ?1 and backed_up_at is not null and deleted_at is null
-			and (posted_at, attachment_id) > (?2, ?3)
-		order by posted_at, attachment_id limit ?4`, MaterialPending, cur.postedAt, cur.id, limit)
+		where deleted_at is null and (posted_at, attachment_id) > (?2, ?3)
+			and ((status = ?1 and (backed_up_at is not null or (?5 and content_type = 'image/jpeg')))
+				or (?6 and status = 'approved' and content_type = 'image/jpeg'
+					and backed_up_at is not null and vision_at is null))
+		order by posted_at, attachment_id limit ?4`, MaterialPending, cur.postedAt, cur.id, limit, imagesFirst, rescan)
 	if err != nil {
 		return nil, err
 	}
@@ -165,6 +183,77 @@ func (s *Store) SetScreening(ctx context.Context, attachmentID, status, note str
 		set status = ?2, screen_note = ?3, screened_at = ?4 where attachment_id = ?1`,
 		attachmentID, status, nullStr(note), ms(time.Now()))
 	return err
+}
+
+// MarkVisionChecked records that the content check passed a file.
+func (s *Store) MarkVisionChecked(ctx context.Context, attachmentID string) error {
+	_, err := s.db.ExecContext(ctx, `update materials set vision_at = ?2 where attachment_id = ?1`,
+		attachmentID, ms(time.Now()))
+	return err
+}
+
+// HoldMaterial takes a flagged file off the page and out of the backup queue
+// until an admin decides. The caller has already removed any bucket copy, so
+// backed_up_at is cleared.
+func (s *Store) HoldMaterial(ctx context.Context, attachmentID, note string) error {
+	now := ms(time.Now())
+	_, err := s.db.ExecContext(ctx, `update materials
+		set status = ?2, screen_note = ?3, screened_at = ?4, vision_at = ?4,
+			backed_up_at = null, backup_attempts = 0, backup_error = null
+		where attachment_id = ?1`, attachmentID, MaterialReview, nullStr(note), now)
+	return err
+}
+
+// ReviewsToAnnounce lists held files whose admin card is not posted yet.
+func (s *Store) ReviewsToAnnounce(ctx context.Context, limit int) ([]*Material, error) {
+	rows, err := s.db.QueryContext(ctx, `select `+materialColumns+` from materials
+		where status = ?1 and review_message_id is null and deleted_at is null
+		order by posted_at, attachment_id limit ?2`, MaterialReview, limit)
+	if err != nil {
+		return nil, err
+	}
+	return collectMaterials(rows)
+}
+
+// SetReviewMessage remembers the admin card of a held file.
+func (s *Store) SetReviewMessage(ctx context.Context, attachmentID, messageID string) error {
+	_, err := s.db.ExecContext(ctx, `update materials set review_message_id = ?2 where attachment_id = ?1`,
+		attachmentID, messageID)
+	return err
+}
+
+// ResolveReview records an admin's decision on a held file: approved files go
+// back to the backup queue, rejected ones stay out for good. It reports false
+// when the file was no longer awaiting a decision, so two admins clicking at
+// once cannot both win. The file's row is returned either way.
+func (s *Store) ResolveReview(ctx context.Context, attachmentID string, approve bool, note string) (*Material, bool, error) {
+	status := MaterialRejected
+	if approve {
+		status = MaterialApproved
+	}
+	res, err := s.db.ExecContext(ctx, `update materials
+		set status = ?2, screen_note = ?3, screened_at = ?4
+		where attachment_id = ?1 and status = ?5`,
+		attachmentID, status, nullStr(note), ms(time.Now()), MaterialReview)
+	if err != nil {
+		return nil, false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return nil, false, err
+	}
+	m, err := scanMaterial(s.db.QueryRowContext(ctx, `select `+materialColumns+` from materials
+		where attachment_id = ?1`, attachmentID))
+	return m, n > 0, err
+}
+
+// CountUnchecked counts the listed JPEGs the content check has not seen.
+func (s *Store) CountUnchecked(ctx context.Context) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `select count(*) from materials
+		where status = 'approved' and content_type = 'image/jpeg' and backed_up_at is not null
+			and vision_at is null and deleted_at is null`).Scan(&n)
+	return n, err
 }
 
 // DeleteMaterialsByMessage hides every material of the given messages from

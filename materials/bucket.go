@@ -61,6 +61,11 @@ func (b *Bucket) Put(ctx context.Context, key string, r io.Reader, size int64, c
 	return err
 }
 
+// Delete removes the object at key. Removing one that is not there succeeds.
+func (b *Bucket) Delete(ctx context.Context, key string) error {
+	return b.client.RemoveObject(ctx, b.name, key, minio.RemoveObjectOptions{})
+}
+
 // Open returns the object at key and its size. The caller closes it.
 func (b *Bucket) Open(ctx context.Context, key string) (io.ReadCloser, int64, error) {
 	obj, err := b.client.GetObject(ctx, b.name, key, minio.GetObjectOptions{})

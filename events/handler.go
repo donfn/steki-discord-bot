@@ -121,8 +121,14 @@ func NewHandler(cfg *config.Config, st *store.Store, logger *slog.Logger) *Handl
 // handler would otherwise take the whole process down.
 func (h *Handler) Register(s *discordgo.Session) {
 	if h.bucket != nil {
-		h.mat = materials.NewWorker(h.st, h.bucket, materials.BasicScreener{}, h.refreshMaterialSource(s),
-			func(home string) { h.refreshSticky(s, home) }, h.log)
+		var screener materials.Screener = materials.BasicScreener{}
+		if h.cfg.GoogleAIToken != "" {
+			screener = materials.NewGemini(h.cfg.GoogleAIToken, h.cfg.GoogleAIModel, h.log)
+			h.log.Info("image content check enabled")
+		}
+		h.mat = materials.NewWorker(h.st, h.bucket, screener, h.refreshMaterialSource(s),
+			func(home string) { h.refreshSticky(s, home) },
+			func() { go h.safely("review_cards", func() { h.announceReviews(s) }) }, h.log)
 	}
 	s.AddHandler(guard(h, "ready", h.onReady))
 	s.AddHandler(guard(h, "guild_create", h.onGuildCreate))

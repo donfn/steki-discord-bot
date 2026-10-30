@@ -63,6 +63,12 @@ type Config struct {
 	// The MCP server is off unless both are set (and the bucket is).
 	DiscordClientID     string
 	DiscordClientSecret string
+
+	// GoogleAIToken is a Google AI Studio API key. With it, uploaded images
+	// are checked by a Gemini model and the ones that are not course material
+	// or show people wait for an admin. GoogleAIModel overrides the model.
+	GoogleAIToken string
+	GoogleAIModel string
 }
 
 // MCPEnabled reports whether the MCP server has the Discord login it needs.
@@ -107,6 +113,9 @@ func Load() (*Config, error) {
 
 		DiscordClientID:     strings.TrimSpace(os.Getenv("DISCORD_CLIENT_ID")),
 		DiscordClientSecret: strings.TrimSpace(os.Getenv("DISCORD_CLIENT_SECRET")),
+
+		GoogleAIToken: strings.TrimSpace(os.Getenv("GOOGLE_AI_TOKEN")),
+		GoogleAIModel: strings.TrimSpace(os.Getenv("GOOGLE_AI_MODEL")),
 
 		Bucket: Bucket{
 			Endpoint:        strings.TrimSpace(os.Getenv("BUCKET_ENDPOINT")),

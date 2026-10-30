@@ -3,19 +3,45 @@ package materials
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
+	"time"
 
 	"steki-bot/store"
 )
 
 // Verdict is a Screener's decision on one file.
 type Verdict struct {
-	// Status is store.MaterialApproved, store.MaterialRejected, or
+	// Status is store.MaterialApproved, store.MaterialRejected,
+	// store.MaterialReview to hold the file for an admin's decision, or
 	// store.MaterialPending to leave the file unlisted and ask again on the
 	// next pass (for a screener that works asynchronously).
 	Status string
 	// Note says why, for moderators. Optional.
 	Note string
+	// Checked reports that the content was looked at by the vision check, not
+	// only its format.
+	Checked bool
+}
+
+// RateLimitError is returned by a Screener whose service is out of quota. The
+// worker stops screening until RetryAfter has passed and then carries on, so
+// the files wait in the queue however long that takes.
+type RateLimitError struct {
+	RetryAfter time.Duration
+}
+
+func (e *RateLimitError) Error() string {
+	return fmt.Sprintf("screening service is rate limited; retry in %s", e.RetryAfter.Round(time.Second))
+}
+
+// PreScreener is implemented by a Screener that looks at the content of
+// images. Those are screened from Discord's copy before anything is uploaded,
+// so a flagged image never reaches the bucket.
+type PreScreener interface {
+	// PreScreens reports whether files of this content type are screened
+	// before they are backed up.
+	PreScreens(contentType string) bool
 }
 
 // Opener reads the file being screened back from the bucket. Each call
