@@ -11,6 +11,7 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"steki-bot/analytics"
@@ -70,6 +71,8 @@ type Server struct {
 	mcpURL string
 	// watcher, if set, is told when a personal link is followed.
 	watcher LinkWatcher
+	// sockets counts the open page sockets.
+	sockets atomic.Int64
 	log     *slog.Logger
 }
 
@@ -114,8 +117,7 @@ func (v *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /link/accept", v.linkAccept)
 	if v.materials != nil {
 		mux.HandleFunc("GET "+entryPath, v.materialsPage)
-		mux.HandleFunc("GET "+pagePath, v.sessionPage)
-		mux.HandleFunc("POST "+pagePath, v.saveNote)
+		mux.HandleFunc("GET "+pagePath, v.pageOrSocket)
 		mux.HandleFunc("GET "+filesPath+"{id}", v.materialFile)
 		mux.HandleFunc("POST "+reportPath, v.reportFile)
 	}
@@ -185,7 +187,8 @@ func (v *Server) render(w http.ResponseWriter, tmpl *template.Template, data map
 // are refused.
 func (v *Server) guardClaims(raw string) (*Claims, bool) {
 	c, err := v.tokens.Parse(raw)
-	if err != nil || c.Reason == ReasonLink || c.Reason == ReasonMaterials || c.Reason == ReasonMCPGuide {
+	if err != nil || c.Reason == ReasonLink || c.Reason == ReasonMaterials || c.Reason == ReasonMCPGuide ||
+		c.Reason == ReasonSocket {
 		return nil, false
 	}
 	return c, true

@@ -104,10 +104,8 @@ func Harden(h http.Handler, logger *slog.Logger) http.Handler {
 
 		budget := lim
 		// Assistants call the MCP endpoint in bursts, and the hosted ones share
-		// addresses between many members; every call needs a valid token. The
-		// page saves notes as members write, and needs a session to.
-		if strings.HasPrefix(r.URL.Path, filesPath) || r.URL.Path == mcpPath ||
-			(r.Method == http.MethodPost && r.URL.Path == pagePath) {
+		// addresses between many members; every call needs a valid token.
+		if strings.HasPrefix(r.URL.Path, filesPath) || r.URL.Path == mcpPath {
 			budget = files
 		}
 		if r.URL.Path != "/healthz" && !budget.allow(clientIP(r), time.Now()) {
@@ -115,13 +113,17 @@ func Harden(h http.Handler, logger *slog.Logger) http.Handler {
 			http.Error(w, "too many requests", http.StatusTooManyRequests)
 			return
 		}
-		select {
-		case sem <- struct{}{}:
-			defer func() { <-sem }()
-		default:
-			w.Header().Set("Retry-After", "5")
-			http.Error(w, "busy", http.StatusServiceUnavailable)
-			return
+		// A page socket stays open for as long as the page does, so it would
+		// hold a slot for hours; sockets have a cap of their own (maxSockets).
+		if !isWebSocket(r) {
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			default:
+				w.Header().Set("Retry-After", "5")
+				http.Error(w, "busy", http.StatusServiceUnavailable)
+				return
+			}
 		}
 
 		if r.Method == http.MethodPost {

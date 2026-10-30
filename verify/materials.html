@@ -714,6 +714,11 @@
   .file.done .name { text-decoration: line-through; text-decoration-thickness: 2px; text-decoration-color: var(--color-marker); }
   .file.done .thumb { opacity: 0.55; }
   .private-note { margin: 0 0 var(--space-sm); font-size: var(--text-xs); color: var(--color-muted); }
+  /* Without the socket nothing can be saved, so nothing can be edited. */
+  .private-note.offline { color: var(--color-text); font-weight: 600; }
+  body.read-only .title-edit, body.read-only #ink-toggle, body.read-only #ink-bar,
+  body.read-only .pad-tools { display: none !important; }
+  body.read-only .done-btn { pointer-events: none; }
   .notes-form label { display: block; margin: 0 0 0.3rem; font-weight: 700; font-size: 0.875rem; }
   .notes-form input {
     width: 100%; height: 46px; margin-bottom: 0.8rem; padding: 0 0.8rem;
@@ -1004,7 +1009,7 @@
   </form>
 </dialog>
 
-<script type="application/json" id="data">{"files":{{.Files}},"total":{{.Total}},"notes":{{.Notes}}}</script>
+<script type="application/json" id="data">{"files":{{.Files}},"total":{{.Total}},"notes":{{.Notes}},"socket":{{.Socket}},"socketExp":{{.SocketExp}}}</script>
 <script nonce="{{.Nonce}}" type="module">
   const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/';
   const PDFJS_LIB = PDFJS + 'legacy/build/pdf.min.mjs';
@@ -1026,44 +1031,132 @@
   // ── Saving ──────────────────────────────────────────────────────────────
   // What the member keeps for themselves is saved to their account, per file
   // and kind, and comes back with the page on any device. There is no syncing:
-  // each save replaces what was stored, and the latest one stays. Changes are
-  // gathered for a moment and sent together.
-  const saved = JSON.parse(document.getElementById('data').textContent).notes || {};
-  const pendingSaves = new Map();
-  let saveTimer = 0;
-  let saveWarned = false;
-  function persist(id, kind, value) {
-    pendingSaves.set(id + ':' + kind, { file: id, kind, data: value && Object.keys(value).length ? value : null });
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(flushSaves, 800);
+  // each save replaces what was stored, and the latest one stays.
+  //
+  // Saves go over one socket, opened with a one-time token that came with the
+  // page. The server sends a fresh token as soon as the socket opens and every
+  // few minutes, so a dropped connection can always come back. Changes to the
+  // same file and kind are merged while they wait, values the server already
+  // has are skipped, and a batch the server has not acknowledged is sent
+  // again after a reconnect.
+  const boot = JSON.parse(document.getElementById('data').textContent);
+  const saved = boot.notes || {};
+  const keyOf = (id, kind) => id + ':' + kind;
+  const sock = { ws: null, token: boot.socket || '', exp: boot.socketExp || 0, open: false, dead: false, seq: 0, wait: 1000 };
+  // A token is good until exp; a little is kept back for the trip.
+  const tokenLive = () => sock.token && Date.now() < sock.exp - 15000;
+  const pendingSaves = new Map(); // key -> item, waiting to be sent
+  const inflight = new Map();     // seq -> items, sent and not yet acknowledged
+  const stored = new Map();       // key -> JSON the server holds
+  for (const [id, kinds] of Object.entries(saved)) {
+    for (const [kind, v] of Object.entries(kinds)) stored.set(keyOf(id, kind), JSON.stringify(v));
   }
-  async function flushSaves(leaving) {
+  let saveTimer = 0;
+  let firstChange = 0;
+  let saveWarned = false;
+
+  function persist(id, kind, value) {
+    const d = value && Object.keys(value).length ? value : null;
+    pendingSaves.set(keyOf(id, kind), { f: id, k: kind, d });
+    // Typing or drawing pushes the save back a little, but never past 3s.
+    const now = Date.now();
+    if (!saveTimer) firstChange = now;
     clearTimeout(saveTimer);
-    const batch = [...pendingSaves.entries()];
-    pendingSaves.clear();
-    for (const [key, item] of batch) {
-      const body = JSON.stringify(item);
-      try {
-        const res = await fetch('/s', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body,
-          // A page being closed can still send what is small enough.
-          keepalive: leaving === true && body.length < 60000,
-        });
-        if (res.status === 401) {
-          saveFailed('Η σελίδα έληξε και οι τελευταίες αλλαγές δεν αποθηκεύτηκαν. Άνοιξέ τη ξανά από το Discord.');
-          return;
-        }
-        if (!res.ok) throw new Error(String(res.status));
-      } catch {
-        // Try again shortly, unless a newer change has taken its place.
-        if (!pendingSaves.has(key)) pendingSaves.set(key, item);
-        clearTimeout(saveTimer);
-        saveTimer = setTimeout(flushSaves, 5000);
-        saveFailed('Δεν μπόρεσα να αποθηκεύσω τις αλλαγές. Θα ξαναδοκιμάσω σε λίγο.');
-      }
+    saveTimer = setTimeout(flushSaves, Math.max(0, Math.min(600, firstChange + 3000 - now)));
+  }
+  function flushSaves() {
+    clearTimeout(saveTimer);
+    saveTimer = 0;
+    if (!sock.open || !pendingSaves.size) return;
+    const items = [];
+    for (const [key, item] of pendingSaves) {
+      const json = JSON.stringify(item.d);
+      if (stored.get(key) === json || (item.d === null && !stored.has(key))) continue;
+      items.push(item);
     }
+    pendingSaves.clear();
+    if (!items.length) return;
+    const seq = ++sock.seq;
+    inflight.set(seq, items);
+    sock.ws.send(JSON.stringify({ op: 'save', seq, items }));
+  }
+  function acknowledged(m) {
+    const items = inflight.get(m.seq);
+    inflight.delete(m.seq);
+    if (!items) return;
+    if (m.retry) {
+      requeue(items);
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(flushSaves, 5000);
+      saveFailed('Δεν μπόρεσα να αποθηκεύσω τις αλλαγές. Θα ξαναδοκιμάσω σε λίγο.');
+      return;
+    }
+    const dropped = new Set((m.drop || []).map((x) => keyOf(x.f, x.k)));
+    for (const it of items) {
+      const key = keyOf(it.f, it.k);
+      if (dropped.has(key)) continue;
+      if (it.d === null) stored.delete(key); else stored.set(key, JSON.stringify(it.d));
+    }
+    if ((m.drop || []).some((x) => x.code === 'too_large')) {
+      saveFailed('Οι σημειώσεις σε ένα αρχείο είναι πολύ μεγάλες για να αποθηκευτούν. Σβήσε λίγες γραμμές.');
+    }
+  }
+  // Puts unacknowledged items back, unless a newer change took their place.
+  function requeue(items) {
+    for (const it of items) {
+      const key = keyOf(it.f, it.k);
+      if (!pendingSaves.has(key)) pendingSaves.set(key, it);
+    }
+  }
+  function connect() {
+    if (sock.dead || sock.ws) return;
+    if (!tokenLive()) { sock.dead = true; setTimeout(() => readOnly(pendingSaves.size || inflight.size)); return; }
+    const token = sock.token;
+    sock.token = ''; // each token opens the socket once
+    const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/s');
+    sock.ws = ws;
+    ws.onopen = () => ws.send(JSON.stringify({ op: 'auth', t: token }));
+    ws.onmessage = (e) => {
+      let m;
+      try { m = JSON.parse(e.data); } catch { return; }
+      if (m.op === 'token') {
+        sock.token = m.t;
+        sock.exp = m.exp;
+        if (!sock.open) {
+          sock.open = true;
+          sock.wait = 1000;
+          for (const items of inflight.values()) requeue(items);
+          inflight.clear();
+          flushSaves();
+        }
+      } else if (m.op === 'ack') {
+        acknowledged(m);
+      }
+    };
+    ws.onclose = (e) => {
+      sock.ws = null;
+      sock.open = false;
+      if (e.code === 4001 || !tokenLive()) {
+        sock.dead = true;
+        readOnly(pendingSaves.size || inflight.size);
+        return;
+      }
+      setTimeout(connect, sock.wait);
+      sock.wait = Math.min(sock.wait * 2, 30000);
+    };
+  }
+  // With the token gone and the socket closed nothing more can be saved, so
+  // the page stops taking edits rather than lose them.
+  function readOnly(lost) {
+    document.body.classList.add('read-only');
+    if (inkState.on) setInking(false);
+    $('pad-text').contentEditable = 'false';
+    if ($('notes').open) $('notes').close();
+    const note = $('private-note');
+    note.classList.add('offline');
+    note.textContent = 'Η σύνδεση με το Steki χάθηκε, οπότε η σελίδα είναι πλέον μόνο για ανάγνωση. ' +
+      'Για να συνεχίσεις να σημειώνεις, άνοιξέ τη ξανά από το Discord.';
+    if (lost) toast('Οι τελευταίες αλλαγές δεν αποθηκεύτηκαν. Άνοιξε ξανά τη σελίδα από το Discord.');
   }
   function saveFailed(text) {
     if (saveWarned) return;
@@ -1071,8 +1164,16 @@
     toast(text);
     setTimeout(() => { saveWarned = false; }, 30000);
   }
-  addEventListener('pagehide', () => flushSaves(true));
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushSaves(true); });
+  // Send what is waiting before the page goes away, and ask before closing it
+  // while something is still unsaved.
+  addEventListener('pagehide', flushSaves);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushSaves(); });
+  addEventListener('online', () => { sock.wait = 1000; connect(); });
+  addEventListener('beforeunload', (e) => {
+    flushSaves();
+    if (!sock.dead && (pendingSaves.size || inflight.size)) e.preventDefault();
+  });
+  connect();
 
   // What was kept in this browser before saving moved to the account is
   // carried over once, for the files the account has nothing of that kind.
@@ -1080,7 +1181,7 @@
     let local = null;
     try { local = JSON.parse(localStorage.getItem(key) || 'null'); } catch {}
     if (!local || typeof local !== 'object') return;
-    for (const f of JSON.parse(document.getElementById('data').textContent).files) {
+    for (const f of boot.files) {
       const v = local[f.id];
       if (!v) continue;
       if (!saved[f.id]?.[kind]) {
@@ -1103,6 +1204,7 @@
   for (const [id, v] of Object.entries(saved)) if (v.study) study[id] = v.study;
   const mine = (f) => study[f.id] || {};
   function saveMine(f, patch) {
+    if (sock.dead) return;
     const next = { ...mine(f), ...patch };
     for (const k of Object.keys(next)) if (!next[k]) delete next[k];
     if (Object.keys(next).length) study[f.id] = next; else delete study[f.id];
@@ -1842,7 +1944,7 @@
 
   const strokesOf = (f, page) => ((ink[f.id] ||= {})[page] ||= []);
   function saveInk() {
-    if (!current) return;
+    if (!current || sock.dead) return;
     const m = ink[current.id];
     if (m) {
       for (const k of Object.keys(m)) if (!m[k].length) delete m[k];
