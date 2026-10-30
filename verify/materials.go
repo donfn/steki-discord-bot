@@ -176,6 +176,12 @@ func (v *Server) sessionPage(w http.ResponseWriter, r *http.Request) {
 	v.sessions.setFiles(id, ids)
 	notes := v.notesFor(ctx, subject, ids)
 	guildID, who := v.sessions.owner(id)
+	if who.Viewer != "" {
+		// A staff member viewing as the member gets no socket: nothing
+		// saves and they are not counted.
+		guildID = ""
+		analytics.Tag(ctx, who.Viewer, "view_as", subject)
+	}
 	socket, socketExp, err := v.socketToken(subject, guildID, channelID)
 	if err != nil {
 		v.log.Error("verify: issue socket token", "error", err)
@@ -184,6 +190,7 @@ func (v *Server) sessionPage(w http.ResponseWriter, r *http.Request) {
 		"Socket":    socket,
 		"SocketExp": socketExp.UnixMilli(),
 		"Who":       who,
+		"ViewOnly":  who.Viewer != "",
 		"Avatar":    avatarURL(who.Avatar),
 		"State":     stateReady,
 		"Channel":   ch.Name,

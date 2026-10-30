@@ -63,6 +63,10 @@ type Profile struct {
 	Username string `json:"un,omitempty"`
 	// Avatar is their avatar's URL on Discord's CDN.
 	Avatar string `json:"av,omitempty"`
+	// Viewer, when set, is the staff member opening the page as this member
+	// (/materials view-as). Such a page only shows: it saves nothing, files no
+	// reports and is not counted as present.
+	Viewer string `json:"vw,omitempty"`
 }
 
 // Tokens issues and checks verification links.
