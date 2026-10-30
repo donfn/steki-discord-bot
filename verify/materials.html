@@ -403,7 +403,35 @@
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
   }
-  .open:focus-visible { outline: 3px solid var(--color-marker); outline-offset: 2px; }
+  .name-btn { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; min-width: 0; }
+  .name-btn:focus-visible { outline: 3px solid var(--color-marker); outline-offset: 2px; border-radius: 4px; }
+  .name-row { display: flex; align-items: flex-start; gap: 0.25rem; min-width: 0; }
+
+  /* The title's edit button sits right after it, with a small tooltip. */
+  .title-edit {
+    position: relative; flex: none; display: grid; place-items: center; width: 26px; height: 26px; margin-top: -2px;
+    padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--color-muted); cursor: pointer;
+  }
+  .title-edit svg { width: 15px; height: 15px; }
+  .title-edit:hover { background: var(--color-tile); color: var(--color-ink); }
+  .title-edit:focus-visible { outline: 3px solid var(--color-marker); outline-offset: 1px; }
+  .title-edit::after {
+    content: attr(data-tip);
+    position: absolute; bottom: calc(100% + 6px); left: 50%; z-index: 4;
+    padding: 4px 8px; border-radius: 6px; background: var(--color-ink); color: var(--color-sheet);
+    font: 500 0.75rem/1.2 var(--font-body); white-space: nowrap; pointer-events: none;
+    opacity: 0; transform: translate(-50%, 2px); transition: opacity 120ms var(--ease-out), transform 120ms var(--ease-out);
+  }
+  .title-edit:hover::after, .title-edit:focus-visible::after { opacity: 1; transform: translate(-50%, 0); transition-delay: 300ms; }
+
+  /* With a mouse, a card's actions show on hover or keyboard focus. A file
+   * marked as studied keeps its check visible. Touch screens always show them. */
+  @media (hover: hover) {
+    .file .acts > *, .file .title-edit { opacity: 0; transition: opacity 120ms var(--ease-out); }
+    .file:hover .acts > *, .file:focus-within .acts > *, .file .acts > .done-btn[aria-pressed="true"],
+    .file:hover .title-edit, .file:focus-within .title-edit { opacity: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) { .file .acts > *, .file .title-edit, .title-edit::after { transition: none; } }
   .thumb {
     position: relative;
     display: grid;
@@ -812,7 +840,7 @@
     </button>
     <button class="icon-btn" type="button" id="ink-toggle" aria-pressed="false" aria-label="Στυλό και μαρκαδόρος" title="Στυλό και μαρκαδόρος"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h6"/><path d="M14.5 4.5l5 5L11 18H6v-5z"/></svg></button>
     <button class="icon-btn" type="button" id="pad-toggle" aria-pressed="false" aria-label="Σημειώσεις" title="Σημειώσεις"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg></button>
-    <button class="icon-btn" type="button" id="viewer-copy" aria-label="Αντιγραφή αρχείου" title="Αντιγραφή"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button>
+    <button class="icon-btn" type="button" id="viewer-copy" aria-label="Αντιγραφή ή κοινοποίηση αρχείου" title="Αντιγραφή"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button>
     <button class="icon-btn" type="button" id="viewer-report" aria-label="Αναφορά αρχείου" title="Αναφορά"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4M5 4h11l-1.5 4L16 12H5"/></svg></button>
     <a class="icon-btn" id="viewer-dl" aria-label="Λήψη αρχείου">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
@@ -991,24 +1019,33 @@
     ageChip.title = dateFmt.format(new Date(f.posted));
     top.append(ageChip, el('span', 'pill kind-' + kindOf(f), kindOf(f) === 'pdf' ? 'PDF' : 'JPG'));
 
-    const open = el('button', 'open');
-    open.type = 'button';
+    // The card opens the file; its title is the button for keyboards and
+    // screen readers, and the title's edit button sits beside it.
+    const open = el('div', 'open');
     const thumb = el('span', 'thumb ' + kindOf(f), kindOf(f) === 'pdf' ? 'PDF' : 'JPG');
     thumb.setAttribute('aria-hidden', 'true');
     const spin = el('span', 'spinner');
     thumb.append(spin);
     const info = el('span', 'info');
-    const nameEl = el('span', 'name');
+    const nameEl = el('button', 'name name-btn');
+    nameEl.type = 'button';
+    const edit = el('button', 'title-edit');
+    edit.type = 'button';
+    edit.dataset.tip = 'Αλλαγή τίτλου';
+    edit.innerHTML = PEN_ICON;
+    edit.addEventListener('click', () => openNotes(f, edit));
+    const nameRow = el('span', 'name-row');
+    nameRow.append(nameEl, edit);
     const capEl = el('span', 'caption');
     const noteEl = el('span', 'note');
-    info.append(nameEl, capEl);
+    info.append(nameRow, capEl);
     const bits = [size(f.size), dateFmt.format(new Date(f.posted))];
     if (f.by) bits.push(f.by);
     if (f.thread) bits.push('νήμα: ' + f.thread);
     const meta = el('span', 'meta', bits.join(' · '));
     info.append(meta, noteEl);
     open.append(thumb, info);
-    open.addEventListener('click', () => openViewer(f));
+    open.addEventListener('click', (e) => { if (!e.target.closest('.title-edit')) openViewer(f); });
 
     const dl = el('a', 'icon-btn');
     dl.setAttribute('aria-label', 'Λήψη: ' + f.name);
@@ -1033,12 +1070,6 @@
       renderSummary();
     });
 
-    const edit = el('button', 'icon-btn');
-    edit.type = 'button';
-    edit.title = 'Δικός σου τίτλος';
-    edit.innerHTML = PEN_ICON;
-    edit.addEventListener('click', () => openNotes(f, edit));
-
     const copy = el('button', 'icon-btn');
     copy.type = 'button';
     copy.title = 'Αντιγραφή';
@@ -1047,7 +1078,7 @@
     copy.addEventListener('click', () => copyFile(f, copy));
 
     const acts = el('div', 'acts');
-    acts.append(done, edit, copy, dl, rep);
+    acts.append(done, copy, dl, rep);
     li.append(top, open, acts);
     $('files').append(li);
     f.row = { li, thumb, spin, meta, dl, bits, nameEl, capEl, noteEl, done, edit };
@@ -1067,7 +1098,7 @@
     r.li.classList.toggle('done', !!m.d);
     r.done.setAttribute('aria-pressed', String(!!m.d));
     r.done.setAttribute('aria-label', 'Το διάβασα: ' + titleOf(f));
-    r.edit.setAttribute('aria-label', 'Δικός σου τίτλος: ' + titleOf(f));
+    r.edit.setAttribute('aria-label', 'Αλλαγή τίτλου: ' + titleOf(f));
     r.li.dataset.search = [f.name, f.caption, f.by, f.thread, m.t, r.noteEl.textContent].filter(Boolean).join(' ').toLocaleLowerCase('el');
   }
 
@@ -1466,7 +1497,8 @@
 
   // ── Copy: the file to the clipboard, e.g. to paste into an AI assistant ─
   // Browsers only put pictures (as PNG) and text on the clipboard, so a
-  // photo goes as a PNG and a PDF as its text.
+  // photo goes as a PNG. A PDF goes through the share sheet as the file
+  // itself where there is one, and as its text where there is not.
   let toastTimer;
   function toast(text) {
     const t = $('toast');
@@ -1505,8 +1537,25 @@
     if (text.length <= titleOf(f).length + 5) throw Object.assign(new Error('empty'), { empty: true });
     return new Blob([text], { type: 'text/plain' });
   }
+  // sharePdf opens the share sheet with the file. It has to run straight
+  // from the click, so it is only tried once the file is downloaded.
+  function sharePdf(f) {
+    if (f.state !== 'ready' || !navigator.canShare) return null;
+    const file = new File([f.blob], f.name, { type: 'application/pdf' });
+    if (!navigator.canShare({ files: [file] })) return null;
+    return navigator.share({ files: [file], title: titleOf(f) });
+  }
   async function copyFile(f, btn) {
     const img = kindOf(f) === 'jpg';
+    const shared = img ? null : sharePdf(f);
+    if (shared) {
+      try {
+        await shared;
+      } catch (e) {
+        if (e.name !== 'AbortError') toast('Η κοινοποίηση δεν έγινε. Κατέβασε το αρχείο και ανέβασέ το εκεί που το χρειάζεσαι.');
+      }
+      return;
+    }
     // The promise goes to the clipboard at once, so Safari still counts the click.
     const data = img ? asPng(f) : asText(f);
     data.catch(() => {});
