@@ -71,7 +71,7 @@ const (
 const materialCSP = "default-src 'none'; script-src 'nonce-%s' https://cdn.jsdelivr.net; " +
 	"style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com https://cdn.jsdelivr.net data:; " +
 	"img-src 'self' data: blob:; connect-src 'self' https://cdn.jsdelivr.net; worker-src blob:; " +
-	"frame-src blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+	"frame-src blob: https://www.youtube-nocookie.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 // materialClaims parses a material page token; every other kind is refused.
 func (v *Server) materialClaims(raw string) (*Claims, bool) {
