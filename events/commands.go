@@ -264,6 +264,20 @@ var commandDefs = []*discordgo.ApplicationCommand{
 		}},
 	},
 	{
+		Name:                     "ghosts",
+		Description:              "Ρόλος Ghost για μέλη που δεν έχουν γράψει εδώ και 3 μήνες",
+		DefaultMemberPermissions: &staffOnly,
+		Options: []*discordgo.ApplicationCommandOption{{
+			Name:        "scan",
+			Description: "Διαβάζει τα μηνύματα των τελευταίων 3 μηνών, ενημερώνει τη λίστα και βάζει ή βγάζει τον ρόλο",
+			Type:        discordgo.ApplicationCommandOptionSubCommand,
+			Options: []*discordgo.ApplicationCommandOption{{
+				Name: "dry_run", Description: "Μόνο ενημέρωση της λίστας και αναφορά, χωρίς αλλαγή ρόλων",
+				Type: discordgo.ApplicationCommandOptionBoolean,
+			}},
+		}},
+	},
+	{
 		Name:                     "member",
 		Description:              "Αποκλεισμός μελών",
 		DefaultMemberPermissions: &staffOnly,
@@ -356,6 +370,7 @@ var commandRoutes = map[string]commandFunc{
 	"materials rescan": (*Handler).cmdMaterialsRescan,
 	"materials remove": (*Handler).cmdMaterialsRemove,
 	"materials scan":   (*Handler).cmdMaterialsScan,
+	"ghosts scan":      (*Handler).cmdGhostsScan,
 	"guard status":     (*Handler).cmdGuardStatus,
 	"guard restrict":   (*Handler).cmdGuardRestrict,
 	"guard ungrace":    (*Handler).cmdGuardUngrace,
