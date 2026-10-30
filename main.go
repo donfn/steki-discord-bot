@@ -160,7 +160,7 @@ func run() error {
 	default:
 		logger.Info("mcp server is off: DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET are not set")
 	}
-	srv := startHTTPServer(cfg.Port, st, pages, mcpServer, newShield(cfg, sess, logger), an, logger)
+	srv := startHTTPServer(cfg.Port, st, pages, mcpServer, newShield(cfg, st, sess, logger), an, logger)
 
 	logger.Info("bot is running")
 	stop := make(chan os.Signal, 1)
@@ -207,11 +207,9 @@ func startHTTPServer(port string, st *store.Store, pages *verify.Server, mcpSrv 
 
 	// Inside Harden, so requests it turns away (rate limit, busy) are not
 	// reported: a flood must not become a flood of events.
-	var handler http.Handler = verify.Harden(an.Middleware(mux), logger)
-	if sh != nil {
-		// Outside Harden, so requests it turns away still count as load.
-		handler = sh.Middleware(handler)
-	}
+	// The shield goes outside Harden, so requests Harden turns away still
+	// count towards a block.
+	handler := sh.Middleware(verify.Harden(an.Middleware(mux), logger))
 
 	// The verification page is public, so every phase of a request is
 	// bounded: a client that trickles bytes cannot hold connections open.
@@ -227,6 +225,10 @@ func startHTTPServer(port string, st *store.Store, pages *verify.Server, mcpSrv 
 	// The probe runs until the server is shut down.
 	stopProbe := make(chan struct{})
 	srv.RegisterOnShutdown(func() { close(stopProbe) })
+	// The shield writes its blocks to the edge until the server is shut down.
+	shieldCtx, stopShield := context.WithCancel(context.Background())
+	srv.RegisterOnShutdown(stopShield)
+	go sh.Run(shieldCtx)
 	go func() {
 		tick := time.NewTicker(5 * time.Second)
 		defer tick.Stop()
@@ -249,30 +251,56 @@ func startHTTPServer(port string, st *store.Store, pages *verify.Server, mcpSrv 
 	return srv
 }
 
-// newShield returns the flood detector, or nil when no Railway token is set:
-// without one there is nothing it could switch on.
-func newShield(cfg *config.Config, sess *discordgo.Session, logger *slog.Logger) *shield.Detector {
-	if cfg.RailwayToken == "" {
-		logger.Info("RAILWAY_TOKEN not set; automatic Under Attack Mode is off")
-		return nil
-	}
-	if cfg.RailwayServiceID == "" {
-		logger.Warn("RAILWAY_SERVICE_ID not set; the Railway CLI will have to infer the service")
-	}
-	notify := func(reason string, err error) {
-		msg := "🛡️ Ενεργοποιήθηκε το Under Attack Mode για 1 ώρα. Λόγος: " + reason
-		if err != nil {
-			msg = "⚠️ Δεν μπόρεσα να ενεργοποιήσω το Under Attack Mode (" + reason + "). Ξαναπροσπαθώ σε λίγα λεπτά."
+// newShield returns the HTTP shield. It always counts requests and refuses
+// banned addresses itself; with a Railway token it also writes its blocks to
+// the service's edge rules and can switch on Under Attack Mode.
+func newShield(cfg *config.Config, st *store.Store, sess *discordgo.Session, logger *slog.Logger) *shield.Detector {
+	o := shield.Options{ClientIP: verify.ClientIP, Store: st, Logger: logger}
+	o.Notify = func(e shield.Event) {
+		var msg string
+		urgent := false
+		switch e.Kind {
+		case shield.EventBan:
+			msg = fmt.Sprintf("⛔ Η διεύθυνση `%s` μπλοκαρίστηκε μέχρι <t:%d:t>. Λόγος: %s", e.IP, e.Until.Unix(), e.Reason)
+		case shield.EventEdgeFailed:
+			msg = fmt.Sprintf("⚠️ Δεν μπόρεσα να γράψω τους κανόνες IP στο Railway (edge rules), οπότε οι έλεγχοι και τα μπλοκ ισχύουν μόνο μέσα στο bot. Ξαναπροσπαθώ κάθε λεπτό: ```%v```", e.Err)
+			urgent = true
+		case shield.EventUnderAttack:
+			msg = "🛡️ Ενεργοποιήθηκε το Under Attack Mode για 1 ώρα. Λόγος: " + e.Reason
+			if e.Err != nil {
+				msg = "⚠️ Δεν μπόρεσα να ενεργοποιήσω το Under Attack Mode (" + e.Reason + "). Ξαναπροσπαθώ σε λίγα λεπτά."
+				urgent = true
+			}
+		default:
+			return
 		}
-		// Only a failure needs an admin; the switch itself is posted silently.
-		send := &discordgo.MessageSend{Content: msg}
-		if err == nil {
+		// Only a failure needs an admin; the rest is posted silently.
+		send := &discordgo.MessageSend{Content: msg, AllowedMentions: &discordgo.MessageAllowedMentions{}}
+		if !urgent {
 			send.Flags = discordgo.MessageFlagsSuppressNotifications
 		}
-		if _, sendErr := sess.ChannelMessageSendComplex(config.LogChannelID, send); sendErr != nil {
-			logger.Warn("shield: log channel message", "error", sendErr)
+		if _, err := sess.ChannelMessageSendComplex(config.LogChannelID, send); err != nil {
+			logger.Warn("shield: log channel message", "error", err)
 		}
 	}
-	logger.Info("automatic Under Attack Mode enabled")
-	return shield.New(shield.RailwayEnabler("railway", cfg.RailwayServiceID), notify, logger)
+
+	switch {
+	case cfg.RailwayToken == "":
+		logger.Info("RAILWAY_TOKEN not set; IP blocks are enforced by the bot only, and automatic Under Attack Mode is off")
+	case cfg.RailwayServiceID == "" || cfg.RailwayEnvironmentID == "":
+		logger.Warn("RAILWAY_SERVICE_ID or RAILWAY_ENVIRONMENT_ID not set; IP blocks are enforced by the bot only")
+		o.Enable = shield.RailwayEnabler("railway", cfg.RailwayServiceID)
+	default:
+		o.Edge = shield.NewRailwayEdge(cfg.RailwayToken, cfg.RailwayServiceID, cfg.RailwayEnvironmentID)
+		o.Enable = shield.RailwayEnabler("railway", cfg.RailwayServiceID)
+		logger.Info("IP blocks are written to the service's edge rules; automatic Under Attack Mode enabled")
+	}
+
+	sh := shield.New(o)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := sh.Load(ctx); err != nil {
+		logger.Error("shield: restore blocks", "error", err)
+	}
+	return sh
 }

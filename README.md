@@ -24,7 +24,7 @@ See `.env.example`.
 | `URL_BLACKLIST` | no       | Comma-separated link substrings to block           |
 | `LOG_LEVEL`     | no       | `debug`/`info`/`warn`/`error` (default `info`)     |
 | `PORT`          | no       | HTTP port for the pages and `/healthz` (default `8080`) |
-| `RAILWAY_TOKEN` | no       | Railway project token; enables automatic Under Attack Mode (see below) |
+| `RAILWAY_TOKEN` | no       | Railway project token; writes IP challenges and bans to the edge rules and enables automatic Under Attack Mode (see below). Railway sets `RAILWAY_SERVICE_ID` and `RAILWAY_ENVIRONMENT_ID` itself |
 | `BUCKET_NAME`, `BUCKET_ENDPOINT`, `BUCKET_REGION`, `BUCKET_ACCESS_KEY_ID`, `BUCKET_SECRET_ACCESS_KEY` | no | S3 bucket for course material (see below). On Railway these reference the `steki-backups` bucket's variables |
 
 Discord channel, category and role IDs are compile-time constants in
@@ -79,14 +79,43 @@ return `pending` to decide asynchronously; rejected files stay in the bucket.
 The bot needs Read Message History everywhere it should back up, and Manage
 Messages (or Pin Messages) in course channels to pin uploads.
 
+## IP challenges and bans
+
+The bot counts requests per client address (an IPv6 address counts as its
+whole /64). `/healthz`, successful material downloads and successful `/mcp`
+calls are not counted, and neither are 404s for `/favicon.ico`, `/robots.txt`,
+the Apple touch icons and `/.well-known/…`, which browsers and MCP clients ask
+for on their own.
+
+- **Challenge, 1 hour:** 3 `404` responses within an hour, or more than
+  10 requests/s over 10 seconds.
+- **Ban, 6 hours:** while challenged, 20 `404` responses within an hour, or
+  10 requests/s or more held for over 20 minutes since the challenge began.
+
+Every block is stored in the `ip_bans` table and restored on start-up. With
+`RAILWAY_TOKEN` set, the bot writes them to the service's
+[edge rules](https://docs.railway.com/networking/edge-rules), so Railway
+challenges and blocks those addresses before their requests reach the bot.
+It owns two rules, described `steki-shield: …` and placed first; it rewrites
+them when the set changes and drops ended blocks within a minute. Any other
+rule in the ruleset is kept, moved down only if its priority is 1 or 2. The
+edge matches IPv4 only. Since Railway's challenge stops visitors who don't
+clear it, only requests from visitors who did reach the bot to count towards a ban.
+
+The bot also refuses banned addresses itself, so a ban holds without
+`RAILWAY_TOKEN`, during the seconds before the edge is updated, and for IPv6.
+Bans are posted silently to the log channel; a failed edge write is posted
+loudly, at most once an hour, and retried every minute.
+
 ## Automatic Under Attack Mode
 
-With `RAILWAY_TOKEN` set (a project token), the bot turns on Railway's Under
-Attack Mode for its own service for one hour when it sees either more than
-5 requests/s sustained over 10 seconds, or more than 10 `404` responses in an
-hour. `/healthz` is not counted. It posts to the log channel when it does, waits
-out the hour before it can fire again, and retries after 5 minutes if Railway
-refuses. The Railway CLI is installed in the image for this.
+With `RAILWAY_TOKEN` set, the bot turns on Railway's Under Attack Mode for the
+whole service for one hour when more than 50 requests/s, sustained over 10
+seconds, come from addresses that are not already challenged or banned. A single
+address is challenged long before it could get there alone, so this only fires
+for floods spread over many addresses. It posts to the log channel when it
+does, waits out the hour before it can fire again, and retries after 5 minutes
+if Railway refuses. The Railway CLI is installed in the image for this.
 
 ## Running locally
 

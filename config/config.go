@@ -51,10 +51,13 @@ type Config struct {
 	JWTSecret string
 	PublicURL string
 
-	// RailwayToken is a project token. When set, the bot turns on Railway's
-	// Under Attack Mode for its own service if it sees a flood. Optional.
-	RailwayToken     string
-	RailwayServiceID string
+	// RailwayToken is a project token. When set, the bot writes the HTTP
+	// shield's IP challenges and bans to its service's edge rules, and turns
+	// on Railway's Under Attack Mode if it sees a flood. Optional. Railway
+	// sets the service and environment IDs itself.
+	RailwayToken         string
+	RailwayServiceID     string
+	RailwayEnvironmentID string
 
 	// Bucket is the S3-compatible bucket PDFs are backed up to. The material
 	// backup, the sticky messages and the material page are all off unless
@@ -117,8 +120,9 @@ func Load() (*Config, error) {
 		JWTSecret:         strings.TrimSpace(os.Getenv("JWT_SECRET")),
 		PublicURL:         publicURL(),
 
-		RailwayToken:     strings.TrimSpace(os.Getenv("RAILWAY_TOKEN")),
-		RailwayServiceID: strings.TrimSpace(os.Getenv("RAILWAY_SERVICE_ID")),
+		RailwayToken:         strings.TrimSpace(os.Getenv("RAILWAY_TOKEN")),
+		RailwayServiceID:     strings.TrimSpace(os.Getenv("RAILWAY_SERVICE_ID")),
+		RailwayEnvironmentID: strings.TrimSpace(os.Getenv("RAILWAY_ENVIRONMENT_ID")),
 
 		DiscordClientID:     strings.TrimSpace(os.Getenv("DISCORD_CLIENT_ID")),
 		DiscordClientSecret: strings.TrimSpace(os.Getenv("DISCORD_CLIENT_SECRET")),

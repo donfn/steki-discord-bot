@@ -68,10 +68,10 @@ func (l *limiter) allow(key string, now time.Time) bool {
 	return w.count <= l.limit
 }
 
-// clientIP is the address the platform proxy saw. The proxy appends the
+// ClientIP is the address the platform proxy saw. The proxy appends the
 // caller to X-Forwarded-For, so the last entry is the only one a client
 // cannot forge; anything to its left is attacker-controlled.
-func clientIP(r *http.Request) string {
+func ClientIP(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		parts := strings.Split(xff, ",")
 		if ip := strings.TrimSpace(parts[len(parts)-1]); net.ParseIP(ip) != nil {
@@ -108,7 +108,7 @@ func Harden(h http.Handler, logger *slog.Logger) http.Handler {
 		if strings.HasPrefix(r.URL.Path, filesPath) || r.URL.Path == mcpPath {
 			budget = files
 		}
-		if r.URL.Path != "/healthz" && !budget.allow(clientIP(r), time.Now()) {
+		if r.URL.Path != "/healthz" && !budget.allow(ClientIP(r), time.Now()) {
 			w.Header().Set("Retry-After", "60")
 			http.Error(w, "too many requests", http.StatusTooManyRequests)
 			return
