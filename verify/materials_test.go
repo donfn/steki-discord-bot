@@ -107,7 +107,13 @@ var tokenSeq atomic.Int64
 
 func (e *testEnv) materialToken(t *testing.T, channelID string, ttl time.Duration) string {
 	t.Helper()
-	tok, err := e.tk.IssueMaterials("u1", "g1", channelID, fmt.Sprint("m", tokenSeq.Add(1)), time.Now().Add(ttl))
+	return e.materialTokenFor(t, "u1", channelID, ttl)
+}
+
+func (e *testEnv) materialTokenFor(t *testing.T, userID, channelID string, ttl time.Duration) string {
+	t.Helper()
+	who := Profile{Name: "Μαρία", Username: "maria_" + userID, Avatar: "https://cdn.discordapp.com/avatars/1/a.png?size=64"}
+	tok, err := e.tk.IssueMaterials(userID, "g1", channelID, fmt.Sprint("m", tokenSeq.Add(1)), who, time.Now().Add(ttl))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +191,8 @@ func TestMaterialsPageLists(t *testing.T) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("status %d", res.StatusCode)
 	}
-	for _, want := range []string{"μαθηματικά-ι", "θέματα.pdf", `"id":"11"`, "pdfjs-dist@4.10.38"} {
+	for _, want := range []string{"μαθηματικά-ι", "θέματα.pdf", `"id":"11"`, "pdfjs-dist@4.10.38",
+		"Σύνδεση ως", "Μαρία", "@maria_u1", `src="https://cdn.discordapp.com/avatars/1/a.png?size=64"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page lacks %q", want)
 		}
@@ -341,7 +348,7 @@ func TestSessionEndsWhenEveryFileIsDownloaded(t *testing.T) {
 func TestSessionRunsOut(t *testing.T) {
 	s := newSessions()
 	now := time.Now()
-	id, ok := s.open("100", "u1", "g1", now)
+	id, ok := s.open("100", "u1", "g1", Profile{}, now)
 	if !ok {
 		t.Fatal("open refused")
 	}
@@ -349,7 +356,7 @@ func TestSessionRunsOut(t *testing.T) {
 		t.Error("an expired session served its page")
 	}
 
-	id, _ = s.open("100", "u1", "g1", now)
+	id, _ = s.open("100", "u1", "g1", Profile{}, now)
 	s.claimPage(id, now)
 	s.setFiles(id, []string{"11"})
 	if _, _, ok := s.authorize(id, "11", now.Add(sessionTTL+time.Second)); ok {
@@ -366,7 +373,7 @@ func TestSessionRunsOut(t *testing.T) {
 func TestEmptyChannelEndsTheSessionAtOnce(t *testing.T) {
 	s := newSessions()
 	now := time.Now()
-	id, _ := s.open("100", "u1", "g1", now)
+	id, _ := s.open("100", "u1", "g1", Profile{}, now)
 	s.claimPage(id, now)
 	s.setFiles(id, nil)
 	if _, _, ok := s.authorize(id, "11", now); ok {
@@ -378,14 +385,14 @@ func TestSessionCap(t *testing.T) {
 	s := newSessions()
 	now := time.Now()
 	for i := 0; i < maxSessions; i++ {
-		if _, ok := s.open("100", "u1", "g1", now); !ok {
+		if _, ok := s.open("100", "u1", "g1", Profile{}, now); !ok {
 			t.Fatalf("refused session %d before the cap", i)
 		}
 	}
-	if _, ok := s.open("100", "u1", "g1", now); ok {
+	if _, ok := s.open("100", "u1", "g1", Profile{}, now); ok {
 		t.Error("opened a session past the cap")
 	}
-	if _, ok := s.open("100", "u1", "g1", now.Add(studyTTL+time.Second)); !ok {
+	if _, ok := s.open("100", "u1", "g1", Profile{}, now.Add(studyTTL+time.Second)); !ok {
 		t.Error("expired sessions were not cleared to make room")
 	}
 }

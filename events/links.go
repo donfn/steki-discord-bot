@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
+
+	"steki-bot/verify"
 )
 
 // The buttons on the stickies and the MCP announcements carry no link. A click
@@ -66,7 +68,7 @@ func (h *Handler) onViewMaterials(s *discordgo.Session, i *discordgo.Interaction
 		h.respondNow(s, i, msgGenericError)
 		return
 	}
-	link, tokenID, err := h.materialLink(userID, ch.ID)
+	link, tokenID, err := h.materialLink(userID, ch.ID, memberProfile(i))
 	if err != nil {
 		h.log.Error("materials: issue personal link", "user_id", userID, "error", err)
 		h.respondNow(s, i, msgGenericError)
@@ -178,4 +180,21 @@ func (h *Handler) dropPersonalLink(tokenID string) {
 			h.log.Debug("personal link: delete reply", "error", err)
 		}
 	})
+}
+
+// memberProfile is how the material page shows the member who clicked: their
+// server nickname or display name, username and avatar (their server avatar
+// if they set one).
+func memberProfile(i *discordgo.InteractionCreate) verify.Profile {
+	m := i.Member
+	if m == nil || m.User == nil {
+		return verify.Profile{}
+	}
+	mem := *m
+	mem.GuildID = i.GuildID
+	name := mem.Nick
+	if name == "" {
+		name = displayName(mem.User)
+	}
+	return verify.Profile{Name: name, Username: mem.User.Username, Avatar: mem.AvatarURL("64")}
 }

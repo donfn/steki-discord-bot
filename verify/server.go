@@ -73,7 +73,9 @@ type Server struct {
 	watcher LinkWatcher
 	// sockets counts the open page sockets.
 	sockets atomic.Int64
-	log     *slog.Logger
+	// presence is who has the page open.
+	presence *presence
+	log      *slog.Logger
 }
 
 // LinkWatcher is told when a personal link was followed, so the bot can take
@@ -104,7 +106,7 @@ func (v *Server) spendLink(c *Claims) bool {
 // NewServer returns a Server. materials may be nil, which leaves the
 // material page unmounted.
 func NewServer(tokens *Tokens, lifter Lifter, consent Consenter, materials MaterialSource, logger *slog.Logger) *Server {
-	return &Server{tokens: tokens, lifter: lifter, consent: consent, materials: materials, sessions: newSessions(), log: logger}
+	return &Server{tokens: tokens, lifter: lifter, consent: consent, materials: materials, sessions: newSessions(), presence: newPresence(), log: logger}
 }
 
 // Register mounts the routes on mux.

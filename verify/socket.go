@@ -42,6 +42,7 @@ import (
 //	               {"op":"ack","seq":n}                     every item stored
 //	               {"op":"ack","seq":n,"retry":true}        nothing stored; send again
 //	               {"op":"ack","seq":n,"drop":[{"f","k","code"}]}  those items refused
+//	               {"op":"presence","here":n,"all":n}       members on this course's page and in the study space
 //
 // The server closes with socketExpired when the page can no longer reconnect
 // and should send the member back to Discord.
@@ -157,6 +158,18 @@ type pageSocket struct {
 
 	filesMu sync.Mutex
 	files   map[string]bool
+
+	// presenceDue wakes keepAlive to send the latest presence counts; it
+	// holds at most one wake-up, so a slow page only ever gets the latest.
+	presenceDue chan struct{}
+}
+
+// poke asks for the latest presence counts to be sent, without waiting.
+func (s *pageSocket) poke() {
+	select {
+	case s.presenceDue <- struct{}{}:
+	default:
+	}
 }
 
 func (v *Server) socket(w http.ResponseWriter, r *http.Request) {
@@ -183,7 +196,7 @@ func (v *Server) socket(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithCancel(context.WithoutCancel(r.Context()))
 	defer cancel()
-	s := &pageSocket{v: v, nb: nb, conn: conn}
+	s := &pageSocket{v: v, nb: nb, conn: conn, presenceDue: make(chan struct{}, 1)}
 	s.run(ctx)
 }
 
@@ -219,6 +232,9 @@ func (s *pageSocket) run(ctx context.Context) {
 
 	done := make(chan struct{})
 	defer close(done)
+	s.v.presence.join(s)
+	defer s.v.presence.leave(s)
+	s.poke()
 	go s.keepAlive(ctx, done)
 
 	_ = s.conn.SetReadDeadline(time.Now().Add(socketIdle))
@@ -265,6 +281,11 @@ func (s *pageSocket) keepAlive(ctx context.Context, done <-chan struct{}) {
 		case <-end.C:
 			s.close(socketExpired, "expired")
 			return
+		case <-s.presenceDue:
+			here, all := s.v.presence.counts(s.channel)
+			if s.send(map[string]any{"op": "presence", "here": here, "all": all}) != nil {
+				return
+			}
 		case <-ping.C:
 			if err := s.conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(socketWrite)); err != nil {
 				return
