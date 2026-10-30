@@ -68,7 +68,34 @@ type Server struct {
 	// mcpURL is the MCP endpoint the setup page tells members to add; empty
 	// leaves the page unmounted.
 	mcpURL string
-	log    *slog.Logger
+	// watcher, if set, is told when a personal link is followed.
+	watcher LinkWatcher
+	log     *slog.Logger
+}
+
+// LinkWatcher is told when a personal link was followed, so the bot can take
+// down the reply that carried it.
+type LinkWatcher interface {
+	LinkUsed(tokenID string)
+}
+
+// SetLinkWatcher sets who is told about followed personal links.
+func (v *Server) SetLinkWatcher(w LinkWatcher) { v.watcher = w }
+
+// spendLink marks a personal link as followed and reports whether it was the
+// first time. The link is remembered until it would have expired anyway.
+func (v *Server) spendLink(c *Claims) bool {
+	until := time.Now().Add(time.Minute)
+	if c.ExpiresAt != nil {
+		until = c.ExpiresAt.Add(time.Minute)
+	}
+	if !v.tokens.spendUntil("link:"+c.ID, until) {
+		return false
+	}
+	if v.watcher != nil {
+		v.watcher.LinkUsed(c.ID)
+	}
+	return true
 }
 
 // NewServer returns a Server. materials may be nil, which leaves the
@@ -88,6 +115,7 @@ func (v *Server) Register(mux *http.ServeMux) {
 	if v.materials != nil {
 		mux.HandleFunc("GET "+entryPath, v.materialsPage)
 		mux.HandleFunc("GET "+pagePath, v.sessionPage)
+		mux.HandleFunc("POST "+pagePath, v.saveNote)
 		mux.HandleFunc("GET "+filesPath+"{id}", v.materialFile)
 		mux.HandleFunc("POST "+reportPath, v.reportFile)
 	}

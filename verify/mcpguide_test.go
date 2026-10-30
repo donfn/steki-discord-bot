@@ -39,15 +39,19 @@ func TestMCPGuidePage(t *testing.T) {
 	}
 	hour := time.Now().Add(time.Hour)
 
-	guide := issue(func() (string, error) { return tk.IssueGuide("shared", "1", "a", hour) })
+	guide := issue(func() (string, error) { return tk.IssueGuide("u1", "1", "a", hour) })
 	if code, body := page(guide); code != http.StatusOK || !strings.Contains(body, "https://bot.example/mcp") ||
 		!strings.Contains(body, "Add custom connector") {
 		t.Errorf("valid link: %d, page missing its content", code)
 	}
+	// A personal link opens once.
+	if _, body := page(guide); !strings.Contains(body, "Το link έληξε") {
+		t.Error("a followed guide link opened again")
+	}
 
 	// Expired, malformed and other kinds of links all show the expired page.
-	expired := issue(func() (string, error) { return tk.IssueGuide("shared", "1", "b", time.Now().Add(-time.Hour)) })
-	materials := issue(func() (string, error) { return tk.IssueMaterials("shared", "1", "2", "c", hour) })
+	expired := issue(func() (string, error) { return tk.IssueGuide("u1", "1", "b", time.Now().Add(-time.Hour)) })
+	materials := issue(func() (string, error) { return tk.IssueMaterials("u1", "1", "2", "c", hour) })
 	media := issue(func() (string, error) { return tk.Issue("3", "1", ReasonMedia, "d", hour) })
 	for name, tok := range map[string]string{"expired": expired, "materials": materials, "media guard": media, "garbage": "x"} {
 		if _, body := page(tok); !strings.Contains(body, "Το link έληξε") || strings.Contains(body, "Add custom connector") {

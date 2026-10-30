@@ -97,6 +97,12 @@ func (t *Tokens) checkSolution(payload, linkID string) bool {
 
 // spend records a solved challenge and reports whether it was fresh.
 func (t *Tokens) spend(sig string) bool {
+	return t.spendUntil(sig, time.Now().Add(challengeTTL+time.Minute))
+}
+
+// spendUntil records a one-time key, remembered until the given time, and
+// reports whether it was fresh.
+func (t *Tokens) spendUntil(sig string, until time.Time) bool {
 	if sig == "" {
 		return false
 	}
@@ -111,6 +117,6 @@ func (t *Tokens) spend(sig string) bool {
 	if _, dup := t.spent[sig]; dup {
 		return false
 	}
-	t.spent[sig] = now.Add(challengeTTL + time.Minute)
+	t.spent[sig] = until
 	return true
 }

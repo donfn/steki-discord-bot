@@ -2,6 +2,7 @@ package events
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"path"
 	"slices"
@@ -24,8 +25,9 @@ import (
 // history of the course channels back to their first message (resumably) and
 // places the stickies. The materials.Worker then copies each file into the
 // bucket and screens it, waking when there is something to do. Course
-// channels get a sticky card (sticky.go) linking to the material page, which
-// lists the screened files of that channel and its threads.
+// channels get a sticky card (sticky.go) whose button hands each member a
+// personal link to the material page (links.go), which lists the screened
+// files of that channel and its threads.
 
 // courseCategoryIDs are the categories whose text channels are course
 // channels and get the material page and sticky message.
@@ -36,24 +38,6 @@ var courseCategoryIDs = []string{
 }
 
 const (
-	// materialLinkTTL is how long a material page link works. Following it
-	// opens a session that carries the downloads, so the link only has to
-	// outlive the click.
-	materialLinkTTL = 2 * time.Minute
-
-	// materialLinkRotate is how often every sticky gets a new link. It is half
-	// the TTL, so a link a member sees always has at least a minute left, and
-	// one late rotation does not break it.
-	materialLinkRotate = time.Minute
-
-	// mcpLinkRotate is how often the MCP announcements get a new link. Those
-	// links live for verify.MCPGuideLinkTTL, so they rotate far less often.
-	mcpLinkRotate = 30 * time.Minute
-
-	// materialLinkSubject stands in for the member in a link's claims: the
-	// links are shared by everyone who can read the channel.
-	materialLinkSubject = "shared"
-
 	// noStickyPrefix marks the channels where members post exam results, which
 	// get no sticky.
 	noStickyPrefix = "στατιστικά-"
@@ -79,23 +63,21 @@ func hasSticky(ch *discordgo.Channel) bool {
 	return isCourseChannel(ch) && !strings.HasPrefix(strings.ToLower(ch.Name), noStickyPrefix)
 }
 
-// materialLink returns the link to a course channel's material page. It is
-// the same for every member and is replaced by the rotation before it expires.
-func (h *Handler) materialLink(channelID string) (string, error) {
+// materialLink returns one member's personal link to a course channel's
+// material page, and the link's ID.
+func (h *Handler) materialLink(userID, channelID string) (link, tokenID string, err error) {
 	guildID := h.guildID()
 	if guildID == "" {
-		return "", errors.New("materials: guild not known yet")
+		return "", "", errors.New("materials: guild not known yet")
 	}
-	tokenID, err := newTokenID()
+	if tokenID, err = newTokenID(); err != nil {
+		return "", "", err
+	}
+	token, err := h.tokens.IssueMaterials(userID, guildID, channelID, tokenID, time.Now().Add(personalLinkTTL))
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	token, err := h.tokens.IssueMaterials(materialLinkSubject, guildID, channelID, tokenID,
-		time.Now().Add(materialLinkTTL))
-	if err != nil {
-		return "", err
-	}
-	return h.cfg.PublicURL + "/materials?t=" + token, nil
+	return h.cfg.PublicURL + "/materials?t=" + token, tokenID, nil
 }
 
 // materialType returns the content type of an attachment that counts as
@@ -571,4 +553,25 @@ func (src *materialSource) Open(ctx context.Context, channelID, fileID string) (
 		return nil, err
 	}
 	return &verify.MaterialBody{Body: body, Size: size, Type: m.ContentType}, nil
+}
+
+// Notes implements verify.Notebook.
+func (src *materialSource) Notes(ctx context.Context, userID string) (map[string]map[string]json.RawMessage, error) {
+	rows, err := src.h.st.StudyNotes(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]map[string]json.RawMessage, len(rows))
+	for _, n := range rows {
+		if out[n.AttachmentID] == nil {
+			out[n.AttachmentID] = map[string]json.RawMessage{}
+		}
+		out[n.AttachmentID][n.Kind] = json.RawMessage(n.Data)
+	}
+	return out, nil
+}
+
+// SaveNote implements verify.Notebook.
+func (src *materialSource) SaveNote(ctx context.Context, userID, fileID, kind string, data json.RawMessage) error {
+	return src.h.st.SetStudyNote(ctx, userID, fileID, kind, string(data))
 }

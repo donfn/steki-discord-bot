@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -118,14 +119,20 @@ type testEnv struct {
 	fl  *fakeLifter
 	fc  *fakeConsenter
 	fm  *fakeMaterials
+	// used counts the followed personal links the server reported.
+	used atomic.Int64
 }
+
+func (e *testEnv) LinkUsed(string) { e.used.Add(1) }
 
 func newEnv(t *testing.T) *testEnv {
 	t.Helper()
 	e := &testEnv{tk: NewTokens("secret"), fl: &fakeLifter{active: "jti1"}, fc: &fakeConsenter{active: "link1"},
 		fm: newFakeMaterials()}
 	mux := http.NewServeMux()
-	NewServer(e.tk, e.fl, e.fc, e.fm, slog.New(slog.NewTextHandler(io.Discard, nil))).Register(mux)
+	v := NewServer(e.tk, e.fl, e.fc, e.fm, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	v.SetLinkWatcher(e)
+	v.Register(mux)
 	e.srv = httptest.NewServer(mux)
 	t.Cleanup(e.srv.Close)
 	return e

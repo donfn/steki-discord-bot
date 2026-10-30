@@ -45,14 +45,14 @@ func TestExamTitle(t *testing.T) {
 }
 
 func TestStickyCard(t *testing.T) {
-	comps := stickyCard(12, "https://x/materials?t=abc")
+	comps := stickyCard(12)
 	if len(comps) != 1 {
 		t.Errorf("card has %d rows, want only the one with the buttons", len(comps))
 	}
 	row := comps[0].(discordgo.ActionsRow)
 	view, upload := row.Components[0].(discordgo.Button), row.Components[1].(discordgo.Button)
 	if len(row.Components) != 2 || view.Label != "Προβολή υλικού μαθήματος (12)" ||
-		view.Style != discordgo.LinkButton || view.URL != "https://x/materials?t=abc" || view.CustomID != "" ||
+		view.Style != discordgo.PrimaryButton || view.URL != "" || view.CustomID != viewButtonID ||
 		upload.Label != "Ανέβασμα υλικού" || upload.CustomID != uploadButtonID {
 		t.Errorf("sticky buttons: %+v", row.Components)
 	}

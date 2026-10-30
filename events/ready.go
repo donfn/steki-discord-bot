@@ -69,14 +69,9 @@ func (h *Handler) startMaterials(s *discordgo.Session) {
 		defer h.wg.Done()
 		h.safely("materials_worker", func() { h.mat.Run(h.base) })
 	}()
-	// The links on the stickies that exist expire; they are replaced from the
-	// database, without reading any channel.
-	h.goLoopAfter("sticky_links", materialLinkRotate, func() { h.rotateStickyLinks(s) })
 	// Cards for flagged images left over from before the restart.
 	go h.safely("review_cards", func() { h.announceReviews(s) })
 	go h.safely("report_cards", func() { h.announceReports(s) })
-	// The MCP announcements' button links, replaced like the stickies'.
-	h.goLoop("mcp_links", mcpLinkRotate, func() { h.rotateMCPLinks(s) })
 }
 
 // isHomeGuild reports whether g is the Steki guild.
