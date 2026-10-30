@@ -128,7 +128,8 @@ func (h *Handler) Register(s *discordgo.Session) {
 		}
 		h.mat = materials.NewWorker(h.st, h.bucket, screener, h.refreshMaterialSource(s),
 			func(home string) { h.refreshSticky(s, home) },
-			func() { go h.safely("review_cards", func() { h.announceReviews(s) }) }, h.log)
+			func() { go h.safely("review_cards", func() { h.announceReviews(s) }) },
+			func(ctx context.Context) ([]string, error) { return h.courseChannelIDs(ctx, s) }, h.log)
 	}
 	s.AddHandler(guard(h, "ready", h.onReady))
 	s.AddHandler(guard(h, "guild_create", h.onGuildCreate))

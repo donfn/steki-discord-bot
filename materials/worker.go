@@ -56,9 +56,15 @@ type Worker struct {
 	log  *slog.Logger
 	wake chan struct{}
 
-	// imagesFirst is set when the screener looks at image content: images are
-	// then screened from Discord's copy and reach the bucket only if approved.
+	// imagesFirst is set when the screener looks at image content: images in
+	// course channels are then screened from Discord's copy and reach the
+	// bucket only if approved. Other channels are not content-checked.
 	imagesFirst bool
+	// courses lists the course channels the content check covers.
+	courses func(ctx context.Context) ([]string, error)
+	// scope is the result of courses for the current pass.
+	scope    []string
+	scopeSet map[string]bool
 	// rescan makes the screening pass visit listed images the content check
 	// has never seen. It is set by the rescan command.
 	rescan atomic.Bool
@@ -69,10 +75,12 @@ type Worker struct {
 
 // NewWorker returns a Worker. Call Run to start it.
 func NewWorker(st *store.Store, bucket *Bucket, screener Screener, refresh Refresher,
-	changed func(homeChannelID string), held func(), logger *slog.Logger) *Worker {
+	changed func(homeChannelID string), held func(), courses func(ctx context.Context) ([]string, error),
+	logger *slog.Logger) *Worker {
 	ps, _ := screener.(PreScreener)
 	return &Worker{
 		held:        held,
+		courses:     courses,
 		imagesFirst: ps != nil && ps.PreScreens(TypeJPEG),
 		st:          st,
 		bucket:      bucket,
@@ -91,8 +99,19 @@ func (w *Worker) Bucket() *Bucket { return w.bucket }
 // Vision reports whether images are checked by content.
 func (w *Worker) Vision() bool { return w.imagesFirst }
 
-// Rescan queues every listed image the content check has not seen yet. The
-// queue is the database, so a restart only needs the command run again.
+// Unchecked counts the listed images in course channels the content check has
+// not seen yet.
+func (w *Worker) Unchecked(ctx context.Context) (int, error) {
+	ids, err := w.courses(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return w.st.CountUnchecked(ctx, ids)
+}
+
+// Rescan queues every listed image in a course channel the content check has
+// not seen yet. The queue is the database, so a restart only needs the
+// command run again.
 func (w *Worker) Rescan() {
 	w.rescan.Store(true)
 	w.Wake()
@@ -133,13 +152,27 @@ func (w *Worker) Run(ctx context.Context) {
 // be copied; then backups, since a PDF can only be screened once it is in the
 // bucket; then whatever is left to screen.
 func (w *Worker) pass(ctx context.Context) {
+	w.scope, w.scopeSet = nil, nil
+	if w.imagesFirst {
+		// Without the list of course channels nothing can be told apart, and an
+		// image would be copied unchecked, so the pass waits for the next one.
+		ids, err := w.courses(ctx)
+		if err != nil {
+			w.log.Error("materials: list course channels", "error", err)
+			return
+		}
+		w.scope, w.scopeSet = ids, make(map[string]bool, len(ids))
+		for _, id := range ids {
+			w.scopeSet[id] = true
+		}
+	}
 	w.screenPass(ctx)
 
 	// Failures are retried on later passes, not within this one, so each
 	// sweep walks the backlog once with a cursor.
 	var cur store.Cursor
 	for ctx.Err() == nil {
-		rows, err := w.st.MaterialBacklog(ctx, MaxBackupAttempts, cur, batch, w.imagesFirst)
+		rows, err := w.st.MaterialBacklog(ctx, MaxBackupAttempts, cur, batch, w.scope)
 		if err != nil {
 			w.log.Error("materials: read backup backlog", "error", err)
 			return
@@ -161,7 +194,7 @@ func (w *Worker) pass(ctx context.Context) {
 func (w *Worker) screenPass(ctx context.Context) {
 	var cur store.Cursor
 	for ctx.Err() == nil && !w.paused() {
-		rows, err := w.st.ScreeningBacklog(ctx, cur, batch, w.imagesFirst, w.rescan.Load())
+		rows, err := w.st.ScreeningBacklog(ctx, cur, batch, w.scope, w.rescan.Load())
 		if err != nil {
 			w.log.Error("materials: read screening backlog", "error", err)
 			return
@@ -271,7 +304,11 @@ func (w *Worker) screen(ctx context.Context, m *store.Material) {
 	if m.BackedUpAt == nil {
 		open = func(ctx context.Context) (io.ReadCloser, error) { return w.openSource(ctx, m) }
 	}
-	v, err := w.screener.Screen(ctx, m, open)
+	screener := w.screener
+	if w.imagesFirst && !w.scopeSet[m.HomeChannelID] {
+		screener = BasicScreener{} // outside the course channels: format check only
+	}
+	v, err := screener.Screen(ctx, m, open)
 	var limit *RateLimitError
 	switch {
 	case errors.As(err, &limit):

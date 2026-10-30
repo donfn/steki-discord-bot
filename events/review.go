@@ -11,6 +11,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"steki-bot/config"
+	"steki-bot/dc"
 	"steki-bot/materials"
 	"steki-bot/store"
 )
@@ -73,6 +74,23 @@ func orDash(s string) string {
 		return "—"
 	}
 	return s
+}
+
+// courseChannelIDs lists the course channels, the only ones whose images the
+// content check looks at: memes in the general channels are none of its
+// business.
+func (h *Handler) courseChannelIDs(ctx context.Context, s *discordgo.Session) ([]string, error) {
+	channels, err := dc.GuildChannels(ctx, s, h.log, h.guildID())
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for _, ch := range channels {
+		if isCourseChannel(ch) {
+			ids = append(ids, ch.ID)
+		}
+	}
+	return ids, nil
 }
 
 // announceReviews posts a card for every held file that has none.
@@ -183,7 +201,7 @@ func (h *Handler) cmdMaterialsRescan(s *discordgo.Session, i *discordgo.Interact
 	}
 	ctx, cancel := context.WithTimeout(h.base, dbTimeout)
 	defer cancel()
-	n, err := h.st.CountUnchecked(ctx)
+	n, err := h.mat.Unchecked(ctx)
 	if err != nil {
 		h.reply(s, i, fmt.Sprintf("Δεν μπόρεσα να μετρήσω τις εικόνες: %v", err))
 		return
@@ -194,7 +212,7 @@ func (h *Handler) cmdMaterialsRescan(s *discordgo.Session, i *discordgo.Interact
 	}
 	h.mat.Rescan()
 	h.log.Info("materials: rescan started", "images", n, "user_id", actorID(i))
-	h.reply(s, i, fmt.Sprintf("🔎 Ξεκίνησε ο έλεγχος για **%d** εικόνες. Όσες δεν είναι υλικό μαθήματος ή δείχνουν ανθρώπους "+
+	h.reply(s, i, fmt.Sprintf("🔎 Ξεκίνησε ο έλεγχος για **%d** εικόνες. Στα κανάλια μαθημάτων, όσες δεν είναι υλικό μαθήματος ή δείχνουν ανθρώπους "+
 		"βγαίνουν από τη σελίδα και το bucket και έρχονται εδώ για έγκριση. Αν τελειώσει το quota του Gemini, "+
 		"ο έλεγχος περιμένει και συνεχίζει μόνος του. Αν γίνει επανεκκίνηση πριν τελειώσει, τρέξε ξανά την εντολή.", n))
 }

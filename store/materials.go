@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -121,15 +122,16 @@ func (Cursor) Next(m *Material) Cursor { return Cursor{postedAt: ms(m.PostedAt),
 // materials are included: the bucket is a backup and keeps everything that
 // was posted.
 //
-// With imagesFirst, a JPEG is copied only once the content check approved it
-// (flagged ones never reach the bucket); PDFs are copied as soon as they are
-// seen and screened afterwards.
-func (s *Store) MaterialBacklog(ctx context.Context, maxAttempts int, cur Cursor, limit int, imagesFirst bool) ([]*Material, error) {
+// A JPEG in one of courseIDs (the channels the content check covers) is copied
+// only once the check approved it, so flagged ones never reach the bucket;
+// everything else is copied as soon as it is seen and screened afterwards.
+func (s *Store) MaterialBacklog(ctx context.Context, maxAttempts int, cur Cursor, limit int, courseIDs []string) ([]*Material, error) {
 	rows, err := s.db.QueryContext(ctx, `select `+materialColumns+` from materials
 		where backed_up_at is null and backup_attempts < ?1
 			and (posted_at, attachment_id) > (?2, ?3)
-			and (not ?5 or status = 'approved' or (status = 'pending' and content_type <> 'image/jpeg'))
-		order by posted_at, attachment_id limit ?4`, maxAttempts, cur.postedAt, cur.id, limit, imagesFirst)
+			and (status = 'approved' or (status = 'pending'
+				and not (content_type = 'image/jpeg' and home_channel_id in (select value from json_each(?5)))))
+		order by posted_at, attachment_id limit ?4`, maxAttempts, cur.postedAt, cur.id, limit, jsonList(courseIDs))
 	if err != nil {
 		return nil, err
 	}
@@ -161,16 +163,19 @@ func (s *Store) SetMaterialSource(ctx context.Context, attachmentID, url string)
 }
 
 // ScreeningBacklog lists materials waiting for a screening verdict, oldest
-// first, after cur: backed-up ones, plus with imagesFirst the JPEGs not yet in
-// the bucket. With rescan it also lists the listed JPEGs the content check has
-// never seen, which is how files uploaded before it existed get checked.
-func (s *Store) ScreeningBacklog(ctx context.Context, cur Cursor, limit int, imagesFirst, rescan bool) ([]*Material, error) {
+// first, after cur: backed-up ones, plus the JPEGs of courseIDs not yet in the
+// bucket. With rescan it also lists the listed JPEGs of courseIDs the content
+// check has never seen, which is how files uploaded before it existed get
+// checked. Channels outside courseIDs are never part of the content check.
+func (s *Store) ScreeningBacklog(ctx context.Context, cur Cursor, limit int, courseIDs []string, rescan bool) ([]*Material, error) {
 	rows, err := s.db.QueryContext(ctx, `select `+materialColumns+` from materials
 		where deleted_at is null and (posted_at, attachment_id) > (?2, ?3)
-			and ((status = ?1 and (backed_up_at is not null or (?5 and content_type = 'image/jpeg')))
+			and ((status = ?1 and (backed_up_at is not null
+					or (content_type = 'image/jpeg' and home_channel_id in (select value from json_each(?5)))))
 				or (?6 and status = 'approved' and content_type = 'image/jpeg'
-					and backed_up_at is not null and vision_at is null))
-		order by posted_at, attachment_id limit ?4`, MaterialPending, cur.postedAt, cur.id, limit, imagesFirst, rescan)
+					and backed_up_at is not null and vision_at is null
+					and home_channel_id in (select value from json_each(?5))))
+		order by posted_at, attachment_id limit ?4`, MaterialPending, cur.postedAt, cur.id, limit, jsonList(courseIDs), rescan)
 	if err != nil {
 		return nil, err
 	}
@@ -247,12 +252,20 @@ func (s *Store) ResolveReview(ctx context.Context, attachmentID string, approve 
 	return m, n > 0, err
 }
 
-// CountUnchecked counts the listed JPEGs the content check has not seen.
-func (s *Store) CountUnchecked(ctx context.Context) (int, error) {
+// jsonList encodes ids as a JSON array, for a json_each lookup.
+func jsonList(ids []string) string {
+	b, _ := json.Marshal(append([]string{}, ids...))
+	return string(b)
+}
+
+// CountUnchecked counts the listed JPEGs of courseIDs the content check has
+// not seen.
+func (s *Store) CountUnchecked(ctx context.Context, courseIDs []string) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, `select count(*) from materials
 		where status = 'approved' and content_type = 'image/jpeg' and backed_up_at is not null
-			and vision_at is null and deleted_at is null`).Scan(&n)
+			and vision_at is null and deleted_at is null
+			and home_channel_id in (select value from json_each(?1))`, jsonList(courseIDs)).Scan(&n)
 	return n, err
 }
 

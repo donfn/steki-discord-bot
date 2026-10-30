@@ -45,7 +45,7 @@ func TestMaterialLifecycle(t *testing.T) {
 	if list, _ := s.ChannelMaterials(ctx, "c"); len(list) != 0 {
 		t.Fatalf("listed %d before screening", len(list))
 	}
-	pending, err := s.ScreeningBacklog(ctx, Cursor{}, 10, false, false)
+	pending, err := s.ScreeningBacklog(ctx, Cursor{}, 10, nil, false)
 	if err != nil || len(pending) != 3 {
 		t.Fatalf("screening backlog: %d, %v", len(pending), err)
 	}
@@ -100,7 +100,7 @@ func TestMaterialBacklogPaging(t *testing.T) {
 	var cur Cursor
 	seen := 0
 	for {
-		rows, err := s.MaterialBacklog(ctx, 3, cur, 3, false)
+		rows, err := s.MaterialBacklog(ctx, 3, cur, 3, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -132,7 +132,7 @@ func TestMaterialBacklogPaging(t *testing.T) {
 
 func mustBacklog(t *testing.T, s *Store) []*Material {
 	t.Helper()
-	rows, err := s.MaterialBacklog(context.Background(), 3, Cursor{}, 100, false)
+	rows, err := s.MaterialBacklog(context.Background(), 3, Cursor{}, 100, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
