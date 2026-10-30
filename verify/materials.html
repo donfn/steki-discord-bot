@@ -179,6 +179,10 @@
   .whoami b { font: 800 1rem/1.15 var(--font-display); color: var(--color-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .whoami-user { font: 500 0.6875rem/1.3 var(--font-mono); color: var(--color-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   @media (max-width: 440px) { .whoami-user { display: none; } }
+  .whoami.viewing { background: var(--color-brand); }
+  .whoami.viewing small, .whoami.viewing .whoami-user { color: var(--color-on-brand); }
+  .whoami.viewing b { color: var(--color-on-brand); }
+  body.view-only #viewer-report { display: none !important; }
   /* The source image carries a dark matte at its corners; clip past it. */
   .logo { display: block; width: 100%; height: 100%; transform: scale(1.1); }
 
@@ -945,10 +949,10 @@
   <div class="sheet-head">
     <div class="logo-wrap"><img class="logo" src="/verify/logo.png" alt="" width="56" height="56"></div>
     {{if .Who.Username}}
-    <div class="whoami" title="Οι σημειώσεις σου αποθηκεύονται σε αυτόν τον λογαριασμό">
+    <div class="whoami{{if .ViewOnly}} viewing{{end}}" title="Οι σημειώσεις σου αποθηκεύονται σε αυτόν τον λογαριασμό">
       {{if .Avatar}}<img class="whoami-avatar" src="{{.Avatar}}" alt="" width="36" height="36" referrerpolicy="no-referrer">{{end}}
       <span class="whoami-text">
-        <small>Σύνδεση ως</small>
+        <small>{{if .ViewOnly}}Προβολή ως{{else}}Σύνδεση ως{{end}}</small>
         <b>{{.Who.Name}}</b>
         <span class="whoami-user">@{{.Who.Username}}</span>
       </span>
@@ -1129,7 +1133,7 @@
   </form>
 </dialog>
 
-<script type="application/json" id="data">{"files":{{.Files}},"total":{{.Total}},"notes":{{.Notes}},"socket":{{.Socket}},"socketExp":{{.SocketExp}}}</script>
+<script type="application/json" id="data">{"files":{{.Files}},"total":{{.Total}},"notes":{{.Notes}},"socket":{{.Socket}},"socketExp":{{.SocketExp}},"viewOnly":{{.ViewOnly}}}</script>
 <script nonce="{{.Nonce}}" type="module">
   const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/';
   const PDFJS_LIB = PDFJS + 'legacy/build/pdf.min.mjs';
@@ -1289,6 +1293,16 @@
   function readOnly(lost) {
     document.body.classList.add('read-only');
     document.getElementById('presence').hidden = true;
+    if (boot.viewOnly) {
+      // Staff viewing as a member: shown as it is, and nothing changes.
+      document.body.classList.add('view-only');
+      if (inkState.on) setInking(false);
+      $('pad-text').contentEditable = 'false';
+      const note = $('private-note');
+      note.classList.add('offline');
+      note.textContent = 'Βλέπεις τον χώρο μελέτης όπως τον βλέπει αυτό το μέλος. Μόνο ανάγνωση: τίποτα δεν αλλάζει και δεν αποθηκεύεται.';
+      return;
+    }
     if (inkState.on) setInking(false);
     $('pad-text').contentEditable = 'false';
     if ($('notes').open) $('notes').close();
@@ -1335,8 +1349,11 @@
       else localStorage.removeItem(key);
     } catch {}
   }
-  carryOver('study', 'study');
-  carryOver('ink', 'ink');
+  // Not when staff view as a member: this browser's marks are not theirs.
+  if (!boot.viewOnly) {
+    carryOver('study', 'study');
+    carryOver('ink', 'ink');
+  }
 
   // What the member marks for themselves: studied, their own title, notes,
   // keyed by file id: { d: 1, t: '', n: '' }.

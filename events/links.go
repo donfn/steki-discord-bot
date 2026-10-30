@@ -1,6 +1,8 @@
 package events
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -96,18 +98,32 @@ func (h *Handler) onMCPGuide(s *discordgo.Session, i *discordgo.InteractionCreat
 // sendPersonalLink replies to the member alone with the link, and deletes the
 // reply once the link is followed or has run out.
 func (h *Handler) sendPersonalLink(s *discordgo.Session, i *discordgo.InteractionCreate, tokenID, text, label, emoji, link string) {
+	h.sendLinkReply(s, i, false, tokenID, text, label, emoji, link)
+}
+
+// sendLinkReply is sendPersonalLink for an interaction answered either now or,
+// with deferred, by filling in a reply acknowledged earlier.
+func (h *Handler) sendLinkReply(s *discordgo.Session, i *discordgo.InteractionCreate, deferred bool, tokenID, text, label, emoji, link string) {
 	expires := time.Now().Add(personalLinkTTL)
-	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content: countdown(personalLinkTTL) + text,
-			Flags:   discordgo.MessageFlagsEphemeral,
-			Components: []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{
-				discordgo.Button{Label: label, Style: discordgo.LinkButton, URL: link, Emoji: &discordgo.ComponentEmoji{Name: emoji}},
-			}}},
-			AllowedMentions: &discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}},
-		},
-	})
+	content := countdown(personalLinkTTL) + text
+	components := []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+		discordgo.Button{Label: label, Style: discordgo.LinkButton, URL: link, Emoji: &discordgo.ComponentEmoji{Name: emoji}},
+	}}}
+	mentions := &discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}}
+	var err error
+	if deferred {
+		_, err = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Content: &content, Components: &components, AllowedMentions: mentions,
+		})
+	} else {
+		err = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: content, Flags: discordgo.MessageFlagsEphemeral,
+				Components: components, AllowedMentions: mentions,
+			},
+		})
+	}
 	if err != nil {
 		h.log.Error("personal link: reply failed", "error", err)
 		return
@@ -186,15 +202,68 @@ func (h *Handler) dropPersonalLink(tokenID string) {
 // server nickname or display name, username and avatar (their server avatar
 // if they set one).
 func memberProfile(i *discordgo.InteractionCreate) verify.Profile {
-	m := i.Member
+	return profileOf(i.Member, i.GuildID)
+}
+
+// profileOf is how the material page shows a member.
+func profileOf(m *discordgo.Member, guildID string) verify.Profile {
 	if m == nil || m.User == nil {
 		return verify.Profile{}
 	}
 	mem := *m
-	mem.GuildID = i.GuildID
+	mem.GuildID = guildID
 	name := mem.Nick
 	if name == "" {
 		name = displayName(mem.User)
 	}
 	return verify.Profile{Name: name, Username: mem.User.Username, Avatar: mem.AvatarURL("64")}
+}
+
+// cmdMaterialsViewAs gives a staff member a personal link to a course
+// channel's study space as another member sees it: their titles, notes and
+// ink, read-only. The page saves nothing, files no reports and is not counted
+// as present, and every use is logged for the moderators.
+func (h *Handler) cmdMaterialsViewAs(s *discordgo.Session, i *discordgo.InteractionCreate, sub *discordgo.ApplicationCommandInteractionDataOption) {
+	if !h.stickyEnabled() {
+		h.reply(s, i, "Ο χώρος μελέτης δεν είναι διαθέσιμος αυτή τη στιγμή.")
+		return
+	}
+	target := optUser(i, sub.Options, "user")
+	opt := findOpt(sub.Options, "channel")
+	if target == nil || opt == nil {
+		h.reply(s, i, "Διάλεξε κανάλι μαθήματος και μέλος.")
+		return
+	}
+	ctx, cancel := h.ctxTimeout(flowTimeout)
+	defer cancel()
+	ch, err := h.channel(ctx, s, opt.ChannelValue(nil).ID)
+	if err != nil || !isCourseChannel(ch) {
+		h.reply(s, i, "Διάλεξε ένα κανάλι μαθήματος.")
+		return
+	}
+	lib := &mcpLibrary{h: h, s: s, src: &materialSource{h: h, s: s}}
+	mem, err := lib.member(ctx, i.GuildID, target.ID)
+	if err != nil {
+		h.reply(s, i, fmt.Sprintf("Το <@%s> δεν είναι μέλος του server.", target.ID))
+		return
+	}
+	switch err := lib.src.CanRead(ctx, target.ID, ch.ID); {
+	case errors.Is(err, verify.ErrNoAccess):
+		h.reply(s, i, fmt.Sprintf("Το <@%s> δεν έχει πρόσβαση στο <#%s>, άρα δεν βλέπει τον χώρο μελέτης του.", target.ID, ch.ID))
+		return
+	case err != nil:
+		h.reply(s, i, fmt.Sprintf("Ο έλεγχος πρόσβασης απέτυχε: %v", err))
+		return
+	}
+	who := profileOf(mem, i.GuildID)
+	who.Viewer = actorID(i)
+	link, tokenID, err := h.materialLink(target.ID, ch.ID, who)
+	if err != nil {
+		h.reply(s, i, fmt.Sprintf("Δεν μπόρεσα να φτιάξω τον σύνδεσμο: %v", err))
+		return
+	}
+	h.log.Info("materials: view as member", "user_id", actorID(i), "target_id", target.ID, "channel_id", ch.ID)
+	h.alertMods(s, "👁️ Ο/Η <@%s> άνοιξε τον χώρο μελέτης του <#%s> ως <@%s> (μόνο ανάγνωση).", actorID(i), ch.ID, target.ID)
+	h.sendLinkReply(s, i, true, tokenID,
+		fmt.Sprintf("Προβολή ως **%s**, μόνο ανάγνωση:", who.Name), "Άνοιγμα χώρου μελέτης", "👁️", link)
 }

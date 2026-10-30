@@ -150,3 +150,24 @@ func TestReportsStopWhenTheSessionRunsOut(t *testing.T) {
 		t.Error("an expired session reported")
 	}
 }
+
+func TestViewAsIsReadOnly(t *testing.T) {
+	e, fr := newReportEnv(t)
+	_ = e.fm.SaveNote(context.Background(), "u2", "11", NoteStudy, json.RawMessage(`{"t":"Οι σημειώσεις του μέλους"}`))
+	who := Profile{Name: "Νίκος", Username: "nikos", Viewer: "staff1"}
+	tok, err := e.tk.IssueMaterials("u2", "g1", "100", "view1", who, time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := browser(t)
+	res, body := fetch(t, c, e.srv.URL+"/materials?t="+tok)
+	if res.StatusCode != http.StatusOK || !strings.Contains(body, "Προβολή ως") || !strings.Contains(body, "Οι σημειώσεις του μέλους") {
+		t.Fatalf("view-as page: %d, missing the member's view", res.StatusCode)
+	}
+	if socket, _ := pageData(t, body); socket != "" {
+		t.Error("a view-as page got a socket token: it could save and be counted")
+	}
+	if res, _ := postReport(t, c, e.srv.URL, `{"file":"11","reason":"αυτό είναι ένα meme, όχι υλικό"}`); res.StatusCode != http.StatusUnauthorized || len(fr.got) != 0 {
+		t.Errorf("view-as report: status %d, %d calls; want refused", res.StatusCode, len(fr.got))
+	}
+}
