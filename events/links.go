@@ -25,6 +25,10 @@ const (
 	// it. Following it opens a session of its own, which carries the visit.
 	personalLinkTTL = 30 * time.Second
 
+	// personalLinksPerMinute is how many personal links one member may ask for
+	// in a minute, so a script cannot press the button in a loop.
+	personalLinksPerMinute = 6
+
 	// countdownStep is how often the reply's bar shrinks, and countdownCells
 	// how many cells it has.
 	countdownStep  = 3 * time.Second
@@ -64,10 +68,29 @@ func (h *Handler) onViewMaterials(s *discordgo.Session, i *discordgo.Interaction
 		h.respondNow(s, i, "Ο χώρος μελέτης δεν είναι διαθέσιμος αυτή τη στιγμή. Δοκίμασε ξανά σε λίγο.")
 		return
 	}
+	if !h.gate.allow("link:"+userID, personalLinksPerMinute, time.Minute) {
+		h.respondNow(s, i, "⏳ Πολλά αιτήματα. Δοκίμασε ξανά σε λίγο.")
+		return
+	}
 	ctx, cancel := h.ctx()
 	ch, err := h.channel(ctx, s, i.ChannelID)
 	cancel()
 	if err != nil || !isCourseChannel(ch) {
+		h.respondNow(s, i, msgGenericError)
+		return
+	}
+	// The button is on a card anyone who sees the channel can press, but the
+	// study space is for members who finished registration. The page checks
+	// this again; refusing here keeps a link from being issued at all.
+	ctx, cancel = h.ctx()
+	err = (&materialSource{h: h, s: s}).CanRead(ctx, userID, ch.ID)
+	cancel()
+	switch {
+	case errors.Is(err, verify.ErrNoAccess):
+		h.respondNow(s, i, "Ο χώρος μελέτης είναι διαθέσιμος μόνο σε επιβεβαιωμένα μέλη.")
+		return
+	case err != nil:
+		h.log.Error("materials: check access for personal link", "user_id", userID, "error", err)
 		h.respondNow(s, i, msgGenericError)
 		return
 	}
@@ -85,6 +108,10 @@ func (h *Handler) onMCPGuide(s *discordgo.Session, i *discordgo.InteractionCreat
 	userID := actorID(i)
 	if userID == "" || !h.mcpEnabled() {
 		h.respondNow(s, i, "Οι οδηγίες δεν είναι διαθέσιμες αυτή τη στιγμή. Δοκίμασε ξανά σε λίγο.")
+		return
+	}
+	if !h.gate.allow("link:"+userID, personalLinksPerMinute, time.Minute) {
+		h.respondNow(s, i, "⏳ Πολλά αιτήματα. Δοκίμασε ξανά σε λίγο.")
 		return
 	}
 	link, tokenID, err := h.mcpGuideLink(userID)

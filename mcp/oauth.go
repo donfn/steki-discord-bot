@@ -246,7 +246,16 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 }
 
 // blockedSchemes can never be a redirect: they run code or read files.
-var blockedSchemes = []string{"javascript", "data", "file", "vbscript", "about", "blob", "ftp", "ws", "wss"}
+var blockedSchemes = []string{
+	// Run code or read files.
+	"javascript", "data", "file", "vbscript", "about", "blob", "view-source", "jar", "resource",
+	// Other network protocols, not a place to send a login back to.
+	"ftp", "ws", "wss", "ssh", "telnet", "gopher", "ldap", "ldaps", "smb", "nfs", "afp",
+	// Hand the address to another app or the phone's dialler.
+	"intent", "android-app", "market", "content", "mailto", "tel", "sms", "smsto", "mms", "facetime",
+	// Browser internals.
+	"chrome", "chrome-extension", "moz-extension", "edge", "opera", "ms-browser-extension",
+}
 
 // validRedirect accepts https URLs, http URLs on the loopback interface (the
 // way desktop and command-line clients listen), and an app's private-use

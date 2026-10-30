@@ -170,3 +170,13 @@ func TestViewAsIsReadOnly(t *testing.T) {
 		t.Errorf("view-as report: status %d, %d calls; want refused", res.StatusCode, len(fr.got))
 	}
 }
+
+func TestReportsStopWhenAccessIsLost(t *testing.T) {
+	e, fr := newReportEnv(t)
+	c, _, _ := e.open(t, "100")
+	e.fm.deny("u1")
+	res, out := postReport(t, c, e.srv.URL, `{"file":"11","reason":"αυτό είναι ένα meme, όχι υλικό"}`)
+	if res.StatusCode != http.StatusUnauthorized || len(fr.got) != 0 {
+		t.Errorf("report after losing access: %d %v, reports taken: %v", res.StatusCode, out, fr.got)
+	}
+}

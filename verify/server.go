@@ -197,15 +197,19 @@ func (v *Server) render(w http.ResponseWriter, tmpl *template.Template, data map
 	}
 }
 
-// guardClaims parses a media guard token; registration and material links
-// are refused.
+// guardClaims parses a media guard token. Only the reasons a restriction can
+// have are accepted, so a token minted for any other purpose, now or later,
+// can never lift a timeout.
 func (v *Server) guardClaims(raw string) (*Claims, bool) {
 	c, err := v.tokens.Parse(raw)
-	if err != nil || c.Reason == ReasonLink || c.Reason == ReasonMaterials || c.Reason == ReasonMCPGuide ||
-		c.Reason == ReasonSocket {
+	if err != nil {
 		return nil, false
 	}
-	return c, true
+	switch c.Reason {
+	case "", ReasonMedia, ReasonDuplicate, ReasonManual:
+		return c, true
+	}
+	return nil, false
 }
 
 // active parses a guard token and checks it is still the member's

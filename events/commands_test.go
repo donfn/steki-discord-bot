@@ -69,3 +69,35 @@ func TestCommandDefinitionsFitDiscordLimits(t *testing.T) {
 		check("/"+cmd.Name, cmd.Options)
 	}
 }
+
+// TestEveryCommandIsStaffOnly keeps a new command from being offered to
+// everyone: Discord shows a command to the members its default permission
+// allows, and the on-demand passes (/reg reconcile, /materials stickies, ...)
+// change many things at once.
+func TestEveryCommandIsStaffOnly(t *testing.T) {
+	for _, cmd := range commandDefs {
+		if cmd.DefaultMemberPermissions == nil || *cmd.DefaultMemberPermissions != staffOnly {
+			t.Errorf("/%s is not limited to staff by default", cmd.Name)
+		}
+	}
+}
+
+// TestEveryTextOptionIsBounded keeps a free-text option from reaching the
+// database or the audit log at Discord's limit of 6,000 characters. Discord
+// also refuses the whole set of commands if a limit is out of range, which
+// would leave the bot with none.
+func TestEveryTextOptionIsBounded(t *testing.T) {
+	var check func(path string, opts []*discordgo.ApplicationCommandOption)
+	check = func(path string, opts []*discordgo.ApplicationCommandOption) {
+		for _, o := range opts {
+			where := path + " " + o.Name
+			if o.Type == discordgo.ApplicationCommandOptionString && (o.MaxLength < 1 || o.MaxLength > 6000) {
+				t.Errorf("%s: text option has max_length %d, want 1-6000; add it to textLimits", where, o.MaxLength)
+			}
+			check(where, o.Options)
+		}
+	}
+	for _, cmd := range commandDefs {
+		check("/"+cmd.Name, cmd.Options)
+	}
+}

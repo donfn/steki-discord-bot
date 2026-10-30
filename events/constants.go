@@ -34,25 +34,21 @@ const (
 	nudgeAfter = 1 * time.Hour
 	kickAfter  = 6 * time.Hour
 
-	// sweepEvery is how often the reaper and reconciler run.
+	// sweepEvery is how often the reaper runs.
 	sweepEvery = 5 * time.Minute
 
 	// maxReapPerTick bounds how many members may be nudged or kicked in a
 	// single sweep, so a backlog can never turn into a mass-kick.
 	maxReapPerTick = 15
 
-	// reconcileEvery is how often the reconciler runs between gateway
-	// reconnects, each of which also triggers a pass.
-	reconcileEvery = time.Hour
-
-	// missedJoinWindow limits the reconciler's "missed join" recovery to
+	// missedJoinWindow limits /reg reconcile's "missed join" recovery to
 	// members who joined recently. A gateway outage drops joins for minutes,
-	// not days; without this bound the first pass after a deploy would open
-	// a registration — and so start the kick clock — for every long-standing
-	// member who happens to hold no role.
+	// not days; without this bound a pass would open a registration — and so
+	// start the kick clock — for every long-standing member who happens to
+	// hold no role.
 	missedJoinWindow = 24 * time.Hour
 
-	// maxOnboardPerSweep caps how many channels one reconciler pass may
+	// maxOnboardPerSweep caps how many channels one /reg reconcile pass may
 	// create, so recovering from a long outage cannot flood the guild.
 	maxOnboardPerSweep = 25
 )
@@ -80,19 +76,8 @@ const registerChannelPrefix = "register-"
 // before the button existed working.
 const restartEmoji = "🔄"
 
-// Greek copy shared by the welcome flow and the restart flow.
+// Greek copy shared by the reaper and the cleanup paths.
 const (
-	msgWelcome = "**Γεια σου <@%s>, καλώς ήρθες στο Steki!**\n" +
-		"Πριν μπεις, πρέπει να επιβεβαιώσουμε ότι είσαι φοιτητής.\n\n" +
-		"**Θα σου στείλω έναν σύνδεσμο στο ακαδημαϊκό σου email. Άνοιξέ τον, πάτα αποδοχή και μπαίνεις αμέσως.**"
-
-	msgRestartHint = "Αν κολλήσεις κάπου, πάτα το κουμπί παρακάτω για να ξεκινήσεις από την αρχή " +
-		"ή γράψε στο <#%s>."
-
-	msgAskEmail = "**Πάτα το κουμπί και γράψε το ακαδημαϊκό σου email, " +
-		"αυτό της μορφής *thXXXXXX@edu.hmu.gr* που σου έδωσε η γραμματεία**.\n\n" +
-		":new: Φοιτητές άλλων τμημάτων (tpXXXXX@edu.hmu.gr, csd.uoc.gr) μπορούν πλέον να γραφτούν ως Verified Outsiders."
-
 	// msgNudge is posted in the register channel after one hour of silence.
 	// It replaces the old direct messages, which were sent every 20 minutes
 	// for as long as the registration stayed open.

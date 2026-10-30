@@ -1,6 +1,8 @@
 // Package events implements the bot's behaviour: the registration flow, the
-// background reaper and reconciler, link moderation, and the moderator slash
-// commands.
+// background reaper, link moderation, and the moderator slash commands. Work
+// that repairs or refreshes what is already in Discord (reconciling
+// registrations, redrawing the stickies, posting missing cards) never starts by
+// itself: each has a command.
 package events
 
 import (
@@ -62,26 +64,29 @@ type Handler struct {
 	// matLive is set once the bucket answered and the worker runs; the
 	// stickies and both buttons wait for it.
 	matLive atomic.Bool
-	// scanning is set while /materials scan runs, so two cannot overlap.
-	scanning atomic.Bool
-	// materialsOnce starts the backup, the scan and the stickies on the first
-	// GUILD_CREATE of the Steki guild.
+	// jobs stops an on-demand command from running twice at once.
+	jobs jobs
+	// materialsOnce starts the material worker on the first GUILD_CREATE of the
+	// Steki guild.
 	materialsOnce sync.Once
+	// commandsSynced is set once the slash commands were installed, so a
+	// reconnect does not install them again.
+	commandsSynced atomic.Bool
 
 	// users serialises all registration work for one member, so concurrent
-	// events (a join racing the reconciler, two quick messages) cannot
+	// events (a join racing a /reg reconcile, two quick messages) cannot
 	// interleave and, for instance, create two channels.
 	users keyedMutex
 
 	// gate rate-limits abuse-prone actions across registrations.
 	gate rateGates
 
-	bootTime    time.Time
-	guild       atomic.Value // string: the Steki guild, see onGuildCreate
-	processed   atomic.Int64
-	blocked     atomic.Int64
-	statusIndex atomic.Int64
-	reconciling atomic.Bool
+	bootTime      time.Time
+	guild         atomic.Value // string: the Steki guild, see onGuildCreate
+	processed     atomic.Int64
+	blocked       atomic.Int64
+	statusIndex   atomic.Int64
+	lastReconcile atomic.Int64 // Unix seconds of the last finished /reg reconcile; 0 before the first
 
 	// base is cancelled by Stop, which aborts in-flight work on shutdown.
 	base      context.Context
@@ -198,7 +203,7 @@ func (h *Handler) guildID() string {
 
 // inHomeGuild reports whether an event belongs to the Steki guild. The bot is
 // a member of more than one server, and registration, the reaper and the
-// reconciler must only ever act on the one that owns the register category.
+// /reg reconcile must only ever act on the one that owns the register category.
 func (h *Handler) inHomeGuild(guildID string) bool {
 	return guildID != "" && guildID == h.guildID()
 }

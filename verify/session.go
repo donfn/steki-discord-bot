@@ -35,6 +35,11 @@ const (
 	// used to exhaust memory.
 	maxSessions = 20000
 
+	// maxSessionsPerMember caps the sessions one member holds at once. Opening
+	// another past it ends their oldest, so a single account cannot fill the
+	// table and lock everyone else out.
+	maxSessionsPerMember = 5
+
 	// pagePath and filesPath are the session's page and its downloads. They
 	// must match the edge rule and shield.MaterialFilesPrefix.
 	pagePath  = "/s"
@@ -80,15 +85,26 @@ func (s *sessions) open(channelID, subject, guildID, viewer string, now time.Tim
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if len(s.m) >= maxSessions {
-		for k, v := range s.m {
-			if now.Sub(v.opened) > studyTTL {
-				delete(s.m, k)
+	var mine []string
+	for k, v := range s.m {
+		if now.Sub(v.opened) > studyTTL {
+			delete(s.m, k)
+		} else if v.subject == subject {
+			mine = append(mine, k)
+		}
+	}
+	for len(mine) >= maxSessionsPerMember {
+		oldest := 0
+		for i, k := range mine {
+			if s.m[k].opened.Before(s.m[mine[oldest]].opened) {
+				oldest = i
 			}
 		}
-		if len(s.m) >= maxSessions {
-			return "", false
-		}
+		delete(s.m, mine[oldest])
+		mine = append(mine[:oldest], mine[oldest+1:]...)
+	}
+	if len(s.m) >= maxSessions {
+		return "", false
 	}
 	s.m[id] = &session{channelID: channelID, subject: subject, guildID: guildID, viewer: viewer, opened: now}
 	return id, true

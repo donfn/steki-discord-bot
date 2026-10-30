@@ -15,8 +15,8 @@ import (
 // The member_activity table indexes every member of the guild with the time of
 // their last message and whether they hold the role. Nothing reads channel
 // history: a message arriving on the gateway stamps its author and takes the
-// role away, joins and leaves add and remove rows, the member list the
-// reconciler already fetches keeps the roster whole, and a sweep over the
+// role away, joins and leaves add and remove rows, the member list
+// /reg reconcile fetches keeps the roster whole, and a sweep over the
 // table gives the role to whoever has passed three months of silence. The
 // clock of a member who has not posted yet starts at their join time, so a
 // newcomer is not a ghost.

@@ -18,7 +18,7 @@ See `.env.example`.
 | `DATABASE_PATH` | no       | SQLite file. Defaults to `steki.db` inside the Railway volume (`RAILWAY_VOLUME_MOUNT_PATH`), or the working directory off Railway. On Railway the bot refuses to start without a volume, since the database would be erased on every deploy |
 | `DATABASE_URL`  | no       | Old Postgres DSN, read only to copy its data across once (see [Moving off Postgres](#moving-off-postgres)) |
 | `RESEND_API_KEY`| yes      | Resend API key                                     |
-| `JWT_SECRET`    | yes      | Signs email and captcha links (`openssl rand -hex 32`) |
+| `JWT_SECRET`    | yes      | Signs every link, session and MCP token (at least 32 characters: `openssl rand -hex 32`) |
 | `PUBLIC_URL`    | on Railway, no | Base URL of the pages; defaults to `RAILWAY_PUBLIC_DOMAIN` |
 | `EMAIL_FROM`    | no       | Verified sender (default `Steki <steki@poiw.org>`) |
 | `URL_BLACKLIST` | no       | Comma-separated link substrings to block           |
@@ -33,13 +33,14 @@ gateway at runtime.
 
 ## Course material
 
-With the `BUCKET_*` variables set, every PDF and JPEG posted anywhere in the
-server is copied to the `steki-backups` bucket, under a folder per channel name
-(`<channel>/<thread>/<attachment id>-<file name>`). New posts are picked up
-live; a history scan walks every channel and thread back to its first message,
-resumes across restarts, and repeats daily to catch posts missed while the bot
-was offline. Deleting a message hides its files from the material page but
-never removes them from the bucket.
+With the `BUCKET_*` variables set, every PDF and JPEG posted in a course channel
+or one of its threads is copied to the `steki-backups` bucket, under a folder
+per channel name (`<channel>/<thread>/<attachment id>-<file name>`). New posts
+are picked up live. The history before the bot, and anything posted while it was
+offline, is found by `/materials scan`, which walks every course channel and
+thread back to its first message and resumes across restarts; it never runs by
+itself. Deleting a message hides its files from the material page but never
+removes them from the bucket.
 
 Each channel in the course categories (`courseCategoryIDs` in
 `events/materials.go`) keeps a bot message at its bottom saying how many files
@@ -49,8 +50,8 @@ members have shared, with two buttons:
   line and an «Άνοιγμα χώρου μελέτης» button. The
   button holds a personal link to `/materials`, valid for 30 seconds and good
   for one visit. The reply counts down with a bar and is deleted when the
-  link is opened or runs out. On start-up every existing sticky is edited in
-  place to the current card. The page lists every file of the channel and
+  link is opened or runs out. After a change to the card, `/materials stickies`
+  edits every existing sticky in place. The page lists every file of the channel and
   its threads, searchable, with PDFs (pdf.js) and images viewed in the page.
   It downloads every file as soon as it opens. Studied marks, the member's
   own titles, notes and ink are saved per member (`study_notes`) and come back
@@ -118,8 +119,12 @@ is no database service. What keeps the process small:
 - **The phishing feeds are streamed into a sorted slice of 64-bit hashes**, 8
   bytes a domain rather than a map of strings (about 0.7 MB instead of 7.5 MB
   for 90,000 domains), and never held as a full list while refreshing.
-- **The hourly reconciler keeps a trimmed copy of each member** rather than the
+- **`/reg reconcile` keeps a trimmed copy of each member** rather than the
   whole decoded payload.
+- **Every in-memory table has a bound and a way out**: rate counters, replay
+  sets and sessions are swept or capped, locks are dropped when released, and
+  PostHog's queue holds at most 1,000 events while it cannot be reached (events
+  are dropped after that; `Capture` never blocks).
 
 ## Moving off Postgres
 
@@ -144,10 +149,12 @@ Earlier versions kept their data in Railway Postgres. To move it:
 - **Abandonment reaper** — a registration idle for 1h gets one reminder *in its
   channel* (no DMs); idle for 6h, the member is kicked and the channel removed.
   Kicked members can rejoin and retry.
-- **Reconciler** — on every gateway (re)connect and hourly, the bot diffs guild
-  members against the database and channels, recreating channels for joins that
-  arrived while it was disconnected (members who joined in the last 24h, at most
-  25 channels per pass) and cleaning up orphans.
+- **Reconcile on demand** — nothing repairs drift by itself, so a deploy or a
+  reconnect never sets off a pass over the whole server. `/reg reconcile` diffs
+  guild members against the database and channels, creating channels for joins
+  that arrived while the bot was away (members who joined in the last 24h, at
+  most 25 channels per run) and cleaning up orphans. Run it after the bot was
+  down; `/bot stats` shows when it last ran.
 - **No races** — all registration work for one member is serialised, and
   channel placement is serialised guild-wide, so concurrent events can never
   produce two channels for a member or overfill a category.
@@ -164,6 +171,8 @@ Slash commands, restricted to the staff/mod roles, replies are ephemeral:
 
 - `/reg status <user>` · `/reg history <user>` · `/reg stuck`
 - `/reg restart <user>` · `/reg verify <user> <email>`
+- `/reg reconcile` — brings registrations and their channels back in line with
+  who is on the server (see below)
 - `/reg reregister <user> [release_email]` — takes the verified roles away and
   opens a fresh registration; the member keeps their address unless
   `release_email` frees it
@@ -179,7 +188,25 @@ Slash commands, restricted to the staff/mod roles, replies are ephemeral:
   - `/email update <email|hash> [user | unlink] [new_email]` — move an address
     to another account, drop its owner, or correct a mistyped address
   - `/email remove <email|hash>` — frees the address in both forms
-- `/bot stats`
+- `/bot stats` — health, open registrations, when `/reg reconcile` last ran and
+  whether any admin cards are waiting
+- `/member ban|unban` · `/rules post` · `/mcp announce`
+
+### Catch-up commands
+
+These passes repair or redraw what is already in Discord. They touch many
+members, channels or messages at once, so none of them runs at start-up, on a
+reconnect or on a timer: a moderator runs them when needed, each can be run
+again safely, and two cannot run at the same time.
+
+| Command | When to run it |
+|---------|----------------|
+| `/reg reconcile` | After the bot was down or disconnected for a while, or when `/reg stuck` shows a member with no channel. Closes registrations of members who left or verified, makes missing register channels (also for recent joins the bot missed, at most 25 per run), deletes orphan and duplicate ones, refreshes the member index behind the ghost role |
+| `/materials scan` | To pick up files posted before the bot, or while it was offline, and to place the stickies |
+| `/materials stickies` | After a change to the sticky card: edits every existing sticky in place, silently |
+| `/materials cards` | When `/bot stats` reports cards that did not reach the log channel (held images, reports) |
+| `/materials rescan` | To send images uploaded before the content check existed through it |
+| `/mcp refresh` | To give older MCP announcements the current button |
 
 Every join, email attempt, link sent, retry, failure and role grant is recorded
 in `registration_events`, which is what `/reg history` reads.
