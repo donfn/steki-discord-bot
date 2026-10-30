@@ -247,6 +247,10 @@ var commandDefs = []*discordgo.ApplicationCommand{
 			Description: "Ελέγχει με AI όλες τις εικόνες που έχουν ήδη ανέβει και βγάζει όσες δεν είναι υλικό μαθήματος",
 			Type:        discordgo.ApplicationCommandOptionSubCommand,
 		}, {
+			Name:        "scan",
+			Description: "Διαβάζει το ιστορικό των καναλιών μαθημάτων για νέο υλικό και βάζει τα sticky",
+			Type:        discordgo.ApplicationCommandOptionSubCommand,
+		}, {
 			Name:        "remove",
 			Description: "Αφαιρεί οριστικά υλικό από τη σελίδα και το bucket",
 			Type:        discordgo.ApplicationCommandOptionSubCommand,
@@ -318,6 +322,7 @@ var commandRoutes = map[string]commandFunc{
 	"rules post":       (*Handler).cmdRulesPost,
 	"materials rescan": (*Handler).cmdMaterialsRescan,
 	"materials remove": (*Handler).cmdMaterialsRemove,
+	"materials scan":   (*Handler).cmdMaterialsScan,
 	"guard status":     (*Handler).cmdGuardStatus,
 	"guard restrict":   (*Handler).cmdGuardRestrict,
 	"guard ungrace":    (*Handler).cmdGuardUngrace,

@@ -17,13 +17,15 @@ import (
 	"steki-bot/verify"
 )
 
-// Every PDF and JPEG posted anywhere in Steki is backed up to the bucket. Discovery
-// has two paths into the materials table: new messages as they arrive, and a
-// history scan that walks every channel and thread back to its first message
-// (resumably, across restarts). The materials.Worker then copies each file
-// into the bucket and screens it. Course channels additionally get a sticky
-// card (sticky.go) linking to the material page, which lists the screened
-// files of that channel and its threads.
+// The PDFs and JPEGs posted in the course channels (and their threads) are
+// backed up to the bucket. Nothing runs on its own schedule or at start-up:
+// files reach the materials table in two ways only, a new message in a course
+// channel as it arrives, and the /materials scan command, which walks the
+// history of the course channels back to their first message (resumably) and
+// places the stickies. The materials.Worker then copies each file into the
+// bucket and screens it, waking when there is something to do. Course
+// channels get a sticky card (sticky.go) linking to the material page, which
+// lists the screened files of that channel and its threads.
 
 // courseCategoryIDs are the categories whose text channels are course
 // channels and get the material page and sticky message.
@@ -59,10 +61,6 @@ const (
 	// scanTimeout bounds one channel's history scan. A cut-off scan resumes
 	// from where it stopped on the next pass.
 	scanTimeout = 30 * time.Minute
-
-	// rescanEvery repeats the scan, which catches files the live path
-	// missed while the gateway was down.
-	rescanEvery = 24 * time.Hour
 )
 
 // isCourseChannel reports whether ch is a course channel.
@@ -190,6 +188,15 @@ func (h *Handler) onMaterialMessage(s *discordgo.Session, ch *discordgo.Channel,
 	}
 	ctx, cancel := h.ctx()
 	defer cancel()
+	// Only course channels, and the threads under them, hold material.
+	course := isCourseChannel(ch)
+	if ch.IsThread() {
+		p, err := h.channel(ctx, s, ch.ParentID)
+		course = err == nil && isCourseChannel(p)
+	}
+	if !course {
+		return
+	}
 	home := h.homeFor(ctx, s, ch)
 	if h.recordMaterials(ctx, m, home, m.GuildID) > 0 {
 		h.mat.Wake()
@@ -273,30 +280,34 @@ func (h *Handler) refreshMaterialSource(s *discordgo.Session) materials.Refreshe
 	}
 }
 
-// scanMaterials walks the history of every channel and thread the bot can
-// read and records the PDFs and JPEGs it finds.
-func (h *Handler) scanMaterials(s *discordgo.Session) {
+// scanMaterials walks the history of every course channel and its threads and
+// records the PDFs and JPEGs it finds. It returns how many channels it read
+// and how many new files it found. It only runs when an admin asks.
+func (h *Handler) scanMaterials(s *discordgo.Session) (channelsRead, newFiles int) {
 	guildID := h.guildID()
 	if guildID == "" || h.mat == nil {
-		return
+		return 0, 0
 	}
 	ctx, cancel := h.ctxTimeout(5 * time.Minute)
 	channels, err := dc.GuildChannels(ctx, s, h.log, guildID)
 	cancel()
 	if err != nil {
 		h.log.Error("materials: list channels for scan", "error", err)
-		return
+		return 0, 0
 	}
 	byID := make(map[string]*discordgo.Channel, len(channels))
+	var courses []*discordgo.Channel
 	for _, ch := range channels {
 		byID[ch.ID] = ch
+		if isCourseChannel(ch) {
+			courses = append(courses, ch)
+		}
 	}
 
-	targets := h.materialThreads(s, guildID, channels)
-	for _, ch := range channels {
-		switch ch.Type {
-		case discordgo.ChannelTypeGuildText, discordgo.ChannelTypeGuildNews, discordgo.ChannelTypeGuildVoice:
-			targets = append(targets, ch)
+	targets := slices.Clone(courses)
+	for _, th := range h.materialThreads(s, guildID, courses) {
+		if isCourseChannel(byID[th.ParentID]) {
+			targets = append(targets, th)
 		}
 	}
 
@@ -304,7 +315,7 @@ func (h *Handler) scanMaterials(s *discordgo.Session) {
 	found := 0
 	for _, ch := range targets {
 		if h.base.Err() != nil {
-			return
+			return len(targets), found
 		}
 		home := materialHome{id: ch.ID, folders: []string{ch.Name}}
 		if ch.IsThread() {
@@ -325,6 +336,7 @@ func (h *Handler) scanMaterials(s *discordgo.Session) {
 	}
 	h.log.Info("materials: history scan finished",
 		"channels", len(targets), "new_files", found, "took", time.Since(started).Round(time.Second))
+	return len(targets), found
 }
 
 // materialThreads lists the guild's threads: active ones, and the archived

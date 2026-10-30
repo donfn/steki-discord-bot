@@ -18,9 +18,9 @@ const (
 	// for a moderator to look at.
 	MaxBackupAttempts = 8
 
-	// passEvery is how often the worker looks for work nobody woke it for:
-	// retries, and anything left by a restart.
-	passEvery = 10 * time.Minute
+	// retryAfter is how long the worker waits before trying again what failed
+	// in a pass. With nothing failed it sleeps until woken: it never polls.
+	retryAfter = 10 * time.Minute
 
 	// batch is how many rows one database read takes.
 	batch = 25
@@ -68,6 +68,9 @@ type Worker struct {
 	// rescan makes the screening pass visit listed images the content check
 	// has never seen. It is set by the rescan command.
 	rescan atomic.Bool
+	// retryNeeded is set when a pass left work behind because something failed,
+	// so the worker comes back on its own. Only its goroutine touches it.
+	retryNeeded bool
 	// pausedUntil is when screening resumes after the screener ran out of
 	// quota. Only the worker's own goroutine touches it.
 	pausedUntil time.Time
@@ -125,25 +128,39 @@ func (w *Worker) Wake() {
 	}
 }
 
-// Run processes the backlog until ctx is cancelled.
+// Run processes the backlog until ctx is cancelled. It works through what
+// the database already holds, then sleeps until Wake. It comes back by itself
+// only for work that failed, or when a screening quota is expected back.
 func (w *Worker) Run(ctx context.Context) {
 	for {
+		w.retryNeeded = false
 		w.pass(ctx)
-		// Come back when the quota is expected to be back, if that is sooner
-		// than the regular pass.
-		wait := passEvery
-		if d := time.Until(w.pausedUntil); d > 0 && d < wait {
+
+		var timeout <-chan time.Time
+		wait := time.Duration(0)
+		if w.retryNeeded {
+			wait = retryAfter
+		}
+		if d := time.Until(w.pausedUntil); d > 0 && (wait == 0 || d < wait) {
 			wait = d
 		}
-		timer := time.NewTimer(wait)
+		var timer *time.Timer
+		if wait > 0 {
+			timer = time.NewTimer(wait)
+			timeout = timer.C
+		}
 		select {
 		case <-ctx.Done():
-			timer.Stop()
+			if timer != nil {
+				timer.Stop()
+			}
 			return
 		case <-w.wake:
-		case <-timer.C:
+		case <-timeout:
 		}
-		timer.Stop()
+		if timer != nil {
+			timer.Stop()
+		}
 	}
 }
 
@@ -246,6 +263,7 @@ func (w *Worker) backup(ctx context.Context, m *store.Material) {
 	}
 	if err != nil {
 		log.Warn("materials: backup failed", "attempt", m.BackupAttempts+1, "error", err)
+		w.retryNeeded = true
 		if ferr := w.st.MarkBackupFailed(context.WithoutCancel(ctx), m.AttachmentID, err.Error()); ferr != nil {
 			log.Error("materials: record backup failure", "error", ferr)
 		}
@@ -320,6 +338,7 @@ func (w *Worker) screen(ctx context.Context, m *store.Material) {
 	}
 	if err != nil {
 		log.Warn("materials: screening failed; will retry", "error", err)
+		w.retryNeeded = true
 		return
 	}
 	switch v.Status {
@@ -365,6 +384,7 @@ func (w *Worker) hold(ctx context.Context, m *store.Material, note string) {
 	if m.BackedUpAt != nil {
 		if err := w.bucket.Delete(ctx, m.ObjectKey); err != nil {
 			log.Error("materials: remove flagged file from the bucket; will retry", "error", err)
+			w.retryNeeded = true
 			return
 		}
 	}

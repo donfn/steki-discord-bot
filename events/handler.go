@@ -54,6 +54,8 @@ type Handler struct {
 	// matLive is set once the bucket answered and the worker runs; the
 	// stickies and both buttons wait for it.
 	matLive atomic.Bool
+	// scanning is set while /materials scan runs, so two cannot overlap.
+	scanning atomic.Bool
 	// materialsOnce starts the backup, the scan and the stickies on the first
 	// GUILD_CREATE of the Steki guild.
 	materialsOnce sync.Once

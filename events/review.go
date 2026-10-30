@@ -29,8 +29,9 @@ const (
 	// flags hundreds of images does not flood the channel at once.
 	reviewCardsPerPass = 10
 
-	// reviewEvery is how often cards the worker's hook missed are posted.
-	reviewEvery = 5 * time.Minute
+	// reviewRetry is how long to wait before posting cards again after a
+	// failure. Cards are otherwise posted when a file is held.
+	reviewRetry = 5 * time.Minute
 )
 
 // reviewMu keeps two passes from posting the same card.
@@ -124,6 +125,11 @@ func (h *Handler) announceReviews(s *discordgo.Session) {
 		}, discordgo.WithContext(ctx))
 		if err != nil {
 			h.log.Error("review: post card", "attachment_id", m.AttachmentID, "error", err)
+			time.AfterFunc(reviewRetry, func() {
+				if h.base.Err() == nil {
+					h.safely("review_cards", func() { h.announceReviews(s) })
+				}
+			})
 			return
 		}
 		if err := h.st.SetReviewMessage(ctx, m.AttachmentID, msg.ID); err != nil {
@@ -310,4 +316,27 @@ func (h *Handler) cmdMaterialsRemove(s *discordgo.Session, i *discordgo.Interact
 	default:
 		h.reply(s, i, "Δεν βρήκα υλικό για αυτό το μήνυμα"+map[bool]string{true: " με αυτό το όνομα αρχείου", false: ""}[filter != ""]+".")
 	}
+}
+
+// cmdMaterialsScan reads the history of the course channels for material the
+// bot has not seen, and places the stickies. It is the only way old messages
+// are picked up.
+func (h *Handler) cmdMaterialsScan(s *discordgo.Session, i *discordgo.InteractionCreate, _ *discordgo.ApplicationCommandInteractionDataOption) {
+	if h.mat == nil || !h.matLive.Load() {
+		h.reply(s, i, "Το υλικό είναι ανενεργό: λείπει το bucket ή δεν απάντησε.")
+		return
+	}
+	if !h.scanning.CompareAndSwap(false, true) {
+		h.reply(s, i, "Ο έλεγχος τρέχει ήδη. Θα γράψω εδώ το αποτέλεσμα όταν τελειώσει.")
+		return
+	}
+	h.log.Info("materials: scan requested", "user_id", actorID(i))
+	h.reply(s, i, "🔎 Ξεκίνησε ο έλεγχος των καναλιών μαθημάτων. Μπορεί να κρατήσει αρκετά λεπτά· θα γράψω το αποτέλεσμα στο κανάλι των logs.")
+	go h.safely("materials_scan", func() {
+		defer h.scanning.Store(false)
+		channels, found := h.scanMaterials(s)
+		h.placeStickies(s)
+		h.mat.Wake()
+		h.alertMods(s, "✅ Ο έλεγχος των καναλιών μαθημάτων τελείωσε: διαβάστηκαν %d κανάλια και νήματα, βρέθηκαν %d νέα αρχεία.", channels, found)
+	})
 }

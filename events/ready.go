@@ -46,8 +46,10 @@ func (h *Handler) onGuildCreate(s *discordgo.Session, g *discordgo.GuildCreate) 
 	h.materialsOnce.Do(func() { h.startMaterials(s) })
 }
 
-// startMaterials starts the material backup worker, the history scan and the
-// stickies, once the bucket has been confirmed reachable.
+// startMaterials starts the material worker once the bucket has been
+// confirmed reachable. Nothing here reads channel history or touches the
+// stickies: that happens when a member posts in a course channel or an admin
+// runs /materials scan. Only work the database already holds is picked up.
 func (h *Handler) startMaterials(s *discordgo.Session) {
 	if h.mat == nil {
 		return
@@ -67,17 +69,11 @@ func (h *Handler) startMaterials(s *discordgo.Session) {
 		defer h.wg.Done()
 		h.safely("materials_worker", func() { h.mat.Run(h.base) })
 	}()
-	go h.safely("stickies", func() {
-		h.placeStickies(s)
-		// The links just placed are fresh; rotate from now on.
-		if h.base.Err() != nil {
-			return
-		}
-		h.goLoopAfter("sticky_links", materialLinkRotate, func() { h.rotateStickyLinks(s) })
-	})
-	// Cards for flagged images the worker's hook did not get to post.
-	h.goLoop("material_review", reviewEvery, func() { h.announceReviews(s) })
-	h.goLoop("material_scan", rescanEvery, func() { h.scanMaterials(s) })
+	// The links on the stickies that exist expire; they are replaced from the
+	// database, without reading any channel.
+	h.goLoopAfter("sticky_links", materialLinkRotate, func() { h.rotateStickyLinks(s) })
+	// Cards for flagged images left over from before the restart.
+	go h.safely("review_cards", func() { h.announceReviews(s) })
 	// The MCP announcements' button links, replaced like the stickies'.
 	h.goLoop("mcp_links", materialLinkRotate, func() { h.rotateMCPLinks(s) })
 }
