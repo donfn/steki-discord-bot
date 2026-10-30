@@ -341,6 +341,33 @@ var commandDefs = []*discordgo.ApplicationCommand{
 	},
 }
 
+// textLimits bounds every free-text option by its name. Discord itself allows
+// 6,000 characters, far more than any of these needs, and the text lands in the
+// database, the audit log or a reply. A text option with no entry here fails
+// TestEveryTextOptionIsBounded, so a new one has to be given a limit.
+var textLimits = map[string]int{
+	"email":     254, // an address, or a 64-character hash
+	"new_email": 254,
+	"reason":    512, // what Discord's audit log keeps
+	"message":   200, // a message link or ID
+	"file":      100, // part of a file name
+}
+
+func init() {
+	var limit func(opts []*discordgo.ApplicationCommandOption)
+	limit = func(opts []*discordgo.ApplicationCommandOption) {
+		for _, o := range opts {
+			if o.Type == discordgo.ApplicationCommandOptionString {
+				o.MaxLength = textLimits[o.Name]
+			}
+			limit(o.Options)
+		}
+	}
+	for _, cmd := range commandDefs {
+		limit(cmd.Options)
+	}
+}
+
 // registerCommands installs the command set on the guild. Guild commands
 // update instantly, unlike global ones.
 func (h *Handler) registerCommands(s *discordgo.Session) error {
