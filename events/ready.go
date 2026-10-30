@@ -28,8 +28,11 @@ func (h *Handler) onReady(s *discordgo.Session, r *discordgo.Ready) {
 // Steki guild is recognised by owning the register category: the bot is in
 // more than one server, so the ID cannot simply be taken from the first event.
 //
-// A new session is also exactly when joins may have been missed, so this is
-// where the catch-up runs.
+// A new session is exactly when joins may have been missed, but nothing is
+// repaired here: that is /reg reconcile, which a moderator runs when they know
+// the bot was away. All that happens on connecting is what the bot cannot work
+// without: the commands are installed, once per process, and the material
+// worker starts.
 func (h *Handler) onGuildCreate(s *discordgo.Session, g *discordgo.GuildCreate) {
 	if !isHomeGuild(g.Guild) {
 		return
@@ -37,20 +40,23 @@ func (h *Handler) onGuildCreate(s *discordgo.Session, g *discordgo.GuildCreate) 
 	h.guild.Store(g.ID)
 	h.log.Info("home guild available", "guild_id", g.ID, "name", g.Name)
 
-	go h.safely("catch_up", func() {
-		if err := h.registerCommands(s); err != nil {
-			h.log.Error("register slash commands failed", "error", err)
-		}
-		h.reconcile(s)
-	})
+	if !h.commandsSynced.Load() {
+		go h.safely("register_commands", func() {
+			if err := h.registerCommands(s); err != nil {
+				h.log.Error("register slash commands failed", "error", err)
+				return
+			}
+			h.commandsSynced.Store(true)
+		})
+	}
 	h.materialsOnce.Do(func() { h.startMaterials(s) })
 }
 
 // startMaterials starts the material worker once the bucket has been
-// confirmed reachable. Nothing here reads channel history: that happens when
-// a member posts in a course channel or an admin runs /materials scan. Only
-// work the database already holds is picked up, and the stickies already
-// posted get the current card.
+// confirmed reachable. Nothing here reads channel history or touches a message
+// already in Discord: the stickies, the cards for held files and reports, and
+// old history are brought up to date by /materials stickies, /materials cards
+// and /materials scan. The worker only picks up the work the database holds.
 func (h *Handler) startMaterials(s *discordgo.Session) {
 	if h.mat == nil {
 		return
@@ -70,17 +76,6 @@ func (h *Handler) startMaterials(s *discordgo.Session) {
 		defer h.wg.Done()
 		h.safely("materials_worker", func() { h.mat.Run(h.base) })
 	}()
-	// Cards for flagged images left over from before the restart.
-	go h.safely("review_cards", func() { h.announceReviews(s) })
-	go h.safely("report_cards", func() { h.announceReports(s) })
-	h.wg.Add(1)
-	go func() {
-		defer h.wg.Done()
-		h.safely("sticky_update", func() { h.updateStickies(s) })
-		if h.mcpEnabled() {
-			h.safely("mcp_announcement_update", func() { h.convertMCPAnnouncements(s) })
-		}
-	}()
 }
 
 // isHomeGuild reports whether g is the Steki guild.
@@ -96,9 +91,10 @@ func (h *Handler) onDisconnect(_ *discordgo.Session, _ *discordgo.Disconnect) {
 	h.log.Warn("gateway disconnected")
 }
 
-func (h *Handler) onResumed(s *discordgo.Session, _ *discordgo.Resumed) {
+// A resume replays the events missed while the connection was down, so there
+// is nothing to catch up on.
+func (h *Handler) onResumed(_ *discordgo.Session, _ *discordgo.Resumed) {
 	h.log.Info("gateway resumed")
-	go h.safely("reconcile_on_resume", func() { h.reconcile(s) })
 }
 
 // updateStatus rotates the presence text.

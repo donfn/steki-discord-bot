@@ -34,25 +34,21 @@ const (
 	nudgeAfter = 1 * time.Hour
 	kickAfter  = 6 * time.Hour
 
-	// sweepEvery is how often the reaper and reconciler run.
+	// sweepEvery is how often the reaper runs.
 	sweepEvery = 5 * time.Minute
 
 	// maxReapPerTick bounds how many members may be nudged or kicked in a
 	// single sweep, so a backlog can never turn into a mass-kick.
 	maxReapPerTick = 15
 
-	// reconcileEvery is how often the reconciler runs between gateway
-	// reconnects, each of which also triggers a pass.
-	reconcileEvery = time.Hour
-
-	// missedJoinWindow limits the reconciler's "missed join" recovery to
+	// missedJoinWindow limits /reg reconcile's "missed join" recovery to
 	// members who joined recently. A gateway outage drops joins for minutes,
-	// not days; without this bound the first pass after a deploy would open
-	// a registration — and so start the kick clock — for every long-standing
-	// member who happens to hold no role.
+	// not days; without this bound a pass would open a registration — and so
+	// start the kick clock — for every long-standing member who happens to
+	// hold no role.
 	missedJoinWindow = 24 * time.Hour
 
-	// maxOnboardPerSweep caps how many channels one reconciler pass may
+	// maxOnboardPerSweep caps how many channels one /reg reconcile pass may
 	// create, so recovering from a long outage cannot flood the guild.
 	maxOnboardPerSweep = 25
 )

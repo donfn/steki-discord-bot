@@ -2,6 +2,7 @@ package events
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -287,7 +288,8 @@ func (h *Handler) disableStickies(s *discordgo.Session, channelID, messageID str
 }
 
 // placeStickies makes sure every course channel has an up-to-date sticky at
-// its bottom, one channel at a time. It runs when the bot connects.
+// its bottom, one channel at a time. It runs as the last step of
+// /materials scan.
 func (h *Handler) placeStickies(s *discordgo.Session) {
 	guildID := h.guildID()
 	if guildID == "" || !h.stickyEnabled() {
@@ -369,22 +371,22 @@ func isStickyMessage(m *discordgo.Message) bool {
 	return false
 }
 
-// updateStickies brings every sticky's card up to date in place, silently,
-// once per start, so a change to the card reaches the copies already in the
-// channels. Channels without a sticky are left alone.
-func (h *Handler) updateStickies(s *discordgo.Session) {
+// updateStickies brings every sticky's card up to date in place, silently, so
+// a change to the card reaches the copies already in the channels. Channels
+// without a sticky are left alone. It touches one message per channel and runs
+// only when a moderator asks (/materials stickies); it reports how many cards
+// it updated and how many it could not.
+func (h *Handler) updateStickies(s *discordgo.Session) (updated, failed int, err error) {
 	guildID := h.guildID()
-	if guildID == "" || !h.stickyEnabled() {
-		return
+	if guildID == "" {
+		return 0, 0, errGuildUnknown
 	}
 	ctx, cancel := h.ctx()
 	channels, err := dc.GuildChannels(ctx, s, h.log, guildID)
 	cancel()
 	if err != nil {
-		h.log.Error("sticky: list channels for update", "error", err)
-		return
+		return 0, 0, fmt.Errorf("list channels: %w", err)
 	}
-	updated := 0
 	for _, ch := range channels {
 		if !hasSticky(ch) || !h.stickyEnabled() || h.base.Err() != nil {
 			continue
@@ -392,18 +394,52 @@ func (h *Handler) updateStickies(s *discordgo.Session) {
 		ctx, cancel := h.ctxTimeout(flowTimeout)
 		id, err := h.st.Sticky(ctx, ch.ID)
 		if err == nil && id != "" {
-			err = h.syncSticky(ctx, s, ch.ID, false)
-			if err == nil {
+			if err = h.syncSticky(ctx, s, ch.ID, false); err == nil {
 				updated++
 			}
 		}
 		cancel()
-		if err != nil && err != store.ErrNotFound {
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			failed++
 			h.log.Warn("sticky: update", "channel_id", ch.ID, "name", ch.Name, "error", err)
 		}
-		time.Sleep(500 * time.Millisecond)
+		if id != "" {
+			// Space the edits out; a channel with no sticky made no request.
+			time.Sleep(500 * time.Millisecond)
+		}
 	}
-	h.log.Info("sticky: cards updated", "channels", updated)
+	h.log.Info("sticky: cards updated", "channels", updated, "failed", failed)
+	return updated, failed, nil
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// cmdMaterialsStickies redraws the card of every sticky in place, so a change
+// to the card reaches the copies already in the channels. It edits one message
+// per course channel and notifies nobody. Nothing runs it by itself: use it
+// after a deploy that changed the card.
+func (h *Handler) cmdMaterialsStickies(s *discordgo.Session, i *discordgo.InteractionCreate, _ *discordgo.ApplicationCommandInteractionDataOption) {
+	if !h.stickyEnabled() {
+		h.reply(s, i, "Τα sticky είναι απενεργοποιημένα: δεν έχει ρυθμιστεί bucket, το bucket δεν απαντάει, ή σταμάτησαν για ασφάλεια.")
+		return
+	}
+	end, ok := h.jobs.begin("stickies")
+	if !ok {
+		h.reply(s, i, "Η ανανέωση τρέχει ήδη.")
+		return
+	}
+	defer end()
+	h.log.Info("sticky: refresh requested", "user_id", actorID(i))
+
+	updated, failed, err := h.updateStickies(s)
+	switch {
+	case err != nil:
+		h.reply(s, i, fmt.Sprintf("Η ανανέωση απέτυχε: %v", err))
+	case failed > 0:
+		h.reply(s, i, fmt.Sprintf("⚠️ Ανανεώθηκαν τα sticky σε %d κανάλια, αλλά σε %d απέτυχε (δες τα logs). Τρέξε ξανά την εντολή.", updated, failed))
+	case updated == 0:
+		h.reply(s, i, "Δεν υπάρχει sticky για ανανέωση. Το `/materials scan` τα τοποθετεί στα κανάλια μαθημάτων.")
+	default:
+		h.reply(s, i, fmt.Sprintf("✅ Ανανεώθηκαν τα sticky σε %d κανάλια.", updated))
+	}
+}

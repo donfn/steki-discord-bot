@@ -94,20 +94,33 @@ func (h *Handler) courseChannelIDs(ctx context.Context, s *discordgo.Session) ([
 	return ids, nil
 }
 
-// announceReviews posts a card for every held file that has none.
-func (h *Handler) announceReviews(s *discordgo.Session) {
+// announceReviews posts a card for every held file that has none and returns
+// how many it posted. A file being held starts it; a card that failed to post,
+// or one lost to a restart, waits for /materials cards.
+func (h *Handler) announceReviews(s *discordgo.Session) (posted int) {
 	if h.mat == nil || !h.mat.Vision() {
-		return
+		return 0
 	}
 	reviewMu.Lock()
 	defer reviewMu.Unlock()
 
+	for {
+		n, more := h.announceReviewsPage(s)
+		if posted += n; !more {
+			return posted
+		}
+	}
+}
+
+// announceReviewsPage posts the cards of one page of held files. more reports
+// whether a full page went out, so another may be waiting.
+func (h *Handler) announceReviewsPage(s *discordgo.Session) (posted int, more bool) {
 	ctx, cancel := h.ctxTimeout(reapTimeout)
 	defer cancel()
 	rows, err := h.st.ReviewsToAnnounce(ctx, reviewCardsPerPass)
 	if err != nil {
 		h.log.Error("review: list held files", "error", err)
-		return
+		return 0, false
 	}
 	refresh := h.refreshMaterialSource(s)
 	for _, m := range rows {
@@ -130,16 +143,17 @@ func (h *Handler) announceReviews(s *discordgo.Session) {
 					h.safely("review_cards", func() { h.announceReviews(s) })
 				}
 			})
-			return
+			return posted, false
 		}
+		posted++
 		if err := h.st.SetReviewMessage(ctx, m.AttachmentID, msg.ID); err != nil {
+			// Not recorded, so the file would be listed again: stop rather than
+			// post its card twice.
 			h.log.Error("review: record card", "attachment_id", m.AttachmentID, "error", err)
+			return posted, false
 		}
 	}
-	if len(rows) == reviewCardsPerPass {
-		// More are waiting: the next pass takes them.
-		go h.safely("review_cards", func() { h.announceReviews(s) })
-	}
+	return posted, len(rows) == reviewCardsPerPass
 }
 
 // onReviewButton applies an admin's decision.
@@ -326,17 +340,45 @@ func (h *Handler) cmdMaterialsScan(s *discordgo.Session, i *discordgo.Interactio
 		h.reply(s, i, "Το υλικό είναι απενεργοποιημένο: δεν έχει ρυθμιστεί bucket ή δεν απαντάει.")
 		return
 	}
-	if !h.scanning.CompareAndSwap(false, true) {
-		h.reply(s, i, "Ο έλεγχος τρέχει ήδη. Θα γράψω εδώ το αποτέλεσμα όταν τελειώσει.")
+	end, ok := h.jobs.begin("scan")
+	if !ok {
+		h.reply(s, i, "Ο έλεγχος τρέχει ήδη. Θα γράψω το αποτέλεσμα στο κανάλι των logs όταν τελειώσει.")
 		return
 	}
 	h.log.Info("materials: scan requested", "user_id", actorID(i))
 	h.reply(s, i, "🔎 Ξεκίνησε ο έλεγχος των καναλιών μαθημάτων. Μπορεί να κρατήσει αρκετά λεπτά· θα γράψω το αποτέλεσμα στο κανάλι των logs.")
 	go h.safely("materials_scan", func() {
-		defer h.scanning.Store(false)
+		defer end()
 		channels, found := h.scanMaterials(s)
 		h.placeStickies(s)
 		h.mat.Wake()
 		h.alertMods(s, "✅ Ο έλεγχος των καναλιών μαθημάτων τελείωσε: διαβάστηκαν %d κανάλια και νήματα, βρέθηκαν %d νέα αρχεία.", channels, found)
 	})
+}
+
+// cmdMaterialsCards posts the cards in the log channel that the admins have not
+// been given yet: held images and reports whose card failed to post, or was lost
+// to a restart before it did. Cards are sent as files are held and reports are
+// filed; nothing looks for the ones that were missed until this runs.
+func (h *Handler) cmdMaterialsCards(s *discordgo.Session, i *discordgo.InteractionCreate, _ *discordgo.ApplicationCommandInteractionDataOption) {
+	if h.mat == nil {
+		h.reply(s, i, "Το υλικό είναι απενεργοποιημένο: δεν έχει ρυθμιστεί bucket.")
+		return
+	}
+	end, ok := h.jobs.begin("cards")
+	if !ok {
+		h.reply(s, i, "Η αποστολή καρτών τρέχει ήδη.")
+		return
+	}
+	defer end()
+	h.log.Info("materials: cards requested", "user_id", actorID(i))
+
+	reviews := h.announceReviews(s)
+	reports := h.announceReports(s)
+	if reviews+reports == 0 {
+		h.reply(s, i, "✅ Δεν λείπει καμία κάρτα.")
+		return
+	}
+	h.reply(s, i, fmt.Sprintf("✅ Στάλθηκαν %d κάρτες εικόνων και %d κάρτες αναφορών στο <#%s>.",
+		reviews, reports, config.LogChannelID))
 }

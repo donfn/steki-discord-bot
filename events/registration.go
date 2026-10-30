@@ -31,8 +31,8 @@ func (h *Handler) handleRegistration(s *discordgo.Session, m *discordgo.MessageC
 
 	reg, err := h.st.RegistrationByChannel(ctx, m.ChannelID)
 	if errors.Is(err, store.ErrNotFound) {
-		// A register channel with no open row: the reconciler adopts or
-		// removes it on its next pass.
+		// A register channel with no open row: /reg reconcile adopts or
+		// removes it.
 		h.log.Warn("message in register channel with no open registration",
 			"channel_id", m.ChannelID, "user_id", m.Author.ID)
 		return

@@ -76,7 +76,7 @@ func APICode(err error) int {
 }
 
 // IsMissingResource reports whether Discord says the target no longer exists,
-// which the reconciler treats as "already cleaned up" rather than a failure.
+// which /reg reconcile treats as "already cleaned up" rather than a failure.
 func IsMissingResource(err error) bool {
 	return RESTCode(err) == http.StatusNotFound ||
 		APICode(err) == 10003 || // unknown channel
