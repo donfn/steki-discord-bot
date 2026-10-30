@@ -678,6 +678,8 @@
     animation: rise 300ms var(--ease-out) both;
   }
   .viewer[hidden], .scrim[hidden] { display: none; }
+  /* A pinch here zooms the file, in script, and never the page. */
+  .viewer, .scrim { touch-action: pan-x pan-y; }
   @keyframes rise { from { opacity: 0; transform: translateY(16px); } }
   .scrim { position: fixed; inset: 0; z-index: 9; background: var(--color-scrim); }
   @media (min-width: 900px) {
@@ -1734,6 +1736,8 @@
   let generation = 0;
   let doc = null;
   let zoom = 1;
+  let pinch = null;
+  let pinchSettling = false;
   let photo = null;
   let observer = null;
   let lastFocus = null;
@@ -1748,6 +1752,7 @@
   }
 
   function teardown() {
+    pinch = null;
     observer?.disconnect();
     observer = null;
     doc?.destroy();
@@ -1872,6 +1877,11 @@
       box.style.height = (width * ratio) + 'px';
       box.dataset.n = n;
       box.append(el('span', 'num', n + ' / ' + doc.numPages));
+      // On a zoom the old drawing stands in, stretched, until the new one is ready.
+      const prev = stage.querySelector('.page[data-n="' + n + '"]');
+      if (prev?.clientWidth) box.style.height = (prev.clientHeight * width / prev.clientWidth) + 'px';
+      const stale = prev?.querySelector('canvas:not(.ink)');
+      if (stale) box.prepend(stale);
       pages.append(box);
     }
     stage.replaceChildren(pages);
@@ -1895,7 +1905,11 @@
       canvas.setAttribute('role', 'img');
       canvas.setAttribute('aria-label', 'Σελίδα ' + box.dataset.n);
       await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
-      if (gen === generation) { box.prepend(canvas); inkLayer(box, box.dataset.n); }
+      if (gen === generation) {
+        box.querySelector('canvas:not(.ink)')?.remove();
+        box.prepend(canvas);
+        inkLayer(box, box.dataset.n);
+      }
     } catch {
       delete box.dataset.drawn;
     }
@@ -1943,15 +1957,123 @@
   // Photos zoom in steps of 10% of the fitted size; PDFs keep their coarser steps.
   const zoomStep = () => (photo ? 0.1 : 0.25);
 
-  function setZoom(next) {
-    const z = Math.round(Math.min(photo ? 5 : 3, Math.max(photo ? 0.1 : 0.5, next)) * 100) / 100;
+  const clampZoom = (z) => Math.min(photo ? 5 : 3, Math.max(photo ? 0.1 : 0.5, z));
+
+  // With an anchor, the spot it names stays where it is on the screen.
+  function setZoom(next, anchor) {
+    const z = Math.round(clampZoom(next) * 100) / 100;
     if (z === zoom || (!doc && !photo)) return;
     const keep = stage.scrollTop / Math.max(1, stage.scrollHeight);
     zoom = z;
     showZoom();
-    if (photo) { fitPhoto(); stage.scrollTop = keep * stage.scrollHeight; return; }
-    layoutPages(generation).then(() => { stage.scrollTop = keep * stage.scrollHeight; });
+    const settle = () => {
+      if (!anchor) { stage.scrollTop = keep * stage.scrollHeight; return; }
+      unstretch(anchor.stretched);
+      const r = zoomTarget(anchor.n)?.getBoundingClientRect();
+      if (!r) return;
+      stage.scrollLeft += r.left + anchor.fx * r.width - anchor.x;
+      stage.scrollTop += r.top + anchor.fy * r.height - anchor.y;
+    };
+    if (photo) { fitPhoto(); settle(); return; }
+    return layoutPages(generation).then(settle);
   }
+
+  // ── Pinch zoom: fingers, trackpads and ctrl + wheel ─────────────────────
+  // While the gesture runs the file is only stretched, which stays smooth;
+  // the real zoom happens when it ends. Inside the viewer the browser's own
+  // page zoom is held back, so only the file changes size.
+  const zoomTarget = (n) => (photo ? stage.querySelector('.photo-wrap') : stage.querySelector('.page[data-n="' + n + '"]'));
+  function unstretch(target) {
+    target.style.transform = '';
+    target.style.transformOrigin = '';
+  }
+
+  function startPinch(x, y, from) {
+    if (pinch || pinchSettling || (!doc && !photo)) return;
+    const target = photo ? stage.querySelector('.photo-wrap') : stage.querySelector('.pages');
+    if (!target) return;
+    const r = target.getBoundingClientRect();
+    target.style.transformOrigin = (x - r.left) + 'px ' + (y - r.top) + 'px';
+    pinch = { target, from, x0: x, y0: y, x, y, scale: 1 };
+  }
+  function movePinch(scale, x, y) {
+    pinch.scale = clampZoom(zoom * scale) / zoom;
+    pinch.x = x;
+    pinch.y = y;
+    pinch.target.style.transform = 'translate(' + (x - pinch.x0) + 'px, ' + (y - pinch.y0) + 'px) scale(' + pinch.scale + ')';
+  }
+  function endPinch() {
+    const p = pinch;
+    pinch = null;
+    if (!p) return;
+    // Measured while still stretched: the spot under the fingers is what stays.
+    let box = p.target;
+    if (!photo) {
+      const boxes = [...p.target.children];
+      box = boxes.find((b) => b.getBoundingClientRect().bottom >= p.y) || boxes[boxes.length - 1];
+    }
+    const r = box.getBoundingClientRect();
+    const anchor = { n: box.dataset.n, fx: (p.x - r.left) / r.width, fy: (p.y - r.top) / r.height, x: p.x, y: p.y, stretched: p.target };
+    pinchSettling = true;
+    // When the zoom ends up unchanged nothing settles, so it is undone here too.
+    Promise.resolve(setZoom(zoom * p.scale, anchor)).finally(() => {
+      unstretch(p.target);
+      pinchSettling = false;
+    });
+  }
+
+  const stageTouches = (e) => [...e.touches].filter((t) => stage.contains(t.target));
+  const touchSpread = ([a, b]) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+  stage.addEventListener('touchstart', (e) => {
+    const t = stageTouches(e);
+    // A resting palm must not interrupt a stylus.
+    if (t.length !== 2 || drawing?.pen) return;
+    dropStroke();
+    startPinch((t[0].clientX + t[1].clientX) / 2, (t[0].clientY + t[1].clientY) / 2, 'touch');
+    if (pinch?.from === 'touch') pinch.spread = Math.max(1, touchSpread(t));
+  }, { passive: true });
+  stage.addEventListener('touchmove', (e) => {
+    if (pinch?.from !== 'touch') return;
+    const t = stageTouches(e);
+    if (t.length < 2) return;
+    if (e.cancelable) e.preventDefault();
+    movePinch(touchSpread(t) / pinch.spread, (t[0].clientX + t[1].clientX) / 2, (t[0].clientY + t[1].clientY) / 2);
+  }, { passive: false });
+  const touchLifted = (e) => { if (pinch?.from === 'touch' && stageTouches(e).length < 2) endPinch(); };
+  stage.addEventListener('touchend', touchLifted);
+  stage.addEventListener('touchcancel', touchLifted);
+
+  // Trackpad pinches reach the page as wheel events with ctrl held.
+  let wheelTimer;
+  document.addEventListener('wheel', (e) => {
+    if (!current || !e.ctrlKey) return;
+    e.preventDefault();
+    if (!stage.contains(e.target)) return;
+    startPinch(e.clientX, e.clientY, 'wheel');
+    if (pinch?.from !== 'wheel') return;
+    pinch.total = (pinch.total || 1) * Math.exp(-Math.max(-25, Math.min(25, e.deltaY)) * 0.01);
+    movePinch(pinch.total, pinch.x0, pinch.y0);
+    clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(endPinch, 150);
+  }, { passive: false });
+
+  // Safari's own pinch events: the only ones from a Mac trackpad, and on
+  // iPhones they would zoom the page if left alone.
+  document.addEventListener('gesturestart', (e) => {
+    if (!current) return;
+    e.preventDefault();
+    if (stage.contains(e.target)) startPinch(e.clientX, e.clientY, 'gesture');
+  });
+  document.addEventListener('gesturechange', (e) => {
+    if (!current) return;
+    e.preventDefault();
+    if (pinch?.from === 'gesture') movePinch(e.scale, e.clientX, e.clientY);
+  });
+  document.addEventListener('gestureend', (e) => {
+    if (!current) return;
+    e.preventDefault();
+    if (pinch?.from === 'gesture') endPinch();
+  });
 
   // ── Study music: a YouTube player, docked in the menu or floating ───────
   // The embed is the privacy-enhanced one. The page sends no Referer, but
@@ -2297,17 +2419,18 @@
 
   stage.addEventListener('pointerdown', (e) => {
     const c = e.target.closest?.('.ink');
-    if (!c || !inkState.on || !current || e.button > 0) return;
+    if (!c || !inkState.on || !current || e.button > 0 || !e.isPrimary) return;
     e.preventDefault();
     c.setPointerCapture(e.pointerId);
     const [x, y] = inkPoint(c, e);
+    const pen = e.pointerType === 'pen';
     if (inkState.tool === 'eraser') {
-      drawing = { c, id: e.pointerId, erase: true };
+      drawing = { c, id: e.pointerId, pen, erase: true };
       eraseAt(c, x, y);
       return;
     }
     const t = inkState.tool;
-    drawing = { c, id: e.pointerId, s: { t, c: inkState.color[t], w: t === 'hl' ? 0.022 : 0.003, p: [x, y] } };
+    drawing = { c, id: e.pointerId, pen, s: { t, c: inkState.color[t], w: t === 'hl' ? 0.022 : 0.003, p: [x, y] } };
     paintInk(c, drawing.s);
   });
   stage.addEventListener('pointermove', (e) => {
@@ -2330,6 +2453,13 @@
     }
     saveInk();
     syncInkButtons();
+  }
+  // A second finger means a pinch: the line the first one began is not kept.
+  function dropStroke() {
+    if (!drawing) return;
+    const d = drawing;
+    drawing = null;
+    if (d.erase) { saveInk(); syncInkButtons(); } else paintInk(d.c);
   }
   stage.addEventListener('pointerup', endStroke);
   stage.addEventListener('pointercancel', endStroke);
