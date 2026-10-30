@@ -229,15 +229,18 @@ func (g guardLifter) Lift(ctx context.Context, c *verify.Claims) error {
 		return verify.ErrLinkUsed
 	}
 
-	// A timeout that runs past this link's own belongs to a newer
-	// restriction or a moderator, and a captcha must not undo it.
-	foreign := false
-	if m, merr := s.GuildMember(c.GuildID, userID, discordgo.WithContext(ctx)); merr == nil &&
-		m.CommunicationDisabledUntil != nil && c.ExpiresAt != nil &&
-		m.CommunicationDisabledUntil.After(c.ExpiresAt.Add(time.Minute)) {
-		foreign = true
+	// The captcha only undoes the timeout this link was sent for. Any other
+	// one, shorter or longer, was set by a moderator (or a newer restriction)
+	// and stays. Without the member's current state there is no telling, so
+	// the lift waits for a retry rather than guess.
+	m, err := s.GuildMember(c.GuildID, userID, discordgo.WithContext(ctx))
+	switch {
+	case dc.IsMissingResource(err):
+		m = nil // left the server: there is no timeout to lift
+	case err != nil:
+		return fmt.Errorf("look up member: %w", err)
 	}
-	if !foreign {
+	if m != nil && ownTimeout(m.CommunicationDisabledUntil, c, time.Now()) {
 		err = h.retry(ctx, "member.timeout.clear", func() error {
 			return s.GuildMemberTimeout(c.GuildID, userID, nil, discordgo.WithContext(ctx))
 		})
@@ -273,6 +276,21 @@ func (g guardLifter) Lift(ctx context.Context, c *verify.Claims) error {
 	h.log.Info("media guard: lifted", "user_id", userID)
 	h.alertMods(s, "✅ Ο χρήστης <@%s> έλυσε το captcha και το timeout του αφαιρέθηκε.", userID)
 	return nil
+}
+
+// ownTimeoutSlack covers the link's expiry being stored in whole seconds while
+// Discord keeps the timeout to the millisecond.
+const ownTimeoutSlack = 2 * time.Second
+
+// ownTimeout reports whether until, a member's current timeout, is still the
+// one the bot set together with link c: restrict uses the same instant for
+// both. A timeout that has already ended needs no lifting.
+func ownTimeout(until *time.Time, c *verify.Claims, now time.Time) bool {
+	if until == nil || !until.After(now) || c.ExpiresAt == nil {
+		return false
+	}
+	d := until.Sub(c.ExpiresAt.Time)
+	return d >= -ownTimeoutSlack && d <= ownTimeoutSlack
 }
 
 func newTokenID() (string, error) {

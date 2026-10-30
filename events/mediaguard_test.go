@@ -3,8 +3,10 @@ package events
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/golang-jwt/jwt/v5"
 
 	"steki-bot/verify"
 )
@@ -50,5 +52,31 @@ func TestRestrictionWordingPerReason(t *testing.T) {
 	}
 	if got := restrictionSubject("u", "c", verify.ReasonDuplicate, ""); !strings.Contains(got, "<#c>") {
 		t.Errorf("duplicate mod-log subject = %q", got)
+	}
+}
+
+func TestOwnTimeout(t *testing.T) {
+	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	// The link's expiry is stored in whole seconds; the timeout is not.
+	linkEnd := now.Add(guardTimeout).Truncate(time.Second)
+	c := &verify.Claims{RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(linkEnd)}}
+	at := func(d time.Duration) *time.Time { t := linkEnd.Add(d); return &t }
+
+	cases := []struct {
+		name  string
+		until *time.Time
+		want  bool
+	}{
+		{"the bot's own timeout", at(400 * time.Millisecond), true},
+		{"no timeout", nil, false},
+		{"already over", at(-guardTimeout - time.Hour), false},
+		{"a moderator's shorter timeout", at(-12 * time.Hour), false},
+		{"a moderator's longer timeout", at(6 * 24 * time.Hour), false},
+		{"replaced a minute later", at(time.Minute), false},
+	}
+	for _, tc := range cases {
+		if got := ownTimeout(tc.until, c, now); got != tc.want {
+			t.Errorf("%s: ownTimeout = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }

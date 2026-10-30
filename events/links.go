@@ -64,6 +64,12 @@ func countdown(left time.Duration) string {
 // onViewMaterials answers a sticky's "Προβολή υλικού μαθήματος" button.
 func (h *Handler) onViewMaterials(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	userID := actorID(i)
+	// The study space belongs to Steki: a press from anywhere else (a DM, or
+	// another server the bot is in) never gets a link.
+	if !h.inHomeGuild(i.GuildID) {
+		h.respondNow(s, i, msgGenericError)
+		return
+	}
 	if userID == "" || !h.stickyEnabled() {
 		h.respondNow(s, i, "Ο χώρος μελέτης δεν είναι διαθέσιμος αυτή τη στιγμή. Δοκίμασε ξανά σε λίγο.")
 		return
