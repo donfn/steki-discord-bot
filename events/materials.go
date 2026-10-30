@@ -14,6 +14,7 @@ import (
 
 	"steki-bot/dc"
 	"steki-bot/materials"
+	"steki-bot/mcp"
 	"steki-bot/store"
 	"steki-bot/verify"
 )
@@ -574,4 +575,18 @@ func (src *materialSource) Notes(ctx context.Context, userID string) (map[string
 // SaveNote implements verify.Notebook.
 func (src *materialSource) SaveNote(ctx context.Context, userID, fileID, kind string, data json.RawMessage) error {
 	return src.h.st.SetStudyNote(ctx, userID, fileID, kind, string(data))
+}
+
+// CanRead implements verify.AccessChecker with the MCP server's rule: a
+// member who finished registration and can see the channel in Discord.
+func (src *materialSource) CanRead(ctx context.Context, userID, channelID string) error {
+	lib := &mcpLibrary{h: src.h, s: src.s, src: src}
+	rd, err := lib.Reader(ctx, userID)
+	if err == nil {
+		_, err = rd.(*mcpReader).check(ctx, channelID)
+	}
+	if errors.Is(err, mcp.ErrForbidden) || errors.Is(err, mcp.ErrNotFound) {
+		return verify.ErrNoAccess
+	}
+	return err
 }

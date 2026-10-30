@@ -21,6 +21,26 @@ type fakeMaterials struct {
 
 	mu    sync.Mutex
 	notes map[string]map[string]map[string]json.RawMessage // user -> file -> kind -> data
+	// denied are the members who may not read any channel.
+	denied map[string]bool
+}
+
+func (f *fakeMaterials) CanRead(_ context.Context, userID, _ string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.denied[userID] {
+		return ErrNoAccess
+	}
+	return nil
+}
+
+func (f *fakeMaterials) deny(userID string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.denied == nil {
+		f.denied = map[string]bool{}
+	}
+	f.denied[userID] = true
 }
 
 func (f *fakeMaterials) Notes(_ context.Context, userID string) (map[string]map[string]json.RawMessage, error) {

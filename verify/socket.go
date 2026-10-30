@@ -45,6 +45,11 @@ import (
 //
 // The server closes with socketExpired when the page can no longer reconnect
 // and should send the member back to Discord.
+//
+// Whether the member may still read the channel is checked when the socket
+// opens, before every batch and at every reissue: a member who left the
+// server, lost their role or can no longer see the channel is cut off at once
+// and gets no new token.
 
 const (
 	socketTokenTTL = 30 * time.Minute
@@ -66,6 +71,16 @@ const (
 
 	socketExpired = 4001
 )
+
+// ErrNoAccess is returned by an AccessChecker for a member who may not read
+// the channel.
+var ErrNoAccess = errors.New("verify: no access to the channel")
+
+// AccessChecker is implemented by a MaterialSource that can tell whether a
+// member may still read a course channel.
+type AccessChecker interface {
+	CanRead(ctx context.Context, userID, channelID string) error
+}
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:    4 << 10,
@@ -187,6 +202,10 @@ func (s *pageSocket) run(ctx context.Context) {
 	}
 	s.user, s.guild, s.channel = c.Subject, c.GuildID, c.ChannelID
 	analytics.Tag(ctx, s.user, "page", "materials_socket", "channel_id", s.channel)
+	if err := s.access(ctx); err != nil {
+		s.closeFor(err)
+		return
+	}
 
 	// The fresh token goes out first: whatever happens next, the page can
 	// come back.
@@ -223,7 +242,9 @@ func (s *pageSocket) run(ctx context.Context) {
 			s.close(websocket.ClosePolicyViolation, "too many saves")
 			return
 		}
-		s.save(ctx, in)
+		if !s.save(ctx, in) {
+			return
+		}
 	}
 }
 
@@ -249,7 +270,11 @@ func (s *pageSocket) keepAlive(ctx context.Context, done <-chan struct{}) {
 				return
 			}
 		case <-reissue.C:
-			if err := s.loadFiles(ctx); err != nil {
+			err := s.access(ctx)
+			if err == nil {
+				err = s.loadFiles(ctx)
+			}
+			if err != nil {
 				s.closeFor(err)
 				return
 			}
@@ -258,6 +283,17 @@ func (s *pageSocket) keepAlive(ctx context.Context, done <-chan struct{}) {
 			}
 		}
 	}
+}
+
+// access checks the member may still read the channel.
+func (s *pageSocket) access(ctx context.Context) error {
+	ac, ok := s.v.materials.(AccessChecker)
+	if !ok {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	defer cancel()
+	return ac.CanRead(ctx, s.user, s.channel)
 }
 
 // loadFiles reads which files the channel's page lists: only those take
@@ -279,15 +315,15 @@ func (s *pageSocket) loadFiles(ctx context.Context) error {
 	return nil
 }
 
-// closeFor closes the socket after a failed channel lookup: for good when
-// the channel has no page, or so the page reconnects later when the lookup
-// itself failed.
+// closeFor closes the socket after a failed check: for good when the member
+// may not read the channel or it has no page, or so the page reconnects later
+// when the check itself failed.
 func (s *pageSocket) closeFor(err error) {
-	if errors.Is(err, ErrNoMaterial) {
+	if errors.Is(err, ErrNoMaterial) || errors.Is(err, ErrNoAccess) {
 		s.close(socketExpired, "expired")
 		return
 	}
-	s.v.log.Error("verify: socket channel lookup", "channel_id", s.channel, "error", err)
+	s.v.log.Error("verify: socket check", "user_id", s.user, "channel_id", s.channel, "error", err)
 	s.close(websocket.CloseTryAgainLater, "unavailable")
 }
 
@@ -301,8 +337,18 @@ func (s *pageSocket) reissue() bool {
 	return s.send(map[string]any{"op": "token", "t": t, "exp": exp.UnixMilli()}) == nil
 }
 
-// save stores one batch and acknowledges it.
-func (s *pageSocket) save(ctx context.Context, in socketIn) {
+// save stores one batch and acknowledges it, or ends the socket when the
+// member may no longer read the channel.
+func (s *pageSocket) save(ctx context.Context, in socketIn) bool {
+	if err := s.access(ctx); err != nil {
+		if errors.Is(err, ErrNoAccess) {
+			s.close(socketExpired, "expired")
+			return false
+		}
+		s.v.log.Error("verify: socket access check", "user_id", s.user, "error", err)
+		_ = s.send(map[string]any{"op": "ack", "seq": in.Seq, "retry": true})
+		return true
+	}
 	var drops []socketDrop
 	s.filesMu.Lock()
 	files := s.files
@@ -325,7 +371,7 @@ func (s *pageSocket) save(ctx context.Context, in socketIn) {
 			// already stored are only stored again.
 			s.v.log.Error("verify: save note", "user_id", s.user, "file_id", it.File, "error", err)
 			_ = s.send(map[string]any{"op": "ack", "seq": in.Seq, "retry": true})
-			return
+			return true
 		}
 	}
 	ack := map[string]any{"op": "ack", "seq": in.Seq}
@@ -333,6 +379,7 @@ func (s *pageSocket) save(ctx context.Context, in socketIn) {
 		ack["drop"] = drops
 	}
 	_ = s.send(ack)
+	return true
 }
 
 func (s *pageSocket) send(msg any) error {
