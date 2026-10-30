@@ -76,6 +76,10 @@ type Config struct {
 	GoogleAIToken string
 	GoogleAIModel string
 
+	// BlastdoorURL is the isolated service that decodes uploaded PNG, WebP and
+	// HEIC images. Without it those uploads are refused.
+	BlastdoorURL string
+
 	// PostHogKey is the PostHog project API key. With it, the gateway events
 	// and the pages the bot serves are reported to PostHog from the server;
 	// without it analytics is off. PostHogHost is the ingestion endpoint.
@@ -129,6 +133,7 @@ func Load() (*Config, error) {
 
 		GoogleAIToken: strings.TrimSpace(os.Getenv("GOOGLE_AI_TOKEN")),
 		GoogleAIModel: strings.TrimSpace(os.Getenv("GOOGLE_AI_MODEL")),
+		BlastdoorURL:  strings.TrimSpace(os.Getenv("BLASTDOOR_URL")),
 
 		PostHogKey:  strings.TrimSpace(os.Getenv("POSTHOG_API_KEY")),
 		PostHogHost: envOr("POSTHOG_HOST", "https://eu.i.posthog.com"),

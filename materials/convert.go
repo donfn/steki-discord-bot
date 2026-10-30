@@ -5,167 +5,103 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"image"
-	"image/color"
-	"image/draw"
 	"image/jpeg"
-	_ "image/png" // registers the PNG decoder
-	"os"
-	"os/exec"
-	"path/filepath"
-	"slices"
+	"io"
+	"net/http"
+	"strings"
 	"time"
-
-	_ "golang.org/x/image/webp" // registers the WebP decoder
 )
 
 const (
-	// jpegQuality is the highest the encoder offers. JPEG has no truly lossless
-	// mode; at 100 the loss is not visible.
-	jpegQuality = 100
+	// maxConverted bounds the reply read from the converter.
+	maxConverted = 200 << 20
+	// maxConvertedPixels rejects a reply far larger than any real conversion.
+	maxConvertedPixels = 200_000_000
 
-	// maxPixels bounds the decoded size of a PNG or WebP: 4 bytes per pixel
-	// are held in memory, and the bot runs under a small limit.
-	maxPixels = 16_000_000
-
-	// heicTimeout bounds one HEIC conversion.
-	heicTimeout = time.Minute
+	convertTimeout = 3 * time.Minute
+	// convertAttempts covers the converter waking from sleep or restarting
+	// after a crash.
+	convertAttempts = 4
+	convertBackoff  = 3 * time.Second
 )
 
-// ErrUnsupportedImage is returned for content that is not a PNG, WebP or HEIC
-// image the converter can read.
+// ErrUnsupportedImage is returned for content the converter cannot read.
 var ErrUnsupportedImage = errors.New("materials: unsupported image")
 
-// heifTools are the names libheif's converter goes by: heif-dec is the newer
-// one and heif-convert is kept as an alias.
-var heifTools = []string{"heif-convert", "heif-dec"}
-
-// heicBrands are the "ftyp" brands of HEIC and HEIF images.
-var heicBrands = [][]byte{
-	[]byte("heic"), []byte("heix"), []byte("heim"), []byte("heis"),
-	[]byte("hevc"), []byte("hevx"), []byte("hevm"), []byte("hevs"),
-	[]byte("mif1"), []byte("msf1"),
+// Converter sends images to the blastdoor service, the only place they are
+// decoded. There is deliberately no local fallback: without the service,
+// conversion fails rather than parsing untrusted files inside the bot.
+type Converter struct {
+	url    string
+	client *http.Client
 }
 
-type imageKind int
-
-const (
-	kindUnknown imageKind = iota
-	kindPNG
-	kindWebP
-	kindHEIC
-)
-
-// sniffImage tells the format from the content, not the name, so a renamed
-// file cannot take the wrong path.
-func sniffImage(b []byte) imageKind {
-	switch {
-	case bytes.HasPrefix(b, []byte("\x89PNG\r\n\x1a\n")):
-		return kindPNG
-	case len(b) >= 12 && bytes.Equal(b[:4], []byte("RIFF")) && bytes.Equal(b[8:12], []byte("WEBP")):
-		return kindWebP
-	case len(b) >= 12 && bytes.Equal(b[4:8], []byte("ftyp")) &&
-		slices.ContainsFunc(heicBrands, func(br []byte) bool { return bytes.Equal(b[8:12], br) }):
-		return kindHEIC
+// NewConverter returns a client for the blastdoor service at baseURL.
+func NewConverter(baseURL string) *Converter {
+	return &Converter{
+		url: strings.TrimRight(baseURL, "/") + "/convert",
+		client: &http.Client{
+			Timeout: convertTimeout,
+			// The service is untrusted: it must not steer the bot elsewhere.
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		},
 	}
-	return kindUnknown
 }
 
-// ToJPEG converts a PNG, WebP or HEIC image to a JPEG at the highest quality.
-// Transparency is flattened onto white. HEIC goes through libheif's command
-// line tool, which applies the photo's rotation, so its memory is the
-// subprocess's and is returned when it exits.
-func ToJPEG(ctx context.Context, data []byte) ([]byte, error) {
-	switch sniffImage(data) {
-	case kindPNG, kindWebP:
-		return rasterToJPEG(data)
-	case kindHEIC:
-		return heicToJPEG(ctx, data)
+// ToJPEG converts a PNG, WebP or HEIC image to a JPEG. The reply is treated as
+// hostile too: it must have a valid JPEG header of a sane size.
+func (c *Converter) ToJPEG(ctx context.Context, data []byte) ([]byte, error) {
+	if c == nil || c.url == "/convert" {
+		return nil, errors.New("materials: BLASTDOOR_URL is not set")
 	}
-	return nil, ErrUnsupportedImage
-}
-
-func rasterToJPEG(data []byte) ([]byte, error) {
-	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrUnsupportedImage, err)
-	}
-	if cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width*cfg.Height > maxPixels {
-		return nil, fmt.Errorf("%w: %dx%d is too large", ErrUnsupportedImage, cfg.Width, cfg.Height)
-	}
-	img, _, err := image.Decode(bytes.NewReader(data))
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrUnsupportedImage, err)
-	}
-	if o, ok := img.(interface{ Opaque() bool }); !ok || !o.Opaque() {
-		flat := image.NewRGBA(img.Bounds())
-		draw.Draw(flat, flat.Bounds(), image.NewUniform(color.White), image.Point{}, draw.Src)
-		draw.Draw(flat, flat.Bounds(), img, img.Bounds().Min, draw.Over)
-		img = flat
-	}
-	var out bytes.Buffer
-	if err := jpeg.Encode(&out, img, &jpeg.Options{Quality: jpegQuality}); err != nil {
-		return nil, err
-	}
-	return out.Bytes(), nil
-}
-
-// heifMemoryKiB caps the converter's address space. A HEIC file declares its
-// own dimensions, so a small upload can ask libheif for gigabytes, and the
-// bot shares its container with everything else.
-const heifMemoryKiB = 768 << 10
-
-// heifCommand builds the converter's command line. The file it reads comes
-// from a stranger, so the process gets what it needs and nothing else: no
-// environment (the bot's tokens and keys are in it), and a memory ceiling.
-func heifCommand(ctx context.Context, tool, in, out string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, "/bin/sh", "-c",
-		fmt.Sprintf(`ulimit -v %d 2>/dev/null; exec "$0" "$@"`, heifMemoryKiB),
-		tool, "-q", fmt.Sprint(jpegQuality), in, out)
-	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "TMPDIR=" + filepath.Dir(in)}
-	cmd.Dir = filepath.Dir(in)
-	return cmd
-}
-
-func heicToJPEG(ctx context.Context, data []byte) ([]byte, error) {
-	var tool string
-	for _, name := range heifTools {
-		if p, err := exec.LookPath(name); err == nil {
-			tool = p
-			break
+	var lastErr error
+	for attempt := range convertAttempts {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(time.Duration(attempt) * convertBackoff):
+			}
 		}
-	}
-	if tool == "" {
-		return nil, errors.New("materials: no libheif converter installed")
-	}
-	dir, err := os.MkdirTemp("", "heic-")
-	if err != nil {
-		return nil, err
-	}
-	defer os.RemoveAll(dir)
-	in, out := filepath.Join(dir, "in.heic"), filepath.Join(dir, "out.jpg")
-	if err := os.WriteFile(in, data, 0o600); err != nil {
-		return nil, err
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, heicTimeout)
-	defer cancel()
-	cmd := heifCommand(ctx, tool, in, out)
-	if msg, err := cmd.CombinedOutput(); err != nil {
-		return nil, fmt.Errorf("%w: %s: %v", ErrUnsupportedImage, bytes.TrimSpace(msg), err)
-	}
-	// A file holding several images is written as out-1.jpg, out-2.jpg, ...;
-	// the first is the one to show.
-	got, err := os.ReadFile(out)
-	if errors.Is(err, os.ErrNotExist) {
-		names, _ := filepath.Glob(filepath.Join(dir, "out-*.jpg"))
-		slices.Sort(names)
-		if len(names) > 0 {
-			got, err = os.ReadFile(names[0])
+		out, err := c.convert(ctx, data)
+		if err == nil || errors.Is(err, ErrUnsupportedImage) {
+			return out, err
 		}
+		lastErr = err
 	}
+	return nil, lastErr
+}
+
+func (c *Converter) convert(ctx context.Context, data []byte) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(data))
 	if err != nil {
-		return nil, fmt.Errorf("%w: converter wrote nothing", ErrUnsupportedImage)
+		return nil, err
 	}
-	return got, nil
+	req.Header.Set("Content-Type", "application/octet-stream")
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnprocessableEntity {
+		return nil, ErrUnsupportedImage
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("materials: converter answered %d", resp.StatusCode)
+	}
+	out, err := io.ReadAll(io.LimitReader(resp.Body, maxConverted+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(out) > maxConverted {
+		return nil, errors.New("materials: converter reply too large")
+	}
+	cfg, err := jpeg.DecodeConfig(bytes.NewReader(out))
+	if err != nil {
+		return nil, fmt.Errorf("materials: converter reply is not a JPEG: %w", err)
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width*cfg.Height > maxConvertedPixels {
+		return nil, fmt.Errorf("materials: converter reply is %dx%d", cfg.Width, cfg.Height)
+	}
+	return out, nil
 }

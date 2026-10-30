@@ -42,6 +42,8 @@ type Handler struct {
 
 	// tokens signs registration and media guard links.
 	tokens *verify.Tokens
+	// converter decodes uploaded images in the blastdoor service.
+	converter *materials.Converter
 	// dups tracks recent messages for cross-channel duplicate detection.
 	dups *dupTracker
 	// msgs remembers recent message text for the edit and delete logs.
@@ -110,22 +112,23 @@ func NewHandler(cfg *config.Config, st *store.Store, logger *slog.Logger) *Handl
 		logger.Info("BUCKET_* not set; material backup, stickies and the material page are off")
 	}
 	return &Handler{
-		bucket:   bucket,
-		tokens:   verify.NewTokens(cfg.JWTSecret),
-		cfg:      cfg,
-		st:       st,
-		mailer:   mail.New(cfg.ResendAPIKey, cfg.EmailFrom, logger),
-		log:      logger,
-		linkChk:  moderation.NewLinkChecker(cfg.URLBlacklist, phish, modlog, logger),
-		phish:    phish,
-		dups:     newDupTracker(),
-		msgs:     newMsgCache(msgCacheSize),
-		invites:  map[string]bool{},
-		modlog:   modlog,
-		placer:   dc.NewPlacer(config.RegisterCategoryID, logger),
-		bootTime: time.Now(),
-		base:     base,
-		cancel:   cancel,
+		bucket:    bucket,
+		tokens:    verify.NewTokens(cfg.JWTSecret),
+		converter: materials.NewConverter(cfg.BlastdoorURL),
+		cfg:       cfg,
+		st:        st,
+		mailer:    mail.New(cfg.ResendAPIKey, cfg.EmailFrom, logger),
+		log:       logger,
+		linkChk:   moderation.NewLinkChecker(cfg.URLBlacklist, phish, modlog, logger),
+		phish:     phish,
+		dups:      newDupTracker(),
+		msgs:      newMsgCache(msgCacheSize),
+		invites:   map[string]bool{},
+		modlog:    modlog,
+		placer:    dc.NewPlacer(config.RegisterCategoryID, logger),
+		bootTime:  time.Now(),
+		base:      base,
+		cancel:    cancel,
 	}
 }
 

@@ -327,7 +327,7 @@ func (h *Handler) onUploadSubmit(s *discordgo.Session, u *uploadSubmit) {
 		}
 		name, ctype := a.Filename, materialType(a)
 		if ctype == "" {
-			jpg, err := materials.ToJPEG(ctx, body)
+			jpg, err := h.converter.ToJPEG(ctx, body)
 			if err != nil {
 				log.Warn("upload: convert image", "filename", a.Filename, "error", err)
 				if errors.Is(err, materials.ErrUnsupportedImage) {
