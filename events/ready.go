@@ -43,6 +43,32 @@ func (h *Handler) onGuildCreate(s *discordgo.Session, g *discordgo.GuildCreate) 
 		}
 		h.reconcile(s)
 	})
+	h.materialsOnce.Do(func() { h.startMaterials(s) })
+}
+
+// startMaterials starts the material backup worker, the history scan and the
+// stickies, once the bucket has been confirmed reachable.
+func (h *Handler) startMaterials(s *discordgo.Session) {
+	if h.mat == nil {
+		return
+	}
+	ctx, cancel := h.ctx()
+	err := h.bucket.Check(ctx)
+	cancel()
+	if err != nil {
+		h.log.Error("material backup off: bucket unreachable", "error", err)
+		h.alertMods(s, "⚠️ Δεν έχω πρόσβαση στο bucket των αντιγράφων (%v). Η αποθήκευση υλικού είναι ανενεργή μέχρι την επόμενη επανεκκίνηση.", err)
+		return
+	}
+	h.log.Info("material backup enabled")
+	h.matLive.Store(true)
+	h.wg.Add(1)
+	go func() {
+		defer h.wg.Done()
+		h.safely("materials_worker", func() { h.mat.Run(h.base) })
+	}()
+	go h.safely("stickies", func() { h.placeStickies(s) })
+	h.goLoop("material_scan", rescanEvery, func() { h.scanMaterials(s) })
 }
 
 // isHomeGuild reports whether g is the Steki guild.

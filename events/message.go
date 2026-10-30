@@ -12,7 +12,11 @@ import (
 // other servers, and the media guard. A removed invite still counts towards
 // the media guard, since it is a link.
 func (h *Handler) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
-	if m.Author == nil || m.Author.Bot || m.GuildID == "" {
+	if m.Author == nil || m.GuildID == "" {
+		return
+	}
+	if m.Author.Bot {
+		h.onBotMessage(s, m.Message)
 		return
 	}
 	h.processed.Add(1)
@@ -40,8 +44,27 @@ func (h *Handler) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 	ctx, cancel := h.ctx()
 	ch, err := h.channel(ctx, s, m.ChannelID)
 	cancel()
-	if err != nil || !isRegisterChannel(ch) {
+	if err != nil {
+		return
+	}
+	if !isRegisterChannel(ch) {
+		h.onMaterialMessage(s, ch, m.Message)
 		return
 	}
 	h.handleRegistration(s, m)
+}
+
+// onBotMessage lets another bot's message move the sticky down like anyone
+// else's. The bot's own messages never do, or each sticky would chase itself;
+// its uploads move the sticky explicitly.
+func (h *Handler) onBotMessage(s *discordgo.Session, m *discordgo.Message) {
+	if !h.inHomeGuild(m.GuildID) || h.mat == nil || (s.State.User != nil && m.Author.ID == s.State.User.ID) {
+		return
+	}
+	ctx, cancel := h.ctx()
+	ch, err := h.channel(ctx, s, m.ChannelID)
+	cancel()
+	if err == nil {
+		h.onMaterialMessage(s, ch, m)
+	}
 }

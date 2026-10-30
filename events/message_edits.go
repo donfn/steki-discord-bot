@@ -25,6 +25,7 @@ func (h *Handler) onMessageUpdate(s *discordgo.Session, m *discordgo.MessageUpda
 	if m.Message == nil || m.Author == nil || m.Author.Bot || m.GuildID == "" {
 		return
 	}
+	h.pruneMaterials(s, m.Message)
 	var before cachedMsg
 	var cached bool
 	if m.Content != "" {
@@ -59,6 +60,9 @@ func (h *Handler) onMessageUpdate(s *discordgo.Session, m *discordgo.MessageUpda
 // deletion to whoever the audit log says removed it. Deletions by staff are
 // not reported, and, as with edits, only cached messages can be.
 func (h *Handler) onMessageDelete(s *discordgo.Session, m *discordgo.MessageDelete) {
+	// Its files leave the material page; their backups stay in the bucket.
+	h.forgetMaterials(s, m.GuildID, m.ChannelID, m.ID)
+
 	// Take the message even for other guilds, so the ring does not hold on to it.
 	gone, cached := h.msgs.take(m.ID)
 	if !h.inHomeGuild(m.GuildID) || !cached {

@@ -117,13 +117,15 @@ type testEnv struct {
 	tk  *Tokens
 	fl  *fakeLifter
 	fc  *fakeConsenter
+	fm  *fakeMaterials
 }
 
 func newEnv(t *testing.T) *testEnv {
 	t.Helper()
-	e := &testEnv{tk: NewTokens("secret"), fl: &fakeLifter{active: "jti1"}, fc: &fakeConsenter{active: "link1"}}
+	e := &testEnv{tk: NewTokens("secret"), fl: &fakeLifter{active: "jti1"}, fc: &fakeConsenter{active: "link1"},
+		fm: newFakeMaterials()}
 	mux := http.NewServeMux()
-	NewServer(e.tk, e.fl, e.fc, slog.New(slog.NewTextHandler(io.Discard, nil))).Register(mux)
+	NewServer(e.tk, e.fl, e.fc, e.fm, slog.New(slog.NewTextHandler(io.Discard, nil))).Register(mux)
 	e.srv = httptest.NewServer(mux)
 	t.Cleanup(e.srv.Close)
 	return e

@@ -79,6 +79,10 @@ func (h *Handler) ownRegistration(s *discordgo.Session, i *discordgo.Interaction
 // onComponent handles the register channel buttons.
 func (h *Handler) onComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	switch i.MessageComponentData().CustomID {
+	case materialsButtonID:
+		h.onMaterialsButton(s, i)
+	case uploadButtonID:
+		h.openUploadForm(s, i)
 	case emailButtonID:
 		if h.ownRegistration(s, i) == nil {
 			return

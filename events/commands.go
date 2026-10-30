@@ -277,7 +277,11 @@ func (h *Handler) onInteractionCreate(s *discordgo.Session, i *discordgo.Interac
 		h.onComponent(s, i)
 		return
 	case discordgo.InteractionModalSubmit:
-		h.onEmailSubmit(s, i)
+		// A form discordgo cannot decode (the upload form) arrives without
+		// data; onRawEvent handles it.
+		if _, ok := i.Data.(discordgo.ModalSubmitInteractionData); ok {
+			h.onEmailSubmit(s, i)
+		}
 		return
 	case discordgo.InteractionApplicationCommand:
 	default:

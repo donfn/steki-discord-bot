@@ -35,7 +35,7 @@ const (
 )
 
 var (
-	//go:embed page.html link.html
+	//go:embed page.html link.html materials.html
 	pagesFS embed.FS
 	//go:embed logo.png
 	logoPNG []byte
@@ -44,6 +44,7 @@ var (
 
 	guardTmpl = template.Must(template.ParseFS(pagesFS, "page.html"))
 	linkTmpl  = template.Must(template.ParseFS(pagesFS, "link.html"))
+	matTmpl   = template.Must(template.ParseFS(pagesFS, "materials.html"))
 )
 
 // Page states rendered by both pages.
@@ -55,15 +56,17 @@ const (
 
 // Server serves the verification pages and their API.
 type Server struct {
-	tokens  *Tokens
-	lifter  Lifter
-	consent Consenter
-	log     *slog.Logger
+	tokens    *Tokens
+	lifter    Lifter
+	consent   Consenter
+	materials MaterialSource
+	log       *slog.Logger
 }
 
-// NewServer returns a Server.
-func NewServer(tokens *Tokens, lifter Lifter, consent Consenter, logger *slog.Logger) *Server {
-	return &Server{tokens: tokens, lifter: lifter, consent: consent, log: logger}
+// NewServer returns a Server. materials may be nil, which leaves the
+// material page unmounted.
+func NewServer(tokens *Tokens, lifter Lifter, consent Consenter, materials MaterialSource, logger *slog.Logger) *Server {
+	return &Server{tokens: tokens, lifter: lifter, consent: consent, materials: materials, log: logger}
 }
 
 // Register mounts the routes on mux.
@@ -74,6 +77,10 @@ func (v *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /link", v.linkPage)
 	mux.HandleFunc("GET /link/challenge", v.linkChallenge)
 	mux.HandleFunc("POST /link/accept", v.linkAccept)
+	if v.materials != nil {
+		mux.HandleFunc("GET /materials", v.materialsPage)
+		mux.HandleFunc("GET "+materialFilesPath+"{id}", v.materialFile)
+	}
 
 	mux.HandleFunc("GET /verify/logo.png", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
@@ -133,10 +140,11 @@ func (v *Server) render(w http.ResponseWriter, tmpl *template.Template, data map
 	}
 }
 
-// guardClaims parses a media guard token; registration links are refused.
+// guardClaims parses a media guard token; registration and material links
+// are refused.
 func (v *Server) guardClaims(raw string) (*Claims, bool) {
 	c, err := v.tokens.Parse(raw)
-	if err != nil || c.Reason == ReasonLink {
+	if err != nil || c.Reason == ReasonLink || c.Reason == ReasonMaterials {
 		return nil, false
 	}
 	return c, true

@@ -52,6 +52,22 @@ type Config struct {
 	// Under Attack Mode for its own service if it sees a flood. Optional.
 	RailwayToken     string
 	RailwayServiceID string
+
+	// Bucket is the S3-compatible bucket PDFs are backed up to. The material
+	// backup, the sticky messages and the material page are all off unless
+	// every field is set.
+	Bucket Bucket
+}
+
+// Bucket holds the S3 connection details of the backup bucket. On Railway
+// they are references to the steki-backups bucket's own variables.
+type Bucket struct {
+	Endpoint, Region, Name, AccessKeyID, SecretAccessKey string
+}
+
+// Enabled reports whether the bucket is fully configured.
+func (b Bucket) Enabled() bool {
+	return b.Endpoint != "" && b.Name != "" && b.AccessKeyID != "" && b.SecretAccessKey != ""
 }
 
 // Load reads configuration from the environment, falling back to a .env file
@@ -77,6 +93,14 @@ func Load() (*Config, error) {
 
 		RailwayToken:     strings.TrimSpace(os.Getenv("RAILWAY_TOKEN")),
 		RailwayServiceID: strings.TrimSpace(os.Getenv("RAILWAY_SERVICE_ID")),
+
+		Bucket: Bucket{
+			Endpoint:        strings.TrimSpace(os.Getenv("BUCKET_ENDPOINT")),
+			Region:          envOr("BUCKET_REGION", "auto"),
+			Name:            strings.TrimSpace(os.Getenv("BUCKET_NAME")),
+			AccessKeyID:     strings.TrimSpace(os.Getenv("BUCKET_ACCESS_KEY_ID")),
+			SecretAccessKey: strings.TrimSpace(os.Getenv("BUCKET_SECRET_ACCESS_KEY")),
+		},
 	}
 
 	for _, entry := range strings.Split(os.Getenv("URL_BLACKLIST"), ",") {

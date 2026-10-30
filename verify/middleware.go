@@ -18,10 +18,17 @@ const (
 	// load costs about four requests, so this is generous for a real person.
 	rateWindow = time.Minute
 	rateLimit  = 60
+
+	// fileRateLimit is the per-address budget for material downloads. One
+	// page fetches every file of its channel at once, and a computer lab
+	// shares one address, so this is far above the page budget; the
+	// downloads also need a valid link.
+	fileRateLimit = 1200
 )
 
 // limiter is a fixed-window request counter per client address.
 type limiter struct {
+	limit   int
 	mu      sync.Mutex
 	windows map[string]*window
 	swept   time.Time
@@ -32,7 +39,9 @@ type window struct {
 	count int
 }
 
-func newLimiter() *limiter { return &limiter{windows: make(map[string]*window)} }
+func newLimiter(limit int) *limiter {
+	return &limiter{windows: make(map[string]*window), limit: limit}
+}
 
 func (l *limiter) allow(key string, now time.Time) bool {
 	l.mu.Lock()
@@ -51,7 +60,7 @@ func (l *limiter) allow(key string, now time.Time) bool {
 		return true
 	}
 	w.count++
-	return w.count <= rateLimit
+	return w.count <= l.limit
 }
 
 // clientIP is the address the platform proxy saw. The proxy appends the
@@ -77,7 +86,8 @@ func clientIP(r *http.Request) string {
 // checks on writes.
 func Harden(h http.Handler, logger *slog.Logger) http.Handler {
 	sem := make(chan struct{}, maxInFlight)
-	lim := newLimiter()
+	lim := newLimiter(rateLimit)
+	files := newLimiter(fileRateLimit)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		secure(w)
 		defer func() {
@@ -87,7 +97,11 @@ func Harden(h http.Handler, logger *slog.Logger) http.Handler {
 			}
 		}()
 
-		if r.URL.Path != "/healthz" && !lim.allow(clientIP(r), time.Now()) {
+		budget := lim
+		if strings.HasPrefix(r.URL.Path, materialFilesPath) {
+			budget = files
+		}
+		if r.URL.Path != "/healthz" && !budget.allow(clientIP(r), time.Now()) {
 			w.Header().Set("Retry-After", "60")
 			http.Error(w, "too many requests", http.StatusTooManyRequests)
 			return

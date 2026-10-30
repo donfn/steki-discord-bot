@@ -17,6 +17,7 @@ import (
 	"steki-bot/config"
 	"steki-bot/dc"
 	"steki-bot/mail"
+	"steki-bot/materials"
 	"steki-bot/moderation"
 	"steki-bot/store"
 	"steki-bot/verify"
@@ -43,6 +44,19 @@ type Handler struct {
 	// invites caches whether an invite code points at the Steki guild.
 	invitesMu sync.Mutex
 	invites   map[string]bool
+
+	// bucket is the material backup bucket and mat the worker copying into
+	// it. Both are nil when no bucket is configured, which turns the backup,
+	// the stickies and the material page off. mat is set by Register.
+	bucket *materials.Bucket
+	mat    *materials.Worker
+	sticky stickyQueue
+	// matLive is set once the bucket answered and the worker runs; the
+	// stickies and both buttons wait for it.
+	matLive atomic.Bool
+	// materialsOnce starts the backup, the scan and the stickies on the first
+	// GUILD_CREATE of the Steki guild.
+	materialsOnce sync.Once
 
 	// users serialises all registration work for one member, so concurrent
 	// events (a join racing the reconciler, two quick messages) cannot
@@ -71,7 +85,17 @@ func NewHandler(cfg *config.Config, st *store.Store, logger *slog.Logger) *Handl
 	modlog := moderation.NewLog(config.LogChannelID, logger)
 	base, cancel := context.WithCancel(context.Background())
 	phish := moderation.NewPhishFeed(logger)
+	var bucket *materials.Bucket
+	if b := cfg.Bucket; b.Enabled() {
+		var err error
+		if bucket, err = materials.NewBucket(b.Endpoint, b.Region, b.AccessKeyID, b.SecretAccessKey, b.Name); err != nil {
+			logger.Error("material backup off: bucket misconfigured", "error", err)
+		}
+	} else {
+		logger.Info("BUCKET_* not set; material backup, stickies and the material page are off")
+	}
 	return &Handler{
+		bucket:   bucket,
 		tokens:   verify.NewTokens(cfg.JWTSecret),
 		cfg:      cfg,
 		st:       st,
@@ -96,6 +120,10 @@ func NewHandler(cfg *config.Config, st *store.Store, logger *slog.Logger) *Handl
 // goroutines with no recovery of its own, so a single nil dereference in any
 // handler would otherwise take the whole process down.
 func (h *Handler) Register(s *discordgo.Session) {
+	if h.bucket != nil {
+		h.mat = materials.NewWorker(h.st, h.bucket, materials.BasicScreener{}, h.refreshMaterialSource(s),
+			func(home string) { h.refreshSticky(s, home) }, h.log)
+	}
 	s.AddHandler(guard(h, "ready", h.onReady))
 	s.AddHandler(guard(h, "guild_create", h.onGuildCreate))
 	s.AddHandler(guard(h, "disconnect", h.onDisconnect))
@@ -103,6 +131,8 @@ func (h *Handler) Register(s *discordgo.Session) {
 	s.AddHandler(guard(h, "message_create", h.onMessage))
 	s.AddHandler(guard(h, "message_update", h.onMessageUpdate))
 	s.AddHandler(guard(h, "message_delete", h.onMessageDelete))
+	s.AddHandler(guard(h, "message_delete_bulk", h.onMessageDeleteBulk))
+	s.AddHandler(guard(h, "raw_event", h.onRawEvent))
 	s.AddHandler(guard(h, "member_add", h.onMemberAdd))
 	s.AddHandler(guard(h, "member_remove", h.onMemberRemove))
 	s.AddHandler(guard(h, "reaction_add", h.onReactionAdd))

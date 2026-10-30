@@ -1,0 +1,885 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#FFC900" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E0E0F" media="(prefers-color-scheme: dark)">
+<title>στέκι · Υλικό{{if .Channel}} · #{{.Channel}}{{end}}</title>
+<link rel="icon" href="/verify/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap">
+{{if eq .State "ready"}}
+<link rel="modulepreload" nonce="{{.Nonce}}" href="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy/build/pdf.min.mjs"
+  integrity="sha384-z/XbAtvhBXJoK+yvYimnFuTCF6/2wTCDSIFD09/HtIfwFtvDKOMdAe5Z3wOChkmW" crossorigin="anonymous">
+{{end}}
+<style>
+  :root {
+    --brand: #FFC900;
+    --ink: #0B0B0C;
+    --bg: var(--brand);
+    --card: #FFFFFF;
+    --tile: #F6F5F1;
+    --text: var(--ink);
+    --muted: rgba(11, 11, 12, 0.62);
+    --hairline: rgba(11, 11, 12, 0.10);
+    --button: var(--ink);
+    --button-text: #FFFFFF;
+    --warn: #B42318;
+    --pdf: #D93A2B;
+    --img: #2F6FDE;
+    --stage: #E9E7E1;
+    --shadow: 0 1px 2px rgba(60, 45, 0, 0.08), 0 12px 40px -12px rgba(60, 45, 0, 0.35);
+    --radius: 28px;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0E0E0F;
+      --card: #1A1A1C;
+      --tile: #232326;
+      --text: #F5F5F7;
+      --muted: rgba(245, 245, 247, 0.62);
+      --hairline: rgba(255, 255, 255, 0.10);
+      --button: var(--brand);
+      --button-text: var(--ink);
+      --warn: #FF8A80;
+      --pdf: #FF7A6B;
+      --img: #7FA8FF;
+      --stage: #0B0B0C;
+      --shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 20px 60px -20px rgba(0, 0, 0, 0.8);
+      color-scheme: dark;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    padding: max(24px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+    background: var(--bg);
+    color: var(--text);
+    font: 500 1rem/1.55 Manrope, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body.locked { overflow: hidden; }
+
+  main {
+    width: 100%;
+    max-width: 52rem;
+    margin: 0 auto;
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 2rem 1.75rem 1.75rem;
+    animation: arrive 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  main.narrow { max-width: 27rem; margin-top: 10vh; }
+  @keyframes arrive { from { opacity: 0; transform: translateY(12px) scale(0.985); } }
+  @media (max-width: 480px) { main { padding: 1.5rem 1rem 1rem; border-radius: 22px; } }
+
+  .brand { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem; }
+  /* The source image carries a dark matte at its corners; clip past it. */
+  .logo-wrap { width: 36px; height: 36px; border-radius: 10px; overflow: hidden; flex: none; }
+  .logo { display: block; width: 100%; height: 100%; transform: scale(1.08); }
+  .brand span { font-weight: 800; letter-spacing: -0.01em; }
+
+  h1 {
+    margin: 0 0 0.35rem;
+    font-size: clamp(1.6rem, 6vw, 2rem);
+    line-height: 1.12;
+    font-weight: 800;
+    letter-spacing: -0.025em;
+    overflow-wrap: anywhere;
+  }
+  h1 .hash { color: var(--muted); font-weight: 700; }
+  p { margin: 0 0 1rem; color: var(--muted); text-wrap: pretty; }
+  p strong { color: var(--text); font-weight: 700; }
+  .sub { margin-bottom: 1.25rem; font-weight: 600; }
+
+  /* Download progress: every file is fetched as soon as the page opens, so
+     the link can expire without taking the files with it. */
+  .progress {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0 0 1.25rem;
+    padding: 0.85rem 1rem;
+    border-radius: 16px;
+    background: var(--tile);
+  }
+  .progress[hidden] { display: none; }
+  .progress-row { display: flex; align-items: center; gap: 0.6rem; font-size: 0.875rem; font-weight: 700; }
+  .progress-row span:last-child { flex: 1; min-width: 0; }
+  .bar { height: 6px; border-radius: 99px; background: var(--hairline); overflow: hidden; }
+  .bar i {
+    display: block;
+    height: 100%;
+    width: 0;
+    border-radius: inherit;
+    background: var(--brand);
+    transition: width 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .progress[data-done] .bar { display: none; }
+  .progress[data-tone="error"] { color: var(--warn); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--brand); flex: none; box-shadow: 0 0 0 1px var(--hairline); }
+
+  .tools { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1rem; }
+  .tools[hidden], .chips[hidden] { display: none; }
+  .search-wrap { position: relative; flex: 1 1 14rem; min-width: 0; display: flex; }
+  .search-wrap svg {
+    position: absolute; left: 0.85rem; top: 50%; width: 18px; height: 18px;
+    transform: translateY(-50%); color: var(--muted); pointer-events: none;
+  }
+  .search {
+    flex: 1;
+    min-width: 0;
+    height: 44px;
+    padding: 0 1rem 0 2.5rem;
+    border: 1px solid var(--hairline);
+    border-radius: 14px;
+    background: var(--tile);
+    color: var(--text);
+    font: 600 1rem Manrope, system-ui, sans-serif;
+  }
+  .search::placeholder { color: var(--muted); }
+  .search:focus-visible { outline: 3px solid var(--brand); outline-offset: 1px; }
+  .chips { display: flex; gap: 0.4rem; }
+  .chip {
+    height: 44px;
+    padding: 0 1rem;
+    border: 1px solid var(--hairline);
+    border-radius: 14px;
+    background: transparent;
+    color: var(--text);
+    font: 700 0.875rem Manrope, system-ui, sans-serif;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform 100ms ease-out;
+  }
+  .chip:active { transform: scale(0.96); }
+  .chip[aria-pressed="true"] { background: var(--button); color: var(--button-text); border-color: transparent; }
+  .chip:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
+
+  .files { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+  .file {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.5rem;
+    border-radius: 18px;
+    background: var(--tile);
+  }
+  .file[hidden] { display: none; }
+  .open {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 0.9rem;
+    min-width: 0;
+    padding: 0.15rem;
+    border: 0;
+    border-radius: 14px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform 100ms ease-out;
+  }
+  .open:active { transform: scale(0.985); }
+  .open:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
+  .thumb {
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    background: var(--card);
+    box-shadow: 0 0 0 1px var(--hairline);
+    overflow: hidden;
+    position: relative;
+    font: 800 0.6875rem/1 Manrope, system-ui, sans-serif;
+    letter-spacing: 0.04em;
+  }
+  .thumb.pdf { color: var(--pdf); }
+  .thumb.jpg { color: var(--img); }
+  .thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .thumb .spinner { position: absolute; right: 4px; bottom: 4px; width: 12px; height: 12px; color: var(--muted); }
+  .info { min-width: 0; }
+  .name {
+    display: block;
+    font-weight: 800;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .caption {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    margin-top: 0.1rem;
+    font-size: 0.875rem;
+    line-height: 1.4;
+  }
+  .meta { display: block; margin-top: 0.15rem; font-size: 0.8125rem; font-weight: 600; color: var(--muted); }
+  .meta .err { color: var(--warn); }
+
+  .icon-btn {
+    width: 44px;
+    height: 44px;
+    flex: none;
+    border: 0;
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 120ms ease, transform 100ms ease-out;
+  }
+  .icon-btn:hover { background: var(--hairline); }
+  .icon-btn:active { transform: scale(0.94); }
+  .icon-btn:focus-visible { outline: 3px solid var(--brand); outline-offset: 1px; }
+  .icon-btn[aria-disabled="true"] { opacity: 0.35; pointer-events: none; }
+  .icon-btn svg { width: 20px; height: 20px; }
+
+  .empty { text-align: center; padding: 2.5rem 1rem 1.5rem; }
+  .empty[hidden] { display: none; }
+  .empty .badge { margin: 0 auto 1rem; }
+  .empty h2 { margin: 0 0 0.4rem; font-size: 1.125rem; font-weight: 800; }
+
+  .footnote {
+    margin: 1.25rem 0 0;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--hairline);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+  }
+
+  .spinner {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    animation: spin 700ms linear infinite;
+    flex: none;
+  }
+  .spinner[hidden] { display: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .badge {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    margin-bottom: 1.5rem;
+    background: var(--brand);
+    color: var(--ink);
+  }
+  .badge.muted { background: var(--hairline); color: var(--text); }
+  .badge svg { width: 30px; height: 30px; }
+  .cta {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 52px;
+    margin-top: 0.5rem;
+    border-radius: 16px;
+    background: var(--button);
+    color: var(--button-text);
+    font-weight: 800;
+    text-decoration: none;
+  }
+
+  /* The viewer takes the whole screen on phones and floats on larger ones. */
+  .viewer {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
+    background: var(--stage);
+    animation: rise 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .viewer[hidden], .scrim[hidden] { display: none; }
+  @keyframes rise { from { opacity: 0; transform: translateY(16px); } }
+  .scrim { position: fixed; inset: 0; z-index: 9; background: rgba(11, 11, 12, 0.55); }
+  @media (min-width: 900px) {
+    .viewer {
+      inset: 24px;
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.55);
+    }
+  }
+  .bar-top {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: max(8px, env(safe-area-inset-top)) 8px 8px;
+    background: var(--card);
+    border-bottom: 1px solid var(--hairline);
+  }
+  .bar-top .title { flex: 1; min-width: 0; padding: 0 0.4rem; }
+  .bar-top .title b { display: block; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar-top .title small {
+    display: block; font-size: 0.75rem; font-weight: 700; color: var(--muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .zoom { display: flex; gap: 0.1rem; }
+  .zoom[hidden] { display: none; }
+  @media (max-width: 640px) { .zoom, .nav-file { display: none; } }
+
+  .stage {
+    overflow: auto;
+    /* Reserve the scrollbar's room, so a page sized to the width fits. */
+    scrollbar-gutter: stable;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding: 16px 12px max(24px, env(safe-area-inset-bottom));
+  }
+  .pages { display: grid; justify-items: center; gap: 12px; margin: 0 auto; width: max-content; min-width: 100%; }
+  .page {
+    position: relative;
+    background: #fff;
+    border-radius: 4px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 8px 24px -12px rgba(0, 0, 0, 0.35);
+  }
+  .page canvas { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: inherit; }
+  .page .num {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    padding: 2px 8px;
+    border-radius: 99px;
+    background: rgba(11, 11, 12, 0.6);
+    color: #fff;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    z-index: 1;
+  }
+  .stage img.photo { display: block; margin: 0 auto; max-width: 100%; height: auto; border-radius: 8px; cursor: zoom-in; }
+  .stage img.photo.full { max-width: none; cursor: zoom-out; }
+  .stage iframe { display: block; width: 100%; height: calc(100% - 4px); min-height: 70vh; border: 0; border-radius: 8px; background: #fff; }
+  .stage .loading {
+    display: grid; place-items: center; align-content: center; gap: 0.75rem;
+    min-height: 50vh; padding: 0 1rem; color: var(--muted); font-weight: 700; text-align: center;
+  }
+  .stage .loading .spinner { width: 28px; height: 28px; border-width: 3px; }
+
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+  @media (prefers-reduced-motion: reduce) {
+    main, .viewer { animation: fade 200ms ease both; }
+    .spinner { animation-duration: 1.6s; }
+    .bar i { transition: none; }
+    @keyframes fade { from { opacity: 0; } }
+  }
+  @media (prefers-contrast: more) {
+    :root { --muted: var(--text); --hairline: currentColor; }
+    main { outline: 2px solid var(--text); }
+  }
+</style>
+</head>
+<body>
+{{if eq .State "ready"}}
+<main aria-labelledby="heading">
+  <div class="brand">
+    <div class="logo-wrap"><img class="logo" src="/verify/logo.png" alt="" width="36" height="36"></div>
+    <span>στέκι</span>
+  </div>
+  <h1 id="heading"><span class="hash">#</span>{{.Channel}}</h1>
+  <p class="sub" id="summary"></p>
+
+  <div class="progress" id="progress" role="status" aria-live="polite">
+    <div class="progress-row"><span class="spinner" id="progress-spin"></span><span id="progress-text">Ετοιμάζεται η λήψη…</span></div>
+    <div class="bar"><i id="progress-bar"></i></div>
+  </div>
+
+  <div class="tools" id="tools">
+    <label class="search-wrap">
+      <span class="sr-only">Αναζήτηση</span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input class="search" id="search" type="search" placeholder="Αναζήτηση αρχείου ή τίτλου" autocomplete="off" enterkeyhint="search">
+    </label>
+    <div class="chips" id="chips" role="group" aria-label="Είδος αρχείου">
+      <button class="chip" type="button" data-kind="all" aria-pressed="true">Όλα</button>
+      <button class="chip" type="button" data-kind="pdf" aria-pressed="false">PDF</button>
+      <button class="chip" type="button" data-kind="jpg" aria-pressed="false">Εικόνες</button>
+    </div>
+  </div>
+
+  <ul class="files" id="files"></ul>
+
+  <div class="empty" id="empty" hidden>
+    <div class="badge muted" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
+    </div>
+    <h2 id="empty-title">Δεν υπάρχει ακόμα υλικό</h2>
+    <p id="empty-text">Όταν κάποιος ανεβάσει PDF ή εικόνες στο κανάλι, θα εμφανιστούν εδώ. Μπορείς να ξεκινήσεις εσύ, με το κουμπί «Ανέβασμα υλικού».</p>
+  </div>
+
+  <p class="footnote">Τα αρχεία τα ανέβασαν μέλη του στεκιού. Η σελίδα είναι προσωπική: μην μοιράζεσαι τον σύνδεσμό της.</p>
+</main>
+
+<div class="scrim" id="scrim" hidden></div>
+<section class="viewer" id="viewer" role="dialog" aria-modal="true" aria-labelledby="viewer-name" hidden>
+  <div class="bar-top">
+    <button class="icon-btn" type="button" id="close" aria-label="Κλείσιμο">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+    <div class="title"><b id="viewer-name"></b><small id="viewer-meta"></small></div>
+    <div class="zoom" id="zoom">
+      <button class="icon-btn" type="button" id="zoom-out" aria-label="Σμίκρυνση">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 12h12"/></svg>
+      </button>
+      <button class="icon-btn" type="button" id="zoom-in" aria-label="Μεγέθυνση">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 6v12M6 12h12"/></svg>
+      </button>
+    </div>
+    <button class="icon-btn nav-file" type="button" id="prev" aria-label="Προηγούμενο αρχείο">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+    </button>
+    <button class="icon-btn nav-file" type="button" id="next" aria-label="Επόμενο αρχείο">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+    </button>
+    <a class="icon-btn" id="viewer-dl" aria-label="Λήψη αρχείου">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+    </a>
+  </div>
+  <div class="stage" id="stage"></div>
+</section>
+
+<script type="application/json" id="data">{"token":{{.Token}},"files":{{.Files}},"total":{{.Total}}}</script>
+<script nonce="{{.Nonce}}" type="module">
+  const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/';
+  const PDFJS_LIB = PDFJS + 'legacy/build/pdf.min.mjs';
+  const PDFJS_WORKER = PDFJS + 'legacy/build/pdf.worker.min.mjs';
+  const PDFJS_WORKER_SRI = 'sha384-vbNBYP03jHFPlgtK4qSXtazEmGfmpTWlSsfq9OiU20MroW/Q9TbaEXiM7PpeWg+6';
+  const PARALLEL = 3;
+  const DL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>';
+
+  const data = JSON.parse(document.getElementById('data').textContent);
+  const token = data.token;
+  const $ = (id) => document.getElementById(id);
+
+  const dateFmt = new Intl.DateTimeFormat('el-GR', { day: 'numeric', month: 'short', year: 'numeric' });
+  const kindOf = (f) => (f.type === 'image/jpeg' ? 'jpg' : 'pdf');
+  const plural = (n, one, many) => (n === 1 ? one : many);
+  function size(n) {
+    if (n < 1024 * 1024) return Math.max(1, Math.round(n / 1024)) + ' KB';
+    return (n / 1024 / 1024).toFixed(n < 10 * 1024 * 1024 ? 1 : 0).replace('.', ',') + ' MB';
+  }
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  const files = data.files.map((f) => ({ ...f, state: 'queued', blob: null, url: null, wait: null }));
+  const pdfCount = files.filter((f) => kindOf(f) === 'pdf').length;
+  const imgCount = files.length - pdfCount;
+
+  // ── List ────────────────────────────────────────────────────────────────
+  $('summary').textContent = files.length
+    ? [
+        files.length + ' ' + plural(files.length, 'αρχείο', 'αρχεία'),
+        pdfCount && imgCount ? pdfCount + ' PDF, ' + imgCount + ' ' + plural(imgCount, 'εικόνα', 'εικόνες') : null,
+        size(data.total),
+      ].filter(Boolean).join(' · ')
+    : 'Υλικό μαθήματος';
+
+  for (const f of files) {
+    const li = el('li', 'file');
+    li.dataset.kind = kindOf(f);
+    li.dataset.search = [f.name, f.caption, f.by, f.thread].filter(Boolean).join(' ').toLocaleLowerCase('el');
+
+    const open = el('button', 'open');
+    open.type = 'button';
+    const thumb = el('span', 'thumb ' + kindOf(f), kindOf(f) === 'pdf' ? 'PDF' : 'JPG');
+    thumb.setAttribute('aria-hidden', 'true');
+    const spin = el('span', 'spinner');
+    thumb.append(spin);
+    const info = el('span', 'info');
+    info.append(el('span', 'name', f.name));
+    if (f.caption) info.append(el('span', 'caption', f.caption));
+    const bits = [size(f.size), dateFmt.format(new Date(f.posted))];
+    if (f.by) bits.push(f.by);
+    if (f.thread) bits.push('νήμα: ' + f.thread);
+    const meta = el('span', 'meta', bits.join(' · '));
+    info.append(meta);
+    open.append(thumb, info);
+    open.addEventListener('click', () => openViewer(f));
+
+    const dl = el('a', 'icon-btn');
+    dl.setAttribute('aria-label', 'Λήψη: ' + f.name);
+    dl.setAttribute('aria-disabled', 'true');
+    dl.download = f.name;
+    dl.innerHTML = DL_ICON;
+
+    li.append(open, dl);
+    $('files').append(li);
+    f.row = { li, thumb, spin, meta, dl, bits };
+  }
+
+  // ── Filters ─────────────────────────────────────────────────────────────
+  let kind = 'all';
+  function applyFilter() {
+    const q = $('search').value.trim().toLocaleLowerCase('el');
+    let shown = 0;
+    for (const f of files) {
+      const on = (kind === 'all' || f.row.li.dataset.kind === kind) && (!q || f.row.li.dataset.search.includes(q));
+      f.row.li.hidden = !on;
+      if (on) shown++;
+    }
+    $('empty').hidden = shown > 0;
+    if (!shown && files.length) {
+      $('empty-title').textContent = 'Κανένα αποτέλεσμα';
+      $('empty-text').textContent = 'Δοκίμασε άλλη λέξη ή άλλο φίλτρο.';
+    }
+  }
+  $('search').addEventListener('input', applyFilter);
+  for (const chip of document.querySelectorAll('.chip')) {
+    chip.addEventListener('click', () => {
+      kind = chip.dataset.kind;
+      for (const c of document.querySelectorAll('.chip')) c.setAttribute('aria-pressed', String(c === chip));
+      applyFilter();
+    });
+  }
+  $('tools').hidden = !files.length;
+  $('chips').hidden = !pdfCount || !imgCount;
+  applyFilter();
+
+  // ── Downloads ───────────────────────────────────────────────────────────
+  // Everything is fetched now, while the link is valid, and kept as blobs for
+  // as long as the page stays open, so the link may expire mid-read.
+  let expired = false;
+  let done = 0;
+  const queue = [...files];
+
+  function progress() {
+    const box = $('progress');
+    if (!files.length) { box.hidden = true; return; }
+    $('progress-bar').style.width = (100 * done / files.length) + '%';
+    if (done < files.length) {
+      $('progress-text').textContent = 'Λήψη αρχείων: ' + done + ' από ' + files.length + '…';
+      return;
+    }
+    const ready = files.filter((f) => f.state === 'ready').length;
+    box.dataset.done = '';
+    if (ready === files.length) {
+      $('progress-spin').replaceWith(el('span', 'dot'));
+      $('progress-text').textContent = 'Όλα τα αρχεία κατέβηκαν και μένουν διαθέσιμα όσο η σελίδα είναι ανοιχτή.';
+      return;
+    }
+    $('progress-spin').hidden = true;
+    box.dataset.tone = 'error';
+    $('progress-text').textContent = expired
+      ? 'Ο σύνδεσμος έληξε πριν κατέβουν όλα (' + ready + ' από ' + files.length + '). Πάτα ξανά «Προβολή υλικού» στο Discord για τα υπόλοιπα.'
+      : 'Κατέβηκαν ' + ready + ' από ' + files.length + ' αρχεία. Κάποια δεν ήταν διαθέσιμα.';
+  }
+
+  function settle(f, state, message) {
+    f.state = state;
+    done++;
+    f.row.spin.remove();
+    if (state === 'ready') {
+      f.row.dl.href = f.url;
+      f.row.dl.removeAttribute('aria-disabled');
+      if (kindOf(f) === 'jpg') {
+        const img = new Image();
+        img.alt = '';
+        img.decoding = 'async';
+        img.src = f.url;
+        f.row.thumb.append(img);
+      }
+    } else {
+      f.row.meta.textContent = f.row.bits.join(' · ') + ' · ';
+      f.row.meta.append(el('span', 'err', message));
+    }
+    progress();
+  }
+
+  function fetchFile(f) {
+    f.wait ??= (async () => {
+      f.state = 'loading';
+      if (expired) { settle(f, 'failed', 'ο σύνδεσμος έληξε'); return; }
+      try {
+        const res = await fetch('/materials/files/' + f.id, {
+          headers: { Authorization: 'Bearer ' + token },
+          cache: 'no-store',
+          credentials: 'omit',
+        });
+        if (res.status === 401) { expired = true; settle(f, 'failed', 'ο σύνδεσμος έληξε'); return; }
+        if (res.status === 410) { settle(f, 'failed', 'διαγράφηκε'); return; }
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        f.blob = new Blob([await res.blob()], { type: f.type });
+        f.url = URL.createObjectURL(f.blob);
+        settle(f, 'ready');
+      } catch {
+        settle(f, 'failed', 'δεν κατέβηκε');
+      }
+    })();
+    return f.wait;
+  }
+
+  async function pump() {
+    while (queue.length) await fetchFile(queue.shift());
+  }
+  for (let i = 0; i < PARALLEL; i++) pump();
+  progress();
+
+  // ── pdf.js ──────────────────────────────────────────────────────────────
+  // The pinned CDN build, preloaded with its integrity hash. The worker is
+  // fetched with its own hash and started from a blob, since browsers refuse
+  // cross-origin workers.
+  let pdfjs = null;
+  function loadPdfjs() {
+    pdfjs ??= (async () => {
+      const lib = await import(PDFJS_LIB);
+      const res = await fetch(PDFJS_WORKER, { integrity: PDFJS_WORKER_SRI, mode: 'cors', credentials: 'omit' });
+      if (!res.ok) throw new Error('worker HTTP ' + res.status);
+      const src = URL.createObjectURL(new Blob([await res.text()], { type: 'text/javascript' }));
+      lib.GlobalWorkerOptions.workerPort = new Worker(src, { type: 'module' });
+      return lib;
+    })();
+    pdfjs.catch(() => { pdfjs = null; });
+    return pdfjs;
+  }
+  if (pdfCount) (window.requestIdleCallback || setTimeout)(() => loadPdfjs().catch(() => {}));
+
+  // ── Viewer ──────────────────────────────────────────────────────────────
+  const stage = $('stage');
+  let current = null;
+  let generation = 0;
+  let doc = null;
+  let zoom = 1;
+  let observer = null;
+  let lastFocus = null;
+
+  const visibleFiles = () => files.filter((f) => !f.row.li.hidden);
+
+  function loading(text, still) {
+    const box = el('div', 'loading');
+    if (!still) box.append(el('span', 'spinner'));
+    box.append(el('span', null, text));
+    return box;
+  }
+
+  function teardown() {
+    observer?.disconnect();
+    observer = null;
+    doc?.destroy();
+    doc = null;
+  }
+
+  async function openViewer(f, replace) {
+    if (!current) {
+      lastFocus = document.activeElement;
+      $('viewer').hidden = false;
+      $('scrim').hidden = false;
+      document.body.classList.add('locked');
+      // The back button (or gesture) closes the viewer instead of the page.
+      history.pushState({ viewer: true }, '');
+    }
+    current = f;
+    const gen = ++generation;
+    zoom = 1;
+    teardown();
+
+    $('viewer-name').textContent = f.caption || f.name;
+    $('viewer-meta').textContent = (f.caption ? f.name + ' · ' : '') + f.row.bits.join(' · ');
+    const vis = visibleFiles();
+    const at = vis.indexOf(f);
+    $('prev').setAttribute('aria-disabled', String(at <= 0));
+    $('next').setAttribute('aria-disabled', String(at < 0 || at >= vis.length - 1));
+    $('zoom').hidden = kindOf(f) !== 'pdf';
+    const dl = $('viewer-dl');
+    dl.setAttribute('aria-disabled', 'true');
+    dl.removeAttribute('href');
+    dl.download = f.name;
+    if (!replace) $('close').focus();
+
+    stage.replaceChildren(loading('Λήψη αρχείου…'));
+    // Jump the queue: the file the member wants comes first.
+    const qi = queue.indexOf(f);
+    if (qi >= 0) queue.splice(qi, 1);
+    await fetchFile(f);
+    if (gen !== generation) return;
+    if (f.state !== 'ready') {
+      stage.replaceChildren(loading(expired
+        ? 'Ο σύνδεσμος έληξε πριν κατέβει αυτό το αρχείο. Πάτα ξανά «Προβολή υλικού» στο Discord.'
+        : 'Το αρχείο δεν είναι διαθέσιμο.', true));
+      return;
+    }
+    dl.href = f.url;
+    dl.removeAttribute('aria-disabled');
+
+    if (kindOf(f) === 'jpg') {
+      const img = new Image();
+      img.className = 'photo';
+      img.alt = f.caption || f.name;
+      img.src = f.url;
+      img.addEventListener('click', () => img.classList.toggle('full'));
+      stage.replaceChildren(img);
+      return;
+    }
+
+    stage.replaceChildren(loading('Άνοιγμα PDF…'));
+    try {
+      const lib = await loadPdfjs();
+      // A fresh copy each time: pdf.js hands the buffer to its worker.
+      const bytes = new Uint8Array(await f.blob.arrayBuffer());
+      const d = await lib.getDocument({
+        data: bytes,
+        isEvalSupported: false,
+        cMapUrl: PDFJS + 'cmaps/',
+        cMapPacked: true,
+        standardFontDataUrl: PDFJS + 'standard_fonts/',
+      }).promise;
+      if (gen !== generation) { d.destroy(); return; }
+      doc = d;
+      await layoutPages(gen);
+    } catch {
+      if (gen !== generation) return;
+      // Fall back to the browser's own viewer, where it has one.
+      const frame = document.createElement('iframe');
+      frame.title = f.name;
+      frame.src = f.url;
+      $('zoom').hidden = true;
+      stage.replaceChildren(frame);
+    }
+  }
+
+  // Pages get their final size up front, so scrolling stays put, and are
+  // drawn only as they come near the screen.
+  async function layoutPages(gen) {
+    observer?.disconnect();
+    const pages = el('div', 'pages');
+    const width = Math.max(200, Math.min(stage.clientWidth - 24, 960)) * zoom;
+    observer = new IntersectionObserver((entries) => {
+      for (const e of entries) if (e.isIntersecting) draw(e.target, gen);
+    }, { root: stage, rootMargin: '150% 0px' });
+    const first = await doc.getPage(1);
+    if (gen !== generation) return;
+    const ratio = first.getViewport({ scale: 1 }).height / first.getViewport({ scale: 1 }).width;
+    for (let n = 1; n <= doc.numPages; n++) {
+      const box = el('div', 'page');
+      box.style.width = width + 'px';
+      box.style.height = (width * ratio) + 'px';
+      box.dataset.n = n;
+      box.append(el('span', 'num', n + ' / ' + doc.numPages));
+      pages.append(box);
+    }
+    stage.replaceChildren(pages);
+    for (const box of pages.children) observer.observe(box);
+  }
+
+  async function draw(box, gen) {
+    if (box.dataset.drawn) return;
+    box.dataset.drawn = '1';
+    try {
+      const page = await doc.getPage(Number(box.dataset.n));
+      if (gen !== generation) return;
+      const base = page.getViewport({ scale: 1 });
+      // Pages of another size than the first get their own height.
+      box.style.height = (box.clientWidth * base.height / base.width) + 'px';
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const vp = page.getViewport({ scale: (box.clientWidth / base.width) * dpr });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.floor(vp.width);
+      canvas.height = Math.floor(vp.height);
+      canvas.setAttribute('role', 'img');
+      canvas.setAttribute('aria-label', 'Σελίδα ' + box.dataset.n);
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+      if (gen === generation) box.prepend(canvas);
+    } catch {
+      delete box.dataset.drawn;
+    }
+  }
+
+  function setZoom(next) {
+    if (!doc) return;
+    const z = Math.min(3, Math.max(0.5, next));
+    if (z === zoom) return;
+    const keep = stage.scrollTop / Math.max(1, stage.scrollHeight);
+    zoom = z;
+    layoutPages(generation).then(() => { stage.scrollTop = keep * stage.scrollHeight; });
+  }
+
+  function closeViewer(fromHistory) {
+    if (!current) return;
+    generation++;
+    teardown();
+    current = null;
+    $('viewer').hidden = true;
+    $('scrim').hidden = true;
+    document.body.classList.remove('locked');
+    stage.replaceChildren();
+    if (!fromHistory && history.state?.viewer) history.back();
+    lastFocus?.focus?.();
+  }
+
+  function step(delta) {
+    const vis = visibleFiles();
+    const next = vis[vis.indexOf(current) + delta];
+    if (next) openViewer(next, true);
+  }
+
+  $('close').addEventListener('click', () => closeViewer());
+  $('scrim').addEventListener('click', () => closeViewer());
+  $('zoom-in').addEventListener('click', () => setZoom(zoom + 0.25));
+  $('zoom-out').addEventListener('click', () => setZoom(zoom - 0.25));
+  $('prev').addEventListener('click', () => step(-1));
+  $('next').addEventListener('click', () => step(1));
+  window.addEventListener('popstate', () => closeViewer(true));
+  document.addEventListener('keydown', (e) => {
+    if (!current) return;
+    if (e.key === 'Escape') { e.preventDefault(); closeViewer(); }
+    else if (e.key === 'ArrowLeft') step(-1);
+    else if (e.key === 'ArrowRight') step(1);
+    else if ((e.key === '+' || e.key === '=') && (e.ctrlKey || e.metaKey)) { e.preventDefault(); setZoom(zoom + 0.25); }
+    else if (e.key === '-' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); setZoom(zoom - 0.25); }
+  });
+  let resizeTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { if (doc) layoutPages(generation); }, 250);
+  });
+</script>
+{{else}}
+<main class="narrow" aria-live="polite">
+  <div class="brand">
+    <div class="logo-wrap"><img class="logo" src="/verify/logo.png" alt="" width="36" height="36"></div>
+    <span>στέκι</span>
+  </div>
+  <div class="badge muted" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 7v6M12 17h.01"/></svg>
+  </div>
+  {{if eq .State "error"}}
+  <h1>Κάτι πήγε στραβά</h1>
+  <p>Δεν μπορέσαμε να φορτώσουμε το υλικό αυτή τη στιγμή. Ανανέωσε τη σελίδα σε λίγο ή πάτα ξανά «Προβολή υλικού» στο Discord.</p>
+  {{else}}
+  <h1>Ο σύνδεσμος δεν ισχύει πια</h1>
+  <p>Οι σύνδεσμοι για το υλικό ισχύουν για λίγα λεπτά. Γύρνα στο κανάλι του μαθήματος στο Discord και πάτα ξανά <strong>Προβολή υλικού</strong> για καινούριο.</p>
+  <a class="cta" href="https://discord.com/channels/@me">Άνοιγμα του Discord</a>
+  {{end}}
+</main>
+{{end}}
+</body>
+</html>

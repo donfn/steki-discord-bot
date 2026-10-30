@@ -7,9 +7,14 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
+
+// MaterialFilesPrefix is the path of the material page's file downloads,
+// which are exempt from the flood count when they succeed.
+const MaterialFilesPrefix = "/materials/files/"
 
 const (
 	// rateSeconds is the window the request rate is averaged over, so one
@@ -139,6 +144,10 @@ func (r *recorder) WriteHeader(code int) {
 	r.ResponseWriter.WriteHeader(code)
 }
 
+// Unwrap lets http.ResponseController reach the connection, which the
+// material downloads need to extend their write deadline.
+func (r *recorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
+
 func (r *recorder) Write(b []byte) (int, error) {
 	if r.status == 0 {
 		r.status = http.StatusOK
@@ -146,9 +155,14 @@ func (r *recorder) Write(b []byte) (int, error) {
 	return r.ResponseWriter.Write(b)
 }
 
-// Middleware counts every request except the platform's health probe. Wrap
-// it outside the rate limiter, so requests that were turned away still count
-// towards a flood.
+// Middleware counts every request except the platform's health probe and
+// successful material downloads. Wrap it outside the rate limiter, so
+// requests that were turned away still count towards a flood.
+//
+// One material page fetches every file of its channel at once, so a class
+// opening it together easily passes the flood threshold. Those downloads only
+// succeed with a valid, recently issued link, which a flood cannot forge;
+// refused ones are still counted.
 func (d *Detector) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/healthz" {
@@ -160,6 +174,9 @@ func (d *Detector) Middleware(next http.Handler) http.Handler {
 			status := rec.status
 			if status == 0 {
 				status = http.StatusOK
+			}
+			if status == http.StatusOK && strings.HasPrefix(r.URL.Path, MaterialFilesPrefix) {
+				return
 			}
 			if reason := d.observe(status, time.Now()); reason != "" {
 				go d.fire(reason)

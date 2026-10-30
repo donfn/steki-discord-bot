@@ -25,10 +25,48 @@ See `.env.example`.
 | `LOG_LEVEL`     | no       | `debug`/`info`/`warn`/`error` (default `info`)     |
 | `PORT`          | no       | HTTP port for the pages and `/healthz` (default `8080`) |
 | `RAILWAY_TOKEN` | no       | Railway project token; enables automatic Under Attack Mode (see below) |
+| `BUCKET_NAME`, `BUCKET_ENDPOINT`, `BUCKET_REGION`, `BUCKET_ACCESS_KEY_ID`, `BUCKET_SECRET_ACCESS_KEY` | no | S3 bucket for course material (see below). On Railway these reference the `steki-backups` bucket's variables |
 
 Discord channel, category and role IDs are compile-time constants in
 `config/config.go` and `events/constants.go`. The guild ID is learned from the
 gateway at runtime.
+
+## Course material
+
+With the `BUCKET_*` variables set, every PDF and JPEG posted anywhere in the
+server is copied to the `steki-backups` bucket, under a folder per channel name
+(`<channel>/<thread>/<attachment id>-<file name>`). New posts are picked up
+live; a history scan walks every channel and thread back to its first message,
+resumes across restarts, and repeats daily to catch posts missed while the bot
+was offline. Deleting a message hides its files from the material page but
+never removes them from the bucket.
+
+Each channel in the course categories (`courseCategoryIDs` in
+`events/materials.go`) keeps a bot message at its bottom saying how many files
+members have shared, with two buttons:
+
+- **Προβολή υλικού** answers with a personal link, valid for 15 minutes, to
+  `/materials`: every listed file of the channel and its threads, searchable,
+  with PDFs (pdf.js) and images viewed in the page. The page downloads every
+  file as soon as it opens, so it keeps working after the link expires.
+- **Ανέβασμα υλικού** opens a form with a title and a file picker (PDF or JPG,
+  up to 10 files). During an exam period the title starts as
+  `Θέματα εξεταστικής <period> <year>`. The bot posts the files under the title,
+  credits the member, pins the message and counts the files as theirs.
+
+The sticky message is reposted when others post, debounced, and always as a
+silent message (no push or desktop notifications). The bot checks Discord
+kept the flag on every copy. If one comes back without it, the bot deletes
+it, stops the stickies until the next restart and tells the moderators.
+
+A file is listed only after it is backed up and approved by the screener
+(`materials.Screener`). The current `BasicScreener` only checks that the content
+really is a PDF or JPEG; a real screening pipeline plugs in by implementing that
+interface and passing it to `materials.NewWorker` in `events/handler.go`. It may
+return `pending` to decide asynchronously; rejected files stay in the bucket.
+
+The bot needs Read Message History everywhere it should back up, and Manage
+Messages (or Pin Messages) in course channels to pin uploads.
 
 ## Automatic Under Attack Mode
 

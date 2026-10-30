@@ -27,6 +27,10 @@ const (
 	// ReasonLink marks a registration email link rather than a restriction.
 	// The two pages each refuse the other's tokens.
 	ReasonLink = "link"
+
+	// ReasonMaterials marks a link to a course channel's material page. Only
+	// that page accepts it.
+	ReasonMaterials = "materials"
 )
 
 // Claims identify one restriction: the member (Subject), the guild they were
@@ -35,6 +39,8 @@ const (
 type Claims struct {
 	GuildID string `json:"gid"`
 	Reason  string `json:"rsn,omitempty"`
+	// ChannelID is the course channel a material page link is for.
+	ChannelID string `json:"cid,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -56,6 +62,23 @@ func (t *Tokens) Issue(userID, guildID, reason, tokenID string, expires time.Tim
 	claims := Claims{
 		GuildID: guildID,
 		Reason:  reason,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    issuer,
+			Subject:   userID,
+			ID:        tokenID,
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(expires),
+		},
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(t.secret)
+}
+
+// IssueMaterials signs a link to the material page of one course channel.
+func (t *Tokens) IssueMaterials(userID, guildID, channelID, tokenID string, expires time.Time) (string, error) {
+	claims := Claims{
+		GuildID:   guildID,
+		Reason:    ReasonMaterials,
+		ChannelID: channelID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    issuer,
 			Subject:   userID,
