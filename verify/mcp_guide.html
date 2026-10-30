@@ -67,11 +67,6 @@
   }
   .hero { padding-top: 32px; }
   .logo { display: block; width: 56px; height: 56px; margin: 0 0 20px; border-radius: 16px; }
-  .eyebrow {
-    display: inline-block; margin: 0 0 10px; padding: 4px 10px;
-    border-radius: 999px; background: var(--brand); color: var(--ink);
-    font-size: 0.75rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
-  }
   h1 { margin: 0 0 10px; font-size: clamp(1.6rem, 5vw, 2.1rem); line-height: 1.12; font-weight: 800; letter-spacing: -0.025em; }
   h2 { margin: 0 0 14px; font-size: 1.2rem; line-height: 1.25; font-weight: 800; letter-spacing: -0.015em; }
   p { margin: 0 0 14px; color: var(--muted); }
@@ -164,14 +159,11 @@
   .prompts li::before { content: "“"; color: var(--muted); margin-right: 2px; }
   .prompts li::after { content: "”"; color: var(--muted); margin-left: 2px; }
   ul.checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
-  ul.checks li { position: relative; padding-left: 30px; color: var(--muted); }
+  ul.checks li { position: relative; padding-left: 20px; color: var(--muted); }
   ul.checks li::before {
-    content: "✓"; position: absolute; left: 0; top: 2px;
-    display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%;
-    background: var(--brand); color: var(--ink); font-size: 0.72rem; font-weight: 800;
+    content: ""; position: absolute; left: 2px; top: 0.6em;
+    width: 8px; height: 8px; border-radius: 50%; background: var(--brand);
   }
-  .foot { text-align: center; font-size: 0.82rem; color: var(--ink); opacity: 0.7; }
-  @media (prefers-color-scheme: dark) { .foot { color: var(--text); opacity: 0.5; } }
   .gone { text-align: center; }
   .gone h1 { color: var(--warn); }
   @media (max-width: 440px) {
@@ -188,9 +180,8 @@
 {{if eq .State "ready"}}
   <header class="card hero">
     <img class="logo" src="/verify/logo.png" alt="" width="56" height="56">
-    <span class="eyebrow">Νέο · MCP</span>
-    <h1>Το υλικό του Steki, μέσα στο AI σου</h1>
-    <p>Συνδέεις το Claude ή το ChatGPT με το υλικό των μαθημάτων και τους ζητάς να βρουν, να διαβάσουν και να συνοψίσουν σημειώσεις και θέματα. Μόνο ανάγνωση, με τον λογαριασμό σου στο Discord.</p>
+    <h1>Το υλικό του Steki στο Claude και στο ChatGPT</h1>
+    <p>Μπορείς να συνδέσεις το Claude ή το ChatGPT με το υλικό των μαθημάτων και να τους ζητάς να ψάξουν ή να διαβάσουν ένα αρχείο. Η σύνδεση γίνεται με τον λογαριασμό σου στο Discord και είναι μόνο για ανάγνωση.</p>
     <div class="url">
       <code id="mcp-url">{{.URL}}</code>
       <button class="copy" type="button" data-copy="{{.URL}}">Αντιγραφή</button>
@@ -216,7 +207,7 @@
         <li>Πάτα <strong>Connect</strong>. Ανοίγει το Discord: συνδέσου και πάτα <strong>Επιτρέπω</strong>.</li>
         <li>Σε μια νέα συνομιλία ενεργοποίησε το connector <strong>Steki</strong> από το μενού των εργαλείων και ρώτα ό,τι θέλεις.</li>
       </ol>
-      <p class="note">Αν το Claude σου ανήκει σε οργανισμό, ίσως χρειαστεί να προσθέσει το connector ο διαχειριστής του. Αφού συνδεθείς στον υπολογιστή, το connector φαίνεται και στο κινητό.</p>
+      <p class="note">Αν το Claude σου ανήκει σε οργανισμό, μπορεί να χρειαστεί να το προσθέσει ο διαχειριστής.</p>
     </div>
 
     <div class="panel p-chatgpt">
@@ -228,12 +219,12 @@
         <li>Πάτα <strong>Connect</strong>, συνδέσου στο Discord και πάτα <strong>Επιτρέπω</strong>.</li>
         <li>Σε νέα συνομιλία διάλεξε το <strong>Steki</strong> από το <strong>+ → More</strong> (με το Developer mode ενεργό) και ρώτα.</li>
       </ol>
-      <p class="note">Το Developer mode υπάρχει σε επιλεγμένα πλάνα του ChatGPT και τα ονόματα στα μενού αλλάζουν συχνά. Αν δεν βρίσκεις μια επιλογή, ψάξε για «custom connector» ή «MCP» στις ρυθμίσεις.</p>
+      <p class="note">Το Developer mode δεν υπάρχει σε όλα τα πλάνα και τα ονόματα στα μενού αλλάζουν. Αν δεν βρίσκεις μια επιλογή, ψάξε «connector» ή «MCP» στις ρυθμίσεις.</p>
     </div>
 
     <div class="panel p-dev">
-      <p>Ο server μιλάει Streamable HTTP MCP με OAuth 2.1 (PKCE και dynamic client registration), άρα δουλεύει με κάθε σύγχρονο MCP client.</p>
-      <p><strong>Claude Code</strong></p>
+      <p>Ο server χρησιμοποιεί Streamable HTTP MCP με OAuth 2.1 (PKCE και dynamic client registration).</p>
+      <p>Claude Code:</p>
       <pre><span class="mono">claude mcp add --transport http steki {{.URL}}</span></pre>
       <ol class="steps">
         <li>Μέσα στο Claude Code γράψε <code>/mcp</code>, διάλεξε <strong>steki</strong> και <strong>Authenticate</strong>.</li>
@@ -244,41 +235,39 @@
   </section>
 
   <section class="card">
-    <h2>Τι μπορεί να κάνει</h2>
+    <h2>Εργαλεία</h2>
     <div class="grid">
-      <div class="tile"><h3 class="mono">list_course_channels</h3><p>Βρίσκει τα κανάλια των μαθημάτων, με πόσα αρχεία έχει το καθένα.</p></div>
-      <div class="tile"><h3 class="mono">get_material_index</h3><p>Δείχνει όλο το υλικό ενός καναλιού: ονόματα, περιγραφές, ημερομηνίες, ποιος το ανέβασε.</p></div>
-      <div class="tile"><h3 class="mono">download_material</h3><p>Κατεβάζει ένα PDF ή μια φωτογραφία, ώστε το AI να τη διαβάσει.</p></div>
+      <div class="tile"><h3 class="mono">list_course_channels</h3><p>Τα κανάλια των μαθημάτων και πόσα αρχεία έχει το καθένα.</p></div>
+      <div class="tile"><h3 class="mono">get_material_index</h3><p>Τα αρχεία ενός καναλιού, με όνομα, περιγραφή, ημερομηνία και αυτόν που τα ανέβασε.</p></div>
+      <div class="tile"><h3 class="mono">download_material</h3><p>Ένα PDF ή μια φωτογραφία, για να τη διαβάσει το AI.</p></div>
     </div>
   </section>
 
   <section class="card">
-    <h2>Δοκίμασε να ρωτήσεις</h2>
+    <h2>Παραδείγματα</h2>
     <ul class="prompts">
-      <li>Τι μαθήματα έχουν υλικό στο Steki;</li>
-      <li>Βρες τα θέματα εξετάσεων που έχουν ανέβει για το μάθημα Αλγόριθμοι.</li>
-      <li>Διάβασε τις πιο πρόσφατες σημειώσεις του καναλιού και φτιάξε μου περίληψη.</li>
+      <li>Για ποια μαθήματα υπάρχει υλικό;</li>
+      <li>Βρες τα θέματα εξετάσεων που έχουν ανέβει για τους Αλγορίθμους.</li>
+      <li>Διάβασε τις πιο πρόσφατες σημειώσεις του καναλιού και κάνε μια περίληψη.</li>
       <li>Λύσε το Θέμα 2 από το πιο πρόσφατο αρχείο θεμάτων.</li>
     </ul>
   </section>
 
   <section class="card">
-    <h2>Ασφάλεια και ιδιωτικότητα</h2>
+    <h2>Ασφάλεια</h2>
     <ul class="checks">
-      <li><strong>Μόνο ανάγνωση.</strong> Δεν μπορεί να γράψει, να διαγράψει ή να στείλει μηνύματα.</li>
-      <li><strong>Βλέπει ό,τι βλέπεις.</strong> Μόνο τα κανάλια που έχεις πρόσβαση στο Discord, και μόνο όσο είσαι ολοκληρωμένο μέλος του server.</li>
-      <li><strong>Λήγει σε 30 ημέρες.</strong> Μετά συνδέεσαι ξανά με ένα κλικ.</li>
-      <li><strong>Το Discord δίνει μόνο το όνομά σου.</strong> Το bot δεν κρατά κωδικούς ούτε tokens του Discord.</li>
-      <li><strong>Ανάκληση.</strong> Αφαίρεσε το connector από τις ρυθμίσεις του Claude ή του ChatGPT, ή βγες από τον server.</li>
+      <li>Μόνο ανάγνωση: δεν μπορεί να γράψει, να διαγράψει ή να στείλει μηνύματα.</li>
+      <li>Βλέπει μόνο τα κανάλια που βλέπεις κι εσύ. Αν χάσεις τον ρόλο σου ή βγεις από τον server, σταματά να δουλεύει.</li>
+      <li>Η σύνδεση λήγει σε 30 ημέρες και τότε συνδέεσαι ξανά.</li>
+      <li>Από το Discord παίρνει μόνο το όνομά σου. Το bot δεν κρατά κωδικούς ή tokens του Discord.</li>
+      <li>Για να την ακυρώσεις, αφαίρεσε το connector από το Claude ή το ChatGPT.</li>
     </ul>
   </section>
-
-  <p class="foot">Αυτή η σελίδα ανανεώνεται μέσω του κουμπιού στο μήνυμα του Steki.</p>
 {{else}}
   <main class="card gone">
     <img class="logo" src="/verify/logo.png" alt="" width="56" height="56" style="margin-inline:auto">
     <h1>Το link έληξε</h1>
-    <p>Τα links αυτής της σελίδας ανανεώνονται κάθε λίγο. Πάτα ξανά το κουμπί στο μήνυμα του Steki για να ανοίξεις την τρέχουσα.</p>
+    <p>Πάτα ξανά το κουμπί στο μήνυμα του Steki για να ανοίξει νέο.</p>
   </main>
 {{end}}
 </div>
