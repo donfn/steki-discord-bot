@@ -68,7 +68,9 @@ type Server struct {
 	// mcpURL is the MCP endpoint the setup page tells members to add; empty
 	// leaves the page unmounted.
 	mcpURL string
-	log    *slog.Logger
+	// activity is the Discord Activity's set-up; nil leaves it unmounted.
+	activity *activity
+	log      *slog.Logger
 }
 
 // NewServer returns a Server. materials may be nil, which leaves the
@@ -90,6 +92,9 @@ func (v *Server) Register(mux *http.ServeMux) {
 		mux.HandleFunc("GET "+pagePath, v.sessionPage)
 		mux.HandleFunc("GET "+filesPath+"{id}", v.materialFile)
 		mux.HandleFunc("POST "+reportPath, v.reportFile)
+	}
+	if v.materials != nil && v.activity != nil {
+		v.registerActivity(mux)
 	}
 	if v.mcpURL != "" {
 		mux.HandleFunc("GET "+MCPGuidePath, v.mcpGuidePage)
@@ -153,11 +158,12 @@ func (v *Server) render(w http.ResponseWriter, tmpl *template.Template, data map
 	}
 }
 
-// guardClaims parses a media guard token; registration and material links
-// are refused.
+// guardClaims parses a media guard token; registration, material, setup
+// page and Activity tokens are refused.
 func (v *Server) guardClaims(raw string) (*Claims, bool) {
 	c, err := v.tokens.Parse(raw)
-	if err != nil || c.Reason == ReasonLink || c.Reason == ReasonMaterials || c.Reason == ReasonMCPGuide {
+	if err != nil || c.Reason == ReasonLink || c.Reason == ReasonMaterials || c.Reason == ReasonMCPGuide ||
+		c.Reason == ReasonActivity {
 		return nil, false
 	}
 	return c, true

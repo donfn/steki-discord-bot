@@ -16,6 +16,14 @@ import (
 // which are exempt from the flood count when they succeed.
 const MaterialFilesPrefix = "/s/f/"
 
+// ActivityFilesPrefix and ActivityStaticPrefix are the Discord Activity's
+// file downloads and its vendored scripts and fonts, also exempt when they
+// succeed.
+const (
+	ActivityFilesPrefix  = "/activity/f/"
+	ActivityStaticPrefix = "/activity/static/"
+)
+
 // MCPPath is the MCP endpoint, whose successful calls are exempt too.
 const MCPPath = "/mcp"
 
@@ -179,6 +187,14 @@ func (d *Detector) Middleware(next http.Handler) http.Handler {
 				status = http.StatusOK
 			}
 			if status == http.StatusOK && strings.HasPrefix(r.URL.Path, MaterialFilesPrefix) {
+				return
+			}
+			// The Activity's downloads need a valid token like the page's. Its
+			// static files are what one launch loads (a dozen of them on a cold
+			// cache), and every member reaches them through Discord's proxy;
+			// the rate limiter still bounds them per address.
+			if status == http.StatusOK && (strings.HasPrefix(r.URL.Path, ActivityFilesPrefix) ||
+				strings.HasPrefix(r.URL.Path, ActivityStaticPrefix)) {
 				return
 			}
 			// An assistant works through several calls a second; they only

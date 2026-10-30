@@ -35,6 +35,11 @@ const (
 	// ReasonMCPGuide marks a link to the MCP setup page. Only that page
 	// accepts it.
 	ReasonMCPGuide = "mcpguide"
+
+	// ReasonActivity marks the token the Discord Activity hands its page once
+	// Discord has said who the member is. Only the Activity's routes accept
+	// it, and only as a Bearer header.
+	ReasonActivity = "activity"
 )
 
 // Claims identify one restriction: the member (Subject), the guild they were
@@ -108,6 +113,11 @@ func (t *Tokens) IssueGuide(userID, guildID, tokenID string, expires time.Time) 
 		},
 	}
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(t.secret)
+}
+
+// IssueActivity signs the Activity token of one member.
+func (t *Tokens) IssueActivity(userID, guildID, tokenID string, expires time.Time) (string, error) {
+	return t.Issue(userID, guildID, ReasonActivity, tokenID, expires)
 }
 
 // Parse verifies a link's signature and expiry and returns its claims.
