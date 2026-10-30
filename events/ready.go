@@ -47,9 +47,10 @@ func (h *Handler) onGuildCreate(s *discordgo.Session, g *discordgo.GuildCreate) 
 }
 
 // startMaterials starts the material worker once the bucket has been
-// confirmed reachable. Nothing here reads channel history or touches the
-// stickies: that happens when a member posts in a course channel or an admin
-// runs /materials scan. Only work the database already holds is picked up.
+// confirmed reachable. Nothing here reads channel history: that happens when
+// a member posts in a course channel or an admin runs /materials scan. Only
+// work the database already holds is picked up, and the stickies already
+// posted get the current card.
 func (h *Handler) startMaterials(s *discordgo.Session) {
 	if h.mat == nil {
 		return
@@ -72,6 +73,11 @@ func (h *Handler) startMaterials(s *discordgo.Session) {
 	// Cards for flagged images left over from before the restart.
 	go h.safely("review_cards", func() { h.announceReviews(s) })
 	go h.safely("report_cards", func() { h.announceReports(s) })
+	h.wg.Add(1)
+	go func() {
+		defer h.wg.Done()
+		h.safely("sticky_update", func() { h.updateStickies(s) })
+	}()
 }
 
 // isHomeGuild reports whether g is the Steki guild.
