@@ -16,3 +16,6 @@ steki-bot
 # Build artifacts
 /migrate
 /cmd/migrate/migrate
+
+# macOS
+.DS_Store

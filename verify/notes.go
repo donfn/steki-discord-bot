@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 )
 
 // What a member keeps for themselves on the material page (studied marks,
@@ -21,12 +22,17 @@ const (
 	maxInkBytes   = 1 << 20
 )
 
+// ErrNoteQuota is returned by a Notebook when a save would take the member past
+// the most notes one member may keep.
+var ErrNoteQuota = errors.New("verify: note storage full")
+
 // Notebook is implemented by a MaterialSource that keeps members' notes.
 type Notebook interface {
 	// Notes returns what the member saved, by file ID and kind.
 	Notes(ctx context.Context, userID string) (map[string]map[string]json.RawMessage, error)
 	// SaveNote replaces what the member saved of one kind for one file. Nil
-	// data deletes it.
+	// data deletes it. It returns ErrNoteQuota when the member's notes would
+	// outgrow their allowance.
 	SaveNote(ctx context.Context, userID, fileID, kind string, data json.RawMessage) error
 }
 

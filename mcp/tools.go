@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // The tools. All three only read, and say so in their annotations so a client
@@ -191,7 +192,7 @@ type courseJSON struct {
 }
 
 func newCourseJSON(c Course) courseJSON {
-	j := courseJSON{ID: c.ID, Name: c.Name, Category: c.Category, Files: c.Files, TotalBytes: c.Bytes}
+	j := courseJSON{ID: c.ID, Name: sane(c.Name, maxNameLen), Category: sane(c.Category, maxNameLen), Files: c.Files, TotalBytes: c.Bytes}
 	if !c.Latest.IsZero() {
 		t := c.Latest.UTC()
 		j.LatestPosted = &t
@@ -223,10 +224,10 @@ func runCourses(e *callEnv) (*toolResult, error) {
 			continue
 		}
 		if c.Category != lastCat {
-			fmt.Fprintf(&b, "\n## %s\n", c.Category)
+			fmt.Fprintf(&b, "\n## %s\n", sane(c.Category, maxNameLen))
 			lastCat = c.Category
 		}
-		fmt.Fprintf(&b, "- #%s (id %s): %d files, %s", c.Name, c.ID, c.Files, humanSize(c.Bytes))
+		fmt.Fprintf(&b, "- #%s (id %s): %d files, %s", sane(c.Name, maxNameLen), c.ID, c.Files, humanSize(c.Bytes))
 		if !c.Latest.IsZero() {
 			fmt.Fprintf(&b, ", newest %s", c.Latest.UTC().Format("2006-01-02"))
 		}
@@ -297,30 +298,32 @@ func runIndex(e *callEnv) (*toolResult, error) {
 			continue
 		}
 		total += f.Size
+		f.Name, f.Caption = sane(f.Name, maxNameLen), sane(f.Caption, maxCaptionLen)
+		f.Uploader, f.Thread = sane(f.Uploader, maxNameLen), sane(f.Thread, maxNameLen)
 		out = append(out, fileJSON{
 			ID: f.ID, Name: f.Name, Type: f.Type, SizeBytes: f.Size, Caption: f.Caption,
 			Posted: f.Posted.UTC(), Uploader: f.Uploader, Thread: f.Thread, URI: materialURI(course.ID, f.ID),
 		})
-		fmt.Fprintf(&b, "- %s | id %s | %s | %s | %s", f.Name, f.ID, shortType(f.Type), humanSize(f.Size), f.Posted.UTC().Format("2006-01-02"))
+		fmt.Fprintf(&b, "- %q | id %s | %s | %s | %s", f.Name, f.ID, shortType(f.Type), humanSize(f.Size), f.Posted.UTC().Format("2006-01-02"))
 		if f.Uploader != "" {
-			fmt.Fprintf(&b, " | by %s", f.Uploader)
+			fmt.Fprintf(&b, " | by %q", f.Uploader)
 		}
 		if f.Thread != "" {
 			fmt.Fprintf(&b, " | thread %q", f.Thread)
 		}
 		if f.Caption != "" {
-			fmt.Fprintf(&b, " | caption %q", oneLine(f.Caption))
+			fmt.Fprintf(&b, " | caption %q", f.Caption)
 		}
 		b.WriteByte('\n')
 	}
-	head := fmt.Sprintf("#%s (id %s, category %s): %d files, %s.", course.Name, course.ID, course.Category, len(out), humanSize(total))
+	head := fmt.Sprintf("#%s (id %s, category %s): %d files, %s.", sane(course.Name, maxNameLen), course.ID, sane(course.Category, maxNameLen), len(out), humanSize(total))
 	if len(out) == 0 {
 		head += " Nothing matches."
 	}
 	return &toolResult{
 		text: head + "\n" + b.String(),
 		data: map[string]any{
-			"channel":     map[string]any{"id": course.ID, "name": course.Name, "category": course.Category},
+			"channel":     map[string]any{"id": course.ID, "name": sane(course.Name, maxNameLen), "category": sane(course.Category, maxNameLen)},
 			"count":       len(out),
 			"total_bytes": total,
 			"files":       out,
@@ -361,12 +364,13 @@ func runDownload(e *callEnv) (*toolResult, error) {
 		return nil, userError(tooLarge(d.Size))
 	}
 	d.ChannelID = course.ID
-	text := fmt.Sprintf("%s (%s, %s), posted %s in #%s", d.Name, shortType(d.Type), humanSize(d.Size), d.Posted.UTC().Format("2006-01-02"), course.Name)
+	text := fmt.Sprintf("%q (%s, %s), posted %s in #%s", sane(d.Name, maxNameLen), shortType(d.Type), humanSize(d.Size),
+		d.Posted.UTC().Format("2006-01-02"), sane(course.Name, maxNameLen))
 	if d.Uploader != "" {
-		text += " by " + d.Uploader
+		text += fmt.Sprintf(" by %q", sane(d.Uploader, maxNameLen))
 	}
 	if d.Caption != "" {
-		text += fmt.Sprintf(". Caption: %q", oneLine(d.Caption))
+		text += fmt.Sprintf(". Caption: %q", sane(d.Caption, maxCaptionLen))
 	}
 	return &toolResult{text: text + ".", file: d}, nil
 }
@@ -481,6 +485,36 @@ func fold(s string) string {
 
 func oneLine(s string) string {
 	return strings.Join(strings.Fields(s), " ")
+}
+
+// Field limits for text that members wrote and the assistant reads.
+const (
+	maxNameLen    = 200
+	maxCaptionLen = 300
+)
+
+// sane makes text written by a member safe to hand to an assistant as a value:
+// one line, without control or invisible formatting characters (which can hide
+// or reorder text), and not overlong. Everything the tools return from
+// Discord, such as file names, captions, nicknames and channel names, goes
+// through it, so a member cannot dress up an instruction as the tool's own
+// output with line breaks or markup characters the model might take for
+// structure.
+func sane(s string, max int) string {
+	s = strings.Map(func(r rune) rune {
+		switch {
+		case unicode.IsSpace(r):
+			return ' '
+		case unicode.IsControl(r), unicode.Is(unicode.Cf, r), unicode.Is(unicode.Zl, r), unicode.Is(unicode.Zp, r):
+			return -1
+		}
+		return r
+	}, s)
+	s = oneLine(s)
+	if r := []rune(s); len(r) > max {
+		s = string(r[:max]) + "…"
+	}
+	return s
 }
 
 func isForbidden(err error) bool { return errors.Is(err, ErrForbidden) }

@@ -18,7 +18,7 @@ See `.env.example`.
 | `DATABASE_PATH` | no       | SQLite file. Defaults to `steki.db` inside the Railway volume (`RAILWAY_VOLUME_MOUNT_PATH`), or the working directory off Railway. On Railway the bot refuses to start without a volume, since the database would be erased on every deploy |
 | `DATABASE_URL`  | no       | Old Postgres DSN, read only to copy its data across once (see [Moving off Postgres](#moving-off-postgres)) |
 | `RESEND_API_KEY`| yes      | Resend API key                                     |
-| `JWT_SECRET`    | yes      | Signs email and captcha links (`openssl rand -hex 32`) |
+| `JWT_SECRET`    | yes      | Signs every link, session and MCP token (at least 32 characters: `openssl rand -hex 32`) |
 | `PUBLIC_URL`    | on Railway, no | Base URL of the pages; defaults to `RAILWAY_PUBLIC_DOMAIN` |
 | `EMAIL_FROM`    | no       | Verified sender (default `Steki <steki@poiw.org>`) |
 | `URL_BLACKLIST` | no       | Comma-separated link substrings to block           |

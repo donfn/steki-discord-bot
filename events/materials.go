@@ -574,7 +574,11 @@ func (src *materialSource) Notes(ctx context.Context, userID string) (map[string
 
 // SaveNote implements verify.Notebook.
 func (src *materialSource) SaveNote(ctx context.Context, userID, fileID, kind string, data json.RawMessage) error {
-	return src.h.st.SetStudyNote(ctx, userID, fileID, kind, string(data))
+	err := src.h.st.SetStudyNote(ctx, userID, fileID, kind, string(data))
+	if errors.Is(err, store.ErrStudyQuota) {
+		return verify.ErrNoteQuota
+	}
+	return err
 }
 
 // CanRead implements verify.AccessChecker with the MCP server's rule: a

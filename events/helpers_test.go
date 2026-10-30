@@ -112,3 +112,23 @@ func TestEveryDefinedSubcommandHasARoute(t *testing.T) {
 		}
 	}
 }
+
+func TestMayUpload(t *testing.T) {
+	member := func(roles ...string) *discordgo.Member { return &discordgo.Member{Roles: roles} }
+	for name, tc := range map[string]struct {
+		m    *discordgo.Member
+		want bool
+	}{
+		"verified member":  {member(hmuRoleID), true},
+		"verified outside": {member(outsiderRoleID), true},
+		"moderator":        {member(modRoleID), true},
+		"staff":            {member(staffRoleID), true},
+		"no roles":         {member(), false},
+		"other role only":  {member("1234"), false},
+		"no member":        {nil, false},
+	} {
+		if got := mayUpload(tc.m); got != tc.want {
+			t.Errorf("%s: mayUpload = %v, want %v", name, got, tc.want)
+		}
+	}
+}
