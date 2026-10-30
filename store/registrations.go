@@ -255,6 +255,59 @@ func (s *Store) ClearVerification(ctx context.Context, userID string, release bo
 	return released, tx.Commit()
 }
 
+// ForgetResult counts what ForgetMember removed or released.
+type ForgetResult struct {
+	Members        int64
+	Registrations  int64
+	Events         int64
+	EmailsUnlinked int64
+}
+
+// Found reports whether the database held anything about the member.
+func (r ForgetResult) Found() bool {
+	return r.Members+r.Registrations+r.Events+r.EmailsUnlinked > 0
+}
+
+// ForgetMember erases everything the database holds about a member: the member
+// row, their registrations, their audit trail, and their media-guard and
+// help-channel state. The addresses bound to them stay recorded, because an
+// address is spent for good, but lose their owner.
+func (s *Store) ForgetMember(ctx context.Context, userID string) (ForgetResult, error) {
+	var out ForgetResult
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return out, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	steps := []struct {
+		query string
+		count *int64
+	}{
+		{`update verified_emails set user_id = null where user_id = ?1`, &out.EmailsUnlinked},
+		{`update legacy_email_hashes set user_id = null where user_id = ?1`, &out.EmailsUnlinked},
+		{`delete from registration_events where user_id = ?1`, &out.Events},
+		{`delete from help_access where user_id = ?1`, nil},
+		{`delete from media_guard where user_id = ?1`, nil},
+		{`delete from registrations where user_id = ?1`, &out.Registrations},
+		{`delete from members where user_id = ?1`, &out.Members},
+	}
+	for _, step := range steps {
+		res, err := tx.ExecContext(ctx, step.query, userID)
+		if err != nil {
+			return ForgetResult{}, err
+		}
+		if step.count != nil {
+			n, err := res.RowsAffected()
+			if err != nil {
+				return ForgetResult{}, err
+			}
+			*step.count += n
+		}
+	}
+	return out, tx.Commit()
+}
+
 // MarkNudged stamps the 1h in-channel nudge so it is sent only once.
 func (s *Store) MarkNudged(ctx context.Context, regID string) error {
 	_, err := s.db.ExecContext(ctx,

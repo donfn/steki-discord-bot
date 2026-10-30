@@ -80,7 +80,7 @@ Earlier versions kept their data in Railway Postgres. To move it:
 1. Attach a volume to the bot service (any mount path, e.g. `/data`).
 2. Keep `DATABASE_URL` pointing at the Postgres service (it already does, via
    `${{Postgres.DATABASE_URL}}`) and deploy this version.
-3. On that first boot, with an empty SQLite file, the bot copies all nine tables
+3. On that first boot, with an empty SQLite file, the bot copies all seven tables
    in one consistent snapshot, checks the row counts, and records the import in
    `schema_migrations` so it never runs again. If the copy fails the bot does not
    start, because an empty database would let members reuse taken addresses.
@@ -119,25 +119,19 @@ Slash commands, restricted to the staff/mod roles, replies are ephemeral:
 - `/reg reregister <user> [release_email]` — takes the verified roles away and
   opens a fresh registration; the member keeps their address unless
   `release_email` frees it
+- `/reg forget <user>` — erases a member who has left the server: their member
+  row, registrations, history, guard and help state. Their addresses stay
+  recorded and spent, but lose their owner
 - `/guard status|restrict|ungrace <user>`
-- `/email whois <email>` · `/email add <email> [user]` · `/email remove <email>`
+- `/email` — create, read, update and delete for the address tables. Wherever
+  it asks for an email it also takes a 64-character SHA-256 hash, for the
+  addresses imported from the old bot that were never recovered in plaintext:
+  - `/email add <email|hash> [user]` · `/email whois <email|hash>` ·
+    `/email list <user>`
+  - `/email update <email|hash> [user | unlink] [new_email]` — move an address
+    to another account, drop its owner, or correct a mistyped address
+  - `/email remove <email|hash>` — frees the address in both forms
 - `/bot stats`
 
 Every join, email attempt, link sent, retry, failure and role grant is recorded
 in `registration_events`, which is what `/reg history` reads.
-
-## Email history reconciliation
-
-The old bot stored only unsalted SHA-256 hashes of addresses, with no owner. Its
-moderator log channel is the one record of who submitted which, so on every boot
-the bot reads that channel in the background, page by page from newest to
-oldest, saving each page's evidence and its position (`log_scan_state`,
-`legacy_log_evidence`). A restart resumes where the last one stopped; once the
-channel's start is reached, later boots only read what was posted since.
-
-After each scan it binds every hash it can: the owner is the one member who
-submitted the address, after setting aside the submissions an "already used"
-notice refused right after; with two or more such members the hash stays
-unowned rather than risk the wrong account. A plaintext address is taken only
-from a notice that printed it and only if it hashes back to the same value.
-Nothing reverses a hash, and an owner already recorded is never replaced.

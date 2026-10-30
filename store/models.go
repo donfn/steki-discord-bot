@@ -101,6 +101,15 @@ type VerifiedEmail struct {
 	VerifiedAt time.Time
 }
 
+// LegacyHashRecord is an imported hash of an address whose plaintext is not
+// known. It still blocks the address from being registered again.
+type LegacyHashRecord struct {
+	Hash       string
+	UserID     *string
+	Source     string
+	ImportedAt time.Time
+}
+
 // Event is one entry in the audit trail.
 type Event struct {
 	ID        int64

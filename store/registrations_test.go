@@ -348,3 +348,66 @@ func TestMigrationsAreIdempotent(t *testing.T) {
 		s.Close()
 	}
 }
+
+func TestForgetMemberErasesTheMemberButKeepsTheirAddress(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	verifiedMember(t, s, "u1", "th1@edu.hmu.gr")
+	verifiedMember(t, s, "u2", "th2@edu.hmu.gr")
+	if err := s.AddLegacyHash(ctx, LegacyHash("old@edu.hmu.gr"), strPtr("u1"), SourceModerator); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.LogEvent(ctx, "u1", "", EventJoined, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.LogEvent(ctx, "u2", "", EventJoined, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordHelpAccess(ctx, "u1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.ExecContext(ctx, `insert into media_guard (user_id, guild_id) values ('u1', 'g1')`); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := s.ForgetMember(ctx, "u1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Members != 1 || res.Registrations != 1 || res.Events != 1 || res.EmailsUnlinked != 2 || !res.Found() {
+		t.Fatalf("result = %+v", res)
+	}
+
+	if _, err := s.GetMember(ctx, "u1"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("member survived: %v", err)
+	}
+	if hist, _ := s.History(ctx, "u1", 10); len(hist) != 0 {
+		t.Errorf("audit trail survived: %+v", hist)
+	}
+	if ok, _ := s.HasHelpAccess(ctx, "u1"); ok {
+		t.Error("help access survived")
+	}
+	if g, err := s.GuardStatus(ctx, "u1"); err == nil && (g.RestrictedAt != nil || g.LinkPending) {
+		t.Errorf("guard state survived: %+v", g)
+	}
+	use, err := s.CheckEmail(ctx, "th1@edu.hmu.gr")
+	if err != nil || !use.InUse || use.UserID != nil {
+		t.Errorf("the address must stay spent but ownerless: %+v, %v", use, err)
+	}
+	if use, _ := s.CheckEmail(ctx, "old@edu.hmu.gr"); !use.InUse {
+		t.Error("the legacy hash stopped blocking its address")
+	}
+
+	if _, err := s.GetMember(ctx, "u2"); err != nil {
+		t.Errorf("another member was touched: %v", err)
+	}
+	if hist, _ := s.History(ctx, "u2", 10); len(hist) != 1 {
+		t.Errorf("another member's trail changed: %+v", hist)
+	}
+
+	if again, err := s.ForgetMember(ctx, "u1"); err != nil || again.Found() {
+		t.Errorf("forgetting twice = %+v, %v", again, err)
+	}
+}
+
+func strPtr(s string) *string { return &s }

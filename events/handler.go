@@ -63,9 +63,7 @@ type Handler struct {
 	base      context.Context
 	cancel    context.CancelFunc
 	startOnce sync.Once
-	// legacyOnce runs the log reconciliation once per process.
-	legacyOnce sync.Once
-	wg         sync.WaitGroup
+	wg        sync.WaitGroup
 }
 
 // NewHandler wires the handler's dependencies.

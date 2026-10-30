@@ -31,6 +31,18 @@ func EmailDomain(email string) string {
 	return ""
 }
 
+// IsLegacyHash reports whether s is a SHA-256 hex digest rather than an
+// address, so commands can accept either where a moderator may only have the
+// hash.
+func IsLegacyHash(s string) bool {
+	s = strings.TrimSpace(s)
+	if len(s) != sha256.Size*2 {
+		return false
+	}
+	_, err := hex.DecodeString(s)
+	return err == nil
+}
+
 // EmailUse describes how an address is already spoken for.
 type EmailUse struct {
 	InUse  bool
@@ -185,6 +197,137 @@ func (s *Store) AddLegacyHash(ctx context.Context, hash string, userID *string, 
 			user_id = coalesce(legacy_email_hashes.user_id, excluded.user_id)`,
 		strings.ToLower(strings.TrimSpace(hash)), userID, source, ms(time.Now()))
 	return err
+}
+
+// GetLegacyHash returns the stored record for a hash.
+func (s *Store) GetLegacyHash(ctx context.Context, hash string) (*LegacyHashRecord, error) {
+	var r LegacyHashRecord
+	err := s.db.QueryRowContext(ctx, `
+		select sha256, user_id, source, imported_at
+		from legacy_email_hashes where sha256 = ?1`,
+		strings.ToLower(strings.TrimSpace(hash))).
+		Scan(&r.Hash, &r.UserID, &r.Source, timeDest{&r.ImportedAt})
+	if err != nil {
+		return nil, noRows(err)
+	}
+	return &r, nil
+}
+
+// LegacyHashesForUser lists every imported hash bound to a Discord account.
+func (s *Store) LegacyHashesForUser(ctx context.Context, userID string) ([]*LegacyHashRecord, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		select sha256, user_id, source, imported_at
+		from legacy_email_hashes where user_id = ?1 order by imported_at asc`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []*LegacyHashRecord
+	for rows.Next() {
+		var r LegacyHashRecord
+		if err := rows.Scan(&r.Hash, &r.UserID, &r.Source, timeDest{&r.ImportedAt}); err != nil {
+			return nil, err
+		}
+		out = append(out, &r)
+	}
+	return out, rows.Err()
+}
+
+// SetLegacyHashOwner binds a hash to an account, or to nobody when owner is
+// nil. It reports whether the hash exists.
+func (s *Store) SetLegacyHashOwner(ctx context.Context, hash string, owner *string) (bool, error) {
+	res, err := s.db.ExecContext(ctx,
+		`update legacy_email_hashes set user_id = ?2 where sha256 = ?1`,
+		strings.ToLower(strings.TrimSpace(hash)), owner)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
+// EmailEdit says what UpdateVerifiedEmail changes about a recorded address.
+type EmailEdit struct {
+	NewEmail string  // corrects the address itself; empty keeps it
+	Owner    *string // binds the address to this account; nil leaves the owner alone
+	Unlink   bool    // drops the owner; ignored when Owner is set
+}
+
+// UpdateVerifiedEmail corrects an address, changes who owns it, or both, and
+// returns the record as it now stands. It returns ErrNotFound when the address
+// is not recorded and ErrEmailTaken when NewEmail already is.
+//
+// A member who verified with this address keeps it only while they remain the
+// owner: when the owner changes, or the address is corrected, their link to it
+// follows or is dropped, so no member points at an address another account owns.
+func (s *Store) UpdateVerifiedEmail(ctx context.Context, email string, edit EmailEdit) (*VerifiedEmail, error) {
+	email = NormalizeEmail(email)
+	target := email
+	if edit.NewEmail != "" {
+		target = NormalizeEmail(edit.NewEmail)
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// members.verified_email references the address being renamed; check the
+	// reference once the whole transaction is consistent, not per statement.
+	if _, err := tx.ExecContext(ctx, `pragma defer_foreign_keys = on`); err != nil {
+		return nil, err
+	}
+
+	cur, err := scanVerifiedEmail(tx.QueryRowContext(ctx, `
+		select email, user_id, domain, source, verified_at
+		from verified_emails where email = ?1`, email))
+	if err != nil {
+		return nil, noRows(err)
+	}
+
+	if target != email {
+		var taken bool
+		if err := tx.QueryRowContext(ctx,
+			`select exists (select 1 from verified_emails where email = ?1)`, target).Scan(&taken); err != nil {
+			return nil, err
+		}
+		if taken {
+			return nil, ErrEmailTaken
+		}
+	}
+
+	owner := cur.UserID
+	switch {
+	case edit.Owner != nil:
+		owner = edit.Owner
+	case edit.Unlink:
+		owner = nil
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		update verified_emails set email = ?2, user_id = ?3, domain = ?4
+		where email = ?1`, email, target, owner, EmailDomain(target)); err != nil {
+		return nil, err
+	}
+	if target != email {
+		if _, err := tx.ExecContext(ctx,
+			`update members set verified_email = ?2 where verified_email = ?1`, email, target); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `
+		update members set verified_email = null
+		where verified_email = ?1 and user_id is not ?2`, target, owner); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+
+	cur.Email, cur.UserID, cur.Domain = target, owner, EmailDomain(target)
+	return cur, nil
 }
 
 // EmailStats summarises the two email tables for /bot stats.

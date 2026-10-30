@@ -93,6 +93,15 @@ var commandDefs = []*discordgo.ApplicationCommand{
 					},
 				},
 			},
+			{
+				Name:        "forget",
+				Description: "Διαγραφή όλων των δεδομένων ενός χρήστη που έφυγε από τον server",
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Options: []*discordgo.ApplicationCommandOption{{
+					Name: "user", Description: "Ο χρήστης",
+					Type: discordgo.ApplicationCommandOptionUser, Required: true,
+				}},
+			},
 		},
 	},
 	{
@@ -105,8 +114,17 @@ var commandDefs = []*discordgo.ApplicationCommand{
 				Description: "Σε ποιον ανήκει ένα email",
 				Type:        discordgo.ApplicationCommandOptionSubCommand,
 				Options: []*discordgo.ApplicationCommandOption{{
-					Name: "email", Description: "Το email",
+					Name: "email", Description: "Το email ή το hash",
 					Type: discordgo.ApplicationCommandOptionString, Required: true,
+				}},
+			},
+			{
+				Name:        "list",
+				Description: "Όλα τα email και τα hashes ενός χρήστη",
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Options: []*discordgo.ApplicationCommandOption{{
+					Name: "user", Description: "Ο χρήστης",
+					Type: discordgo.ApplicationCommandOptionUser, Required: true,
 				}},
 			},
 			{
@@ -115,12 +133,37 @@ var commandDefs = []*discordgo.ApplicationCommand{
 				Type:        discordgo.ApplicationCommandOptionSubCommand,
 				Options: []*discordgo.ApplicationCommandOption{
 					{
-						Name: "email", Description: "Το email",
+						Name: "email", Description: "Το email ή το hash",
 						Type: discordgo.ApplicationCommandOptionString, Required: true,
 					},
 					{
 						Name: "user", Description: "Ο κάτοχος (προαιρετικό)",
 						Type: discordgo.ApplicationCommandOptionUser,
+					},
+				},
+			},
+			{
+				Name:        "update",
+				Description: "Αλλαγή κατόχου ή διόρθωση ενός email της βάσης",
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Options: []*discordgo.ApplicationCommandOption{
+					{
+						Name: "email", Description: "Το email ή το hash",
+						Type: discordgo.ApplicationCommandOptionString, Required: true,
+					},
+					{
+						Name: "user", Description: "Ο νέος κάτοχος",
+						Type: discordgo.ApplicationCommandOptionUser,
+					},
+					{
+						Name:        "unlink",
+						Description: "Αφαίρεση του κατόχου: το email μένει δεσμευμένο χωρίς κάτοχο",
+						Type:        discordgo.ApplicationCommandOptionBoolean,
+					},
+					{
+						Name:        "new_email",
+						Description: "Η σωστή διεύθυνση, αν το email είχε καταχωρηθεί λάθος",
+						Type:        discordgo.ApplicationCommandOptionString,
 					},
 				},
 			},
@@ -211,8 +254,11 @@ var commandRoutes = map[string]commandFunc{
 	"reg restart":    (*Handler).cmdRegRestart,
 	"reg verify":     (*Handler).cmdRegVerify,
 	"reg reregister": (*Handler).cmdRegReregister,
+	"reg forget":     (*Handler).cmdRegForget,
 	"email whois":    (*Handler).cmdEmailWhois,
+	"email list":     (*Handler).cmdEmailList,
 	"email add":      (*Handler).cmdEmailAdd,
+	"email update":   (*Handler).cmdEmailUpdate,
 	"email remove":   (*Handler).cmdEmailRemove,
 	"bot stats":      (*Handler).cmdBotStats,
 	"guard status":   (*Handler).cmdGuardStatus,
@@ -644,10 +690,92 @@ func (h *Handler) cmdRegVerify(s *discordgo.Session, i *discordgo.InteractionCre
 	h.reply(s, i, fmt.Sprintf("✅ Ο <@%s> επαληθεύτηκε με `%s`.", user.ID, email))
 }
 
+// cmdRegForget erases a former member from the database. It is limited to
+// people who are no longer on the server: for someone still here the database
+// has to keep matching their roles, and /reg reregister is the way to reset them.
+func (h *Handler) cmdRegForget(s *discordgo.Session, i *discordgo.InteractionCreate, sub *discordgo.ApplicationCommandInteractionDataOption) {
+	user := optUser(i, sub.Options, "user")
+	if user.Bot {
+		h.reply(s, i, "Τα bots δεν έχουν εγγραφή.")
+		return
+	}
+
+	ctx, cancel := h.ctxTimeout(flowTimeout)
+	defer cancel()
+
+	_, err := h.guildMember(ctx, s, i.GuildID, user.ID)
+	switch {
+	case err == nil:
+		h.reply(s, i, fmt.Sprintf(
+			"Ο <@%s> είναι ακόμα στον server. Η διαγραφή γίνεται μόνο για όσους έφυγαν· για επανεκκίνηση χρησιμοποίησε `/reg reregister`.", user.ID))
+		return
+	case !dc.IsMissingResource(err):
+		h.reply(s, i, fmt.Sprintf("Δεν μπόρεσα να ελέγξω αν ο <@%s> είναι στον server: %v", user.ID, err))
+		return
+	}
+
+	defer h.lockUser(user.ID)()
+
+	// A member who left mid-registration may still have a channel to clean up.
+	open, err := h.st.OpenRegistration(ctx, user.ID)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		h.dbError(s, i, err)
+		return
+	}
+	if open != nil && open.ChannelID != nil {
+		if err := h.deleteChannel(ctx, s, *open.ChannelID); err != nil {
+			h.log.Warn("forget: delete channel failed", "channel_id", *open.ChannelID, "error", err)
+		}
+	}
+	h.revokeHelp(ctx, s, user.ID)
+
+	res, err := h.st.ForgetMember(ctx, user.ID)
+	if err != nil {
+		h.dbError(s, i, err)
+		return
+	}
+	if !res.Found() {
+		h.reply(s, i, fmt.Sprintf("Δεν υπάρχουν δεδομένα για τον <@%s>.", user.ID))
+		return
+	}
+
+	// The trail the command erased must not be rebuilt around the member, so the
+	// record of the erasure itself carries counts only.
+	h.audit("", "", store.EventModAction, map[string]any{
+		"action": "forget", "registrations": res.Registrations,
+		"events": res.Events, "emails_unlinked": res.EmailsUnlinked,
+	}, actorID(i))
+	h.alertMods(s, "🗑️ Ο <@%s> διέγραψε από τη βάση τον <@%s>.", actorID(i), user.ID)
+	h.reply(s, i, fmt.Sprintf(
+		"🗑️ Διαγράφηκαν τα δεδομένα του <@%s>: %d εγγραφές, %d γεγονότα ιστορικού. "+
+			"Τα email του (%d) μένουν δεσμευμένα, χωρίς κάτοχο.",
+		user.ID, res.Registrations, res.Events, res.EmailsUnlinked))
+}
+
 func (h *Handler) cmdEmailWhois(s *discordgo.Session, i *discordgo.InteractionCreate, sub *discordgo.ApplicationCommandInteractionDataOption) {
-	email := store.NormalizeEmail(optString(sub.Options, "email"))
+	input := strings.TrimSpace(optString(sub.Options, "email"))
 	ctx, cancel := h.ctx()
 	defer cancel()
+
+	if store.IsLegacyHash(input) {
+		rec, err := h.st.GetLegacyHash(ctx, input)
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			h.reply(s, i, fmt.Sprintf("Το hash `%s` δεν υπάρχει στη βάση.", strings.ToLower(input)))
+		case err != nil:
+			h.dbError(s, i, err)
+		default:
+			owner := "άγνωστος"
+			if rec.UserID != nil {
+				owner = fmt.Sprintf("<@%s>", *rec.UserID)
+			}
+			h.reply(s, i, fmt.Sprintf(
+				"**Hash** `%s`\n• Κάτοχος: %s\n• Πηγή: `%s`\n• Εισήχθη: <t:%d:f>",
+				rec.Hash, owner, rec.Source, rec.ImportedAt.Unix()))
+		}
+		return
+	}
+	email := store.NormalizeEmail(input)
 
 	rec, err := h.st.WhoIs(ctx, email)
 	if errors.Is(err, store.ErrNotFound) {
@@ -677,10 +805,155 @@ func (h *Handler) cmdEmailWhois(s *discordgo.Session, i *discordgo.InteractionCr
 		rec.Email, owner, rec.Domain, rec.Source, rec.VerifiedAt.Unix()))
 }
 
+// cmdEmailList shows everything bound to one account: the read that goes with
+// whois, which looks an address up rather than a person.
+func (h *Handler) cmdEmailList(s *discordgo.Session, i *discordgo.InteractionCreate, sub *discordgo.ApplicationCommandInteractionDataOption) {
+	user := optUser(i, sub.Options, "user")
+	ctx, cancel := h.ctx()
+	defer cancel()
+
+	emails, err := h.st.EmailsForUser(ctx, user.ID)
+	if err != nil {
+		h.dbError(s, i, err)
+		return
+	}
+	hashes, err := h.st.LegacyHashesForUser(ctx, user.ID)
+	if err != nil {
+		h.dbError(s, i, err)
+		return
+	}
+	if len(emails) == 0 && len(hashes) == 0 {
+		h.reply(s, i, fmt.Sprintf("Δεν υπάρχει email στη βάση για τον <@%s>.", user.ID))
+		return
+	}
+
+	const shown = 10
+	var b strings.Builder
+	fmt.Fprintf(&b, "**Email του <@%s>**\n", user.ID)
+	for n, e := range emails {
+		if n == shown {
+			fmt.Fprintf(&b, "… και %d ακόμα\n", len(emails)-shown)
+			break
+		}
+		fmt.Fprintf(&b, "• `%s` · `%s` · <t:%d:d>\n", e.Email, e.Source, e.VerifiedAt.Unix())
+	}
+	if len(hashes) > 0 {
+		b.WriteString("\n**Παλιά hashes** (μόνο το hash είναι γνωστό)\n")
+	}
+	for n, r := range hashes {
+		if n == shown {
+			fmt.Fprintf(&b, "… και %d ακόμα\n", len(hashes)-shown)
+			break
+		}
+		fmt.Fprintf(&b, "• `%s` · `%s`\n", r.Hash, r.Source)
+	}
+	h.reply(s, i, b.String())
+}
+
+// cmdEmailUpdate changes a recorded address: who owns it, or the address itself
+// when it was recorded wrongly. A hash can change owner but has no address to
+// correct. Nothing here touches the member's roles or verification.
+func (h *Handler) cmdEmailUpdate(s *discordgo.Session, i *discordgo.InteractionCreate, sub *discordgo.ApplicationCommandInteractionDataOption) {
+	input := strings.TrimSpace(optString(sub.Options, "email"))
+	user := optUser(i, sub.Options, "user")
+	unlink := false
+	if o := findOpt(sub.Options, "unlink"); o != nil {
+		unlink = o.BoolValue()
+	}
+	newEmail := store.NormalizeEmail(optString(sub.Options, "new_email"))
+	isHash := store.IsLegacyHash(input)
+
+	switch {
+	case user == nil && !unlink && newEmail == "":
+		h.reply(s, i, "Δώσε τι να αλλάξει: `user`, `unlink` ή `new_email`.")
+		return
+	case user != nil && unlink:
+		h.reply(s, i, "Δώσε είτε `user` είτε `unlink`, όχι και τα δύο.")
+		return
+	case newEmail != "" && isHash:
+		h.reply(s, i, "Ένα hash δεν έχει διεύθυνση να διορθωθεί. Πρόσθεσε το σωστό email με `/email add`.")
+		return
+	case newEmail != "" && store.EmailDomain(newEmail) == "":
+		h.reply(s, i, fmt.Sprintf("Το `%s` δεν είναι διεύθυνση email.", newEmail))
+		return
+	}
+
+	var owner *string
+	ownerID := ""
+	if user != nil {
+		owner, ownerID = &user.ID, user.ID
+	}
+
+	ctx, cancel := h.ctx()
+	defer cancel()
+
+	var summary string
+	if isHash {
+		ok, err := h.st.SetLegacyHashOwner(ctx, input, owner)
+		if err != nil {
+			h.dbError(s, i, err)
+			return
+		}
+		if !ok {
+			h.reply(s, i, fmt.Sprintf("Το hash `%s` δεν υπάρχει στη βάση.", strings.ToLower(input)))
+			return
+		}
+		summary = fmt.Sprintf("Το hash `%s` %s.", strings.ToLower(input), ownerPhrase(owner))
+	} else {
+		rec, err := h.st.UpdateVerifiedEmail(ctx, input, store.EmailEdit{NewEmail: newEmail, Owner: owner, Unlink: unlink})
+		switch {
+		case errors.Is(err, store.ErrEmailTaken):
+			h.reply(s, i, fmt.Sprintf("Το `%s` υπάρχει ήδη στη βάση. Δες `/email whois`.", newEmail))
+			return
+		case errors.Is(err, store.ErrNotFound):
+			// An address known only by its old hash can still change owner.
+			if newEmail != "" {
+				h.reply(s, i, fmt.Sprintf("Το `%s` δεν βρέθηκε στη βάση.", store.NormalizeEmail(input)))
+				return
+			}
+			ok, herr := h.st.SetLegacyHashOwner(ctx, store.LegacyHash(input), owner)
+			if herr != nil {
+				h.dbError(s, i, herr)
+				return
+			}
+			if !ok {
+				h.reply(s, i, fmt.Sprintf("Το `%s` δεν βρέθηκε στη βάση.", store.NormalizeEmail(input)))
+				return
+			}
+			summary = fmt.Sprintf("Το `%s` υπάρχει μόνο ως παλιό hash· %s.", store.NormalizeEmail(input), ownerPhrase(owner))
+		case err != nil:
+			h.dbError(s, i, err)
+			return
+		default:
+			summary = fmt.Sprintf("Το `%s` %s.", rec.Email, ownerPhrase(rec.UserID))
+			if newEmail != "" {
+				summary = fmt.Sprintf("Το `%s` διορθώθηκε σε `%s`. ", store.NormalizeEmail(input), rec.Email) + summary
+			}
+		}
+	}
+
+	detail := map[string]any{"action": "email_update", "email": input, "unlink": unlink}
+	if newEmail != "" {
+		detail["new_email"] = newEmail
+	}
+	h.audit(ownerID, "", store.EventModAction, detail, actorID(i))
+	h.reply(s, i, "✏️ "+summary)
+}
+
+// ownerPhrase says who an address now belongs to.
+func ownerPhrase(owner *string) string {
+	if owner == nil {
+		return "δεν έχει κάτοχο (μένει δεσμευμένο)"
+	}
+	return fmt.Sprintf("ανήκει στον <@%s>", *owner)
+}
+
 func (h *Handler) cmdEmailAdd(s *discordgo.Session, i *discordgo.InteractionCreate, sub *discordgo.ApplicationCommandInteractionDataOption) {
-	email := store.NormalizeEmail(optString(sub.Options, "email"))
-	if store.EmailDomain(email) == "" {
-		h.reply(s, i, fmt.Sprintf("Το `%s` δεν είναι διεύθυνση email.", email))
+	input := strings.TrimSpace(optString(sub.Options, "email"))
+	isHash := store.IsLegacyHash(input)
+	email := store.NormalizeEmail(input)
+	if !isHash && store.EmailDomain(email) == "" {
+		h.reply(s, i, fmt.Sprintf("Το `%s` δεν είναι διεύθυνση email ούτε hash SHA-256.", email))
 		return
 	}
 
@@ -692,6 +965,17 @@ func (h *Handler) cmdEmailAdd(s *discordgo.Session, i *discordgo.InteractionCrea
 
 	ctx, cancel := h.ctx()
 	defer cancel()
+
+	if isHash {
+		if err := h.st.AddLegacyHash(ctx, input, owner, store.SourceModerator); err != nil {
+			h.dbError(s, i, err)
+			return
+		}
+		h.audit(ownerID, "", store.EventModAction,
+			map[string]any{"action": "hash_add", "hash": strings.ToLower(input)}, actorID(i))
+		h.reply(s, i, fmt.Sprintf("✅ Το hash `%s` προστέθηκε στη βάση.", strings.ToLower(input)))
+		return
+	}
 
 	if err := h.st.AddVerifiedEmail(ctx, email, owner, store.SourceModerator); err != nil {
 		h.dbError(s, i, err)

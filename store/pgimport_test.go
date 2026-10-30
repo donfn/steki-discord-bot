@@ -66,7 +66,7 @@ func TestImportPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]int{"verified_emails": 2, "legacy_email_hashes": 2, "members": 2, "registrations": 2,
-		"registration_events": 2, "media_guard": 1, "log_scan_state": 1, "legacy_log_evidence": 1, "help_access": 1}
+		"registration_events": 2, "media_guard": 1, "help_access": 1}
 	for table, n := range want {
 		if res.Rows[table] != n {
 			t.Errorf("%s: copied %d rows, want %d", table, res.Rows[table], n)
@@ -119,12 +119,6 @@ func TestImportPostgres(t *testing.T) {
 	}
 	if ok, _ := s.GuardTokenActive(ctx, "u2", "tok"); !ok {
 		t.Fatal("outstanding guard link lost")
-	}
-	if st, err := s.LogScanState(ctx, "log"); err != nil || !st.Complete || st.Scanned != 5000 || st.OldestID != "100" {
-		t.Fatalf("scan state = %+v, %v", st, err)
-	}
-	if ev, _ := s.EvidenceFor(ctx, []string{"aaaa"}); len(ev["aaaa"]) != 1 || ev["aaaa"][0].UserID != "u9" {
-		t.Fatalf("evidence = %+v", ev)
 	}
 	if ok, _ := s.HasHelpAccess(ctx, "u2"); !ok {
 		t.Fatal("help access lost")

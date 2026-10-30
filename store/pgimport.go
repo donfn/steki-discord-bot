@@ -46,10 +46,6 @@ var pgTables = []pgTable{
 	{name: "media_guard", order: "user_id",
 		cols: []string{"user_id", "guild_id", "window_start", "exempt_until", "token_id",
 			"restricted_at", "dm_channel_id", "dm_message_id", "updated_at"}},
-	{name: "log_scan_state", order: "channel_id",
-		cols: []string{"channel_id", "oldest_id", "newest_id", "complete", "scanned", "updated_at"}},
-	{name: "legacy_log_evidence", order: "message_id, sha256, kind",
-		cols: []string{"message_id", "sha256", "kind", "user_id", "email", "posted_at"}},
 	{name: "help_access", order: "user_id",
 		cols: []string{"user_id", "granted_at"}},
 }
