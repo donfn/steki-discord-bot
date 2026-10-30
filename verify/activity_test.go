@@ -431,15 +431,20 @@ func TestActivityProxyAuthentication(t *testing.T) {
 	e := newActivityEnv(t, true)
 	now := time.Now().Unix()
 
-	// Unsigned requests are refused, the page and static files included.
-	for _, path := range []string{"/activity", "/activity/static/sdk-2.5.0.mjs", "/activity/courses"} {
+	// The page must come through the proxy.
+	for _, path := range []string{"/activity", "/activity/"} {
 		if res, _ := e.do(t, http.MethodGet, path, "", nil); res.StatusCode != http.StatusUnauthorized {
 			t.Errorf("unsigned %s: %d", path, res.StatusCode)
 		}
 	}
-
-	// The proxy sends POSTs unsigned: the login needs a valid code, and the
-	// report a valid token, but neither a signature. A bad one still fails.
+	// The page's own fetches arrive unsigned: static files are public, and the
+	// rest still need a code or a token. A bad signature still fails.
+	if res, _ := e.do(t, http.MethodGet, "/activity/static/sdk-2.5.0.mjs", "", nil); res.StatusCode != http.StatusOK {
+		t.Errorf("unsigned static file: %d", res.StatusCode)
+	}
+	if res, _ := e.do(t, http.MethodGet, "/activity/courses", "", nil); res.StatusCode != http.StatusUnauthorized {
+		t.Errorf("unsigned courses without a token: %d", res.StatusCode)
+	}
 	if res, _ := e.do(t, http.MethodPost, "/activity/token", `{"code":"good"}`, nil); res.StatusCode != http.StatusOK {
 		t.Errorf("unsigned login: %d", res.StatusCode)
 	}
@@ -474,6 +479,9 @@ func TestActivityProxyAuthentication(t *testing.T) {
 	}
 	if res, _ := e.do(t, http.MethodGet, "/activity/data?channel=100", "", with(signed)); res.StatusCode != http.StatusOK {
 		t.Errorf("signed data: %d", res.StatusCode)
+	}
+	if res, _ := e.do(t, http.MethodGet, "/activity/data?channel=100", "", with(nil)); res.StatusCode != http.StatusOK {
+		t.Errorf("unsigned data with a token: %d", res.StatusCode)
 	}
 	// The signature also checks out base64 encoded, as one of the docs' examples has it.
 	b64 := e.proxyHeaders("42", now, now+60)

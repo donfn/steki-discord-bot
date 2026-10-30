@@ -185,17 +185,18 @@ type proxyPayload struct {
 	UserID    string      `json:"user_id"`
 }
 
-// viaDiscord refuses GETs that did not come through Discord's proxy, and
-// requests with a bad signature, when the public key is set.
+// viaDiscord refuses the page when it did not come through Discord's proxy,
+// and any request with a bad signature, when the public key is set.
 func (v *Server) viaDiscord(next http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if key := v.activity.proxyKey; key != nil {
 			p, why := checkProxy(key, r.Header, time.Now())
-			// Discord's proxy signs GETs but sends no signature on POSTs.
-			// Those are the login, which needs a code Discord only issues
-			// inside the Activity, and reports, which need an Activity token;
-			// a POST that does carry the headers must pass.
-			if p == nil && r.Method == http.MethodPost && why == "missing headers" {
+			// Discord's proxy signs the page itself, but not the page's own
+			// fetches: the login, which needs a code Discord only issues
+			// inside the Activity, the data, files and reports, which need an
+			// Activity token, and pdf.js's public files. Those are checked
+			// when they do carry the headers, and pass when they do not.
+			if p == nil && why == "missing headers" && !isActivityPage(r.URL.Path) {
 				next(w, r)
 				return
 			}
@@ -212,6 +213,10 @@ func (v *Server) viaDiscord(next http.HandlerFunc) http.Handler {
 }
 
 type proxyUserKey struct{}
+
+// isActivityPage reports whether path is the page itself, the one request
+// the proxy is known to sign.
+func isActivityPage(path string) bool { return path == ActivityPath || path == ActivityPath+"/" }
 
 // checkProxy verifies the proxy's signature headers, or says why they fail.
 // The docs show the signature both hex and base64 encoded, so either is
