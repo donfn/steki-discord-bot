@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -37,6 +38,9 @@ const (
 	stickyQuiet   = 2 * time.Second
 	stickyMaxWait = 10 * time.Second
 	stickyEditLag = 15 * time.Second
+
+	// rotateWorkers is how many stickies a link rotation edits at once.
+	rotateWorkers = 4
 )
 
 // stickyQueue is the pending sticky work per channel.
@@ -377,6 +381,7 @@ func (h *Handler) rotateStickyLinks(s *discordgo.Session) {
 	if guildID == "" || !h.stickyEnabled() {
 		return
 	}
+	started := time.Now()
 	ctx, cancel := h.ctx()
 	channels, err := dc.GuildChannels(ctx, s, h.log, guildID)
 	cancel()
@@ -384,22 +389,34 @@ func (h *Handler) rotateStickyLinks(s *discordgo.Session) {
 		h.log.Error("sticky: list channels for link rotation", "error", err)
 		return
 	}
-	rotated := 0
+	// The whole pass has to fit well inside materialLinkRotate, or the links
+	// at the end of one pass would outlive the ones the next pass replaces. A
+	// few edits run at once: each channel has its own rate limit bucket for
+	// edits, and the lot stays far below the global limit.
+	var rotated atomic.Int64
+	sem := make(chan struct{}, rotateWorkers)
+	var wg sync.WaitGroup
 	for _, ch := range channels {
 		if !hasSticky(ch) || !h.stickyEnabled() || h.base.Err() != nil {
 			continue
 		}
-		ctx, cancel := h.ctxTimeout(flowTimeout)
-		err := h.syncSticky(ctx, s, ch.ID, false)
-		cancel()
-		if err != nil {
-			h.log.Warn("sticky: rotate link", "channel_id", ch.ID, "name", ch.Name, "error", err)
-			continue
-		}
-		rotated++
-		time.Sleep(time.Second)
+		sem <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer func() { <-sem; wg.Done() }()
+			h.safely("sticky_rotate", func() {
+				ctx, cancel := h.ctxTimeout(flowTimeout)
+				defer cancel()
+				if err := h.syncSticky(ctx, s, ch.ID, false); err != nil {
+					h.log.Warn("sticky: rotate link", "channel_id", ch.ID, "name", ch.Name, "error", err)
+					return
+				}
+				rotated.Add(1)
+			})
+		}()
 	}
-	h.log.Info("sticky: links rotated", "channels", rotated)
+	wg.Wait()
+	h.log.Info("sticky: links rotated", "channels", rotated.Load(), "took", time.Since(started).Round(time.Millisecond))
 }
 
 func ptr[T any](v T) *T { return &v }
