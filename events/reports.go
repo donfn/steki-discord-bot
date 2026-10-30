@@ -151,26 +151,41 @@ func reportCard(m *store.Material, r *store.Report, imageURL string) (*discordgo
 	}}}
 }
 
-// announceReports posts a card for every valid report that has none.
-func (h *Handler) announceReports(s *discordgo.Session) {
+// announceReports posts a card for every valid report that has none and
+// returns how many it posted. A report being filed starts it; a card that
+// failed to post, or one lost to a restart, waits for /materials cards.
+func (h *Handler) announceReports(s *discordgo.Session) (posted int) {
 	if h.mat == nil {
-		return
+		return 0
 	}
 	reportMu.Lock()
 	defer reportMu.Unlock()
 
+	for {
+		n, more := h.announceReportsPage(s)
+		if posted += n; !more {
+			return posted
+		}
+	}
+}
+
+// announceReportsPage posts the cards of one page of reports. more reports
+// whether a full page went out, so another may be waiting.
+func (h *Handler) announceReportsPage(s *discordgo.Session) (posted int, more bool) {
 	ctx, cancel := h.ctxTimeout(reapTimeout)
 	defer cancel()
 	rows, err := h.st.ReportsToAnnounce(ctx, reportCardsPerPass)
 	if err != nil {
 		h.log.Error("report: list reports to announce", "error", err)
-		return
+		return 0, false
 	}
 	refresh := h.refreshMaterialSource(s)
+	skipped := 0
 	for _, r := range rows {
 		m, err := h.st.MaterialByID(ctx, r.AttachmentID)
 		if err != nil {
 			h.log.Error("report: load reported file", "attachment_id", r.AttachmentID, "error", err)
+			skipped++
 			continue
 		}
 		url := ""
@@ -201,15 +216,19 @@ func (h *Handler) announceReports(s *discordgo.Session) {
 					h.safely("report_cards", func() { h.announceReports(s) })
 				}
 			})
-			return
+			return posted, false
 		}
+		posted++
 		if err := h.st.SetReportCard(ctx, r.ID, msg.ID); err != nil {
+			// Not recorded, so the report would be listed again: stop rather
+			// than post its card twice.
 			h.log.Error("report: record card", "report_id", r.ID, "error", err)
+			return posted, false
 		}
 	}
-	if len(rows) == reportCardsPerPass {
-		go h.safely("report_cards", func() { h.announceReports(s) })
-	}
+	// A report that could not be loaded is listed again and again, so a page
+	// that held one is the last.
+	return posted, len(rows) == reportCardsPerPass && skipped == 0
 }
 
 // onReportButton applies an admin's decision on a reported file.

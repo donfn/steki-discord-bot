@@ -213,11 +213,9 @@ const (
 	// how the bot finds its old announcements.
 	mcpAnnouncementTitle = "🤖 Το υλικό του Steki, στο AI σου"
 
-	// mcpConvertJob names the one-off pass that gives announcements posted
-	// with a shared link the current button.
-	mcpConvertJob = "mcp_announcements_personal_links"
-	// mcpConvertDepth is how far back in each channel that pass looks.
-	mcpConvertDepth = 300
+	// mcpRefreshDepth is how far back in each channel /mcp refresh looks for
+	// announcements that still carry a shared link.
+	mcpRefreshDepth = 300
 )
 
 // mcpGuideLink returns one member's personal link to the setup page, and the
@@ -320,40 +318,34 @@ func isOldMCPAnnouncement(m *discordgo.Message, botID string) bool {
 	return false
 }
 
-// convertMCPAnnouncements finds, once, the announcements posted while their
-// button carried a shared link, and gives them the current button. The bot no
-// longer keeps a list of them, so it looks through the latest
-// mcpConvertDepth messages of every text channel. The pass is recorded as
-// done only if it got through every channel it could read.
-func (h *Handler) convertMCPAnnouncements(s *discordgo.Session) {
+// refreshMCPAnnouncements finds the announcements posted while their button
+// carried a shared link, and gives them the current button. The bot keeps no
+// list of its announcements, so it looks through the latest mcpRefreshDepth
+// messages of every text channel it can read. It runs only when a moderator
+// asks (/mcp refresh) and can be run again: an announcement that has the
+// current button is left alone. It returns how many messages it edited and how
+// many channels or messages it could not read or edit.
+func (h *Handler) refreshMCPAnnouncements(s *discordgo.Session) (edited, failed int, err error) {
 	guildID := h.guildID()
 	if guildID == "" || s.State.User == nil {
-		return
+		return 0, 0, errGuildUnknown
 	}
 	ctx, cancel := h.ctx()
-	done, err := h.st.JobDone(ctx, mcpConvertJob)
-	cancel()
-	if err != nil || done {
-		return
-	}
-	ctx, cancel = h.ctx()
 	channels, err := dc.GuildChannels(ctx, s, h.log, guildID)
 	cancel()
 	if err != nil {
-		h.log.Error("mcp: list channels for announcement update", "error", err)
-		return
+		return 0, 0, fmt.Errorf("list channels: %w", err)
 	}
 	_, components := mcpAnnouncementCard()
-	converted, failed := 0, false
 	for _, ch := range channels {
 		if ch.Type != discordgo.ChannelTypeGuildText && ch.Type != discordgo.ChannelTypeGuildNews {
 			continue
 		}
 		if h.base.Err() != nil {
-			return
+			break
 		}
 		before := ""
-		for read := 0; read < mcpConvertDepth; read += 100 {
+		for read := 0; read < mcpRefreshDepth; read += 100 {
 			ctx, cancel := h.ctxTimeout(flowTimeout)
 			msgs, err := s.ChannelMessages(ch.ID, 100, before, "", "", discordgo.WithContext(ctx))
 			cancel()
@@ -361,7 +353,7 @@ func (h *Handler) convertMCPAnnouncements(s *discordgo.Session) {
 				// A channel the bot cannot read holds none of its messages.
 				if dc.APICode(err) != discordgo.ErrCodeMissingAccess && dc.APICode(err) != discordgo.ErrCodeMissingPermissions {
 					h.log.Warn("mcp: read channel for announcements", "channel_id", ch.ID, "error", err)
-					failed = true
+					failed++
 				}
 				break
 			}
@@ -376,10 +368,10 @@ func (h *Handler) convertMCPAnnouncements(s *discordgo.Session) {
 				cancel()
 				if err != nil {
 					h.log.Warn("mcp: update announcement", "message_id", m.ID, "error", err)
-					failed = true
+					failed++
 					continue
 				}
-				converted++
+				edited++
 			}
 			if len(msgs) < 100 {
 				break
@@ -389,13 +381,34 @@ func (h *Handler) convertMCPAnnouncements(s *discordgo.Session) {
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
-	h.log.Info("mcp: old announcements updated", "messages", converted)
-	if failed {
+	h.log.Info("mcp: old announcements updated", "messages", edited, "failed", failed)
+	return edited, failed, nil
+}
+
+// cmdMCPRefresh brings the announcements posted with an older button up to
+// date.
+func (h *Handler) cmdMCPRefresh(s *discordgo.Session, i *discordgo.InteractionCreate, _ *discordgo.ApplicationCommandInteractionDataOption) {
+	if !h.mcpEnabled() {
+		h.reply(s, i, "Ο MCP server είναι απενεργοποιημένος: χρειάζονται τα `DISCORD_CLIENT_ID` και `DISCORD_CLIENT_SECRET` και το bucket υλικού.")
 		return
 	}
-	ctx, cancel = h.ctx()
-	defer cancel()
-	if err := h.st.MarkJobDone(ctx, mcpConvertJob); err != nil {
-		h.log.Error("mcp: record announcement update", "error", err)
+	end, ok := h.jobs.begin("mcp_refresh")
+	if !ok {
+		h.reply(s, i, "Η ανανέωση τρέχει ήδη.")
+		return
+	}
+	defer end()
+	h.log.Info("mcp: announcement refresh requested", "user_id", actorID(i))
+
+	edited, failed, err := h.refreshMCPAnnouncements(s)
+	switch {
+	case err != nil:
+		h.reply(s, i, fmt.Sprintf("Η ανανέωση απέτυχε: %v", err))
+	case failed > 0:
+		h.reply(s, i, fmt.Sprintf("⚠️ Ενημερώθηκαν %d μηνύματα, αλλά %d κανάλια ή μηνύματα δεν διαβάστηκαν ή δεν άλλαξαν (δες τα logs). Τρέξε ξανά την εντολή.", edited, failed))
+	case edited == 0:
+		h.reply(s, i, "✅ Δεν βρήκα ανακοίνωση με παλιό κουμπί· όλες είναι ενημερωμένες.")
+	default:
+		h.reply(s, i, fmt.Sprintf("✅ Ενημερώθηκαν %d ανακοινώσεις με το τρέχον κουμπί.", edited))
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -12,16 +13,18 @@ import (
 	"steki-bot/store"
 )
 
-// startMaintenance launches the two background sweeps.
+// startMaintenance launches the two background sweeps. Both apply a rule that
+// depends on the clock, so they cannot wait for a moderator:
 //
 //   - the reaper enforces the abandonment policy (nudge at 1h, kick at 6h) and
 //     is what keeps the register categories from filling up again;
-//   - the reconciler repairs drift between Discord and the database, which is
-//     how a join that arrived while the gateway was disconnected still ends up
-//     with a channel.
+//   - the ghost sweep gives the ghost role to members silent for three months.
+//
+// Nothing here repairs drift between Discord and the database. That is
+// reconcile, which only runs when a moderator asks (/reg reconcile), as do the
+// other catch-up passes (/materials stickies, /materials cards, /mcp refresh).
 func (h *Handler) startMaintenance(s *discordgo.Session) {
 	h.goLoop("reaper", sweepEvery, func() { h.reapAbandoned(s) })
-	h.goLoop("reconciler", reconcileEvery, func() { h.reconcile(s) })
 	h.goLoop("ghost_sweep", ghostSweepEvery, func() { h.sweepGhosts(s) })
 }
 
@@ -50,7 +53,7 @@ func (h *Handler) reapNudges(ctx context.Context, s *discordgo.Session) {
 
 		msg := h.send(s, *reg.ChannelID, fmt.Sprintf(msgNudge, reg.UserID))
 		if msg == nil {
-			continue // the channel is gone; the reconciler sorts the row out
+			continue // the channel is gone; /reg reconcile sorts the row out
 		}
 		if err := h.st.MarkNudged(ctx, reg.ID); err != nil {
 			h.log.Error("mark nudged failed", "reg_id", reg.ID, "error", err)
@@ -218,19 +221,43 @@ func (h *Handler) closeAndCleanup(ctx context.Context, s *discordgo.Session,
 	}
 }
 
-// reconcile repairs drift in both directions between Discord and the database.
-// Passes never overlap: one triggered while another runs is skipped.
-func (h *Handler) reconcile(s *discordgo.Session) {
+// reconcileReport counts what one reconcile pass found and did.
+type reconcileReport struct {
+	Members    int // members of the guild
+	Closed     int // open registrations closed: the member left or is verified
+	Recreated  int // register channels made: one was lost, or a join was missed
+	Orphans    int // register channels deleted that belonged to nobody
+	Duplicates int // second channels of one member deleted
+	Adopted    int // register channels given back to the registration that lost them
+	Waiting    int // members left without a channel when the pass hit its limit
+}
+
+// changed is how many things the pass put right.
+func (r reconcileReport) changed() int {
+	return r.Closed + r.Recreated + r.Orphans + r.Duplicates + r.Adopted
+}
+
+var (
+	errGuildUnknown = errors.New("the Steki guild is not known yet")
+	errJobRunning   = errors.New("the job is already running")
+)
+
+// reconcile repairs drift in both directions between Discord and the database:
+// a join the gateway dropped while the bot was away, a member who left, a
+// register channel deleted by hand. It never runs by itself; a moderator asks
+// for it with /reg reconcile. Passes never overlap: errJobRunning is returned
+// for one asked while another runs. On an error the report still counts what
+// was done before it.
+func (h *Handler) reconcile(s *discordgo.Session) (rep reconcileReport, err error) {
 	guildID := h.guildID()
 	if guildID == "" {
-		h.log.Debug("reconcile skipped: guild not known yet")
-		return
+		return rep, errGuildUnknown
 	}
-	if !h.reconciling.CompareAndSwap(false, true) {
-		h.log.Debug("reconcile skipped: a pass is already running")
-		return
+	end, ok := h.jobs.begin("reconcile")
+	if !ok {
+		return rep, errJobRunning
 	}
-	defer h.reconciling.Store(false)
+	defer end()
 
 	ctx, cancel := h.ctxTimeout(reconcileTimeout)
 	defer cancel()
@@ -241,14 +268,12 @@ func (h *Handler) reconcile(s *discordgo.Session) {
 	listedAt := time.Now()
 	open, err := h.st.ListOpen(ctx)
 	if err != nil {
-		h.log.Error("reconcile: list open failed", "error", err)
-		return
+		return rep, fmt.Errorf("list open registrations: %w", err)
 	}
 
 	members, err := h.allMembers(ctx, s, guildID)
 	if err != nil {
-		h.log.Error("reconcile: list members failed", "error", err)
-		return
+		return rep, fmt.Errorf("list members: %w", err)
 	}
 	byID := make(map[string]*discordgo.Member, len(members))
 	for _, m := range members {
@@ -256,9 +281,9 @@ func (h *Handler) reconcile(s *discordgo.Session) {
 			byID[m.User.ID] = m
 		}
 	}
+	rep.Members = len(byID)
 	h.syncActivityRoster(ctx, members, listedAt)
 
-	var closed, recreated, deleted, duplicates, adopted int
 	budget := maxOnboardPerSweep
 
 	// 1. Open rows whose member or channel no longer makes sense.
@@ -271,37 +296,45 @@ func (h *Handler) reconcile(s *discordgo.Session) {
 		switch {
 		case !present:
 			h.closeLocked(ctx, s, reg, store.OutcomeLeft)
-			closed++
+			rep.Closed++
 		case hasAnyRole(member, verifiedRoleIDs):
 			h.closeLocked(ctx, s, reg, store.OutcomeVerified)
-			closed++
+			rep.Closed++
 		case reg.ChannelID == nil:
-			if budget > 0 {
-				h.ensureRegisterChannel(s, guildID, member.User)
-				budget--
-				recreated++
+			if budget == 0 {
+				rep.Waiting++
+				break
 			}
+			if h.ensureRegisterChannel(s, guildID, member.User) {
+				rep.Recreated++
+			}
+			budget--
 		default:
 			exists, err := h.channelExists(ctx, s, *reg.ChannelID)
 			if err != nil {
 				h.log.Warn("reconcile: cannot check channel", "channel_id", *reg.ChannelID, "error", err)
 				continue
 			}
-			if !exists && budget > 0 {
-				// Still here, unverified, and without a channel: recreate
-				// it rather than leave them stranded.
-				h.ensureRegisterChannel(s, guildID, member.User)
-				budget--
-				recreated++
+			if exists {
+				break
 			}
+			// Still here, unverified, and without a channel: recreate it
+			// rather than leave them stranded.
+			if budget == 0 {
+				rep.Waiting++
+				break
+			}
+			if h.ensureRegisterChannel(s, guildID, member.User) {
+				rep.Recreated++
+			}
+			budget--
 		}
 	}
 
 	// 2. Register channels with no corresponding open row.
 	channels, err := dc.GuildChannels(ctx, s, h.log, guildID)
 	if err != nil {
-		h.log.Error("reconcile: list channels failed", "error", err)
-		return
+		return rep, fmt.Errorf("list channels: %w", err)
 	}
 	live := make(map[string]bool, len(channels))
 	for _, ch := range channels {
@@ -323,9 +356,9 @@ func (h *Handler) reconcile(s *discordgo.Session) {
 				continue
 			}
 			if fate == fateDeleteDuplicate {
-				duplicates++
+				rep.Duplicates++
 			} else {
-				deleted++
+				rep.Orphans++
 			}
 		case fateAdopt:
 			unlock := h.lockUser(userID)
@@ -336,7 +369,7 @@ func (h *Handler) reconcile(s *discordgo.Session) {
 				continue
 			}
 			openByUser[userID] = &store.Registration{UserID: userID, ChannelID: &ch.ID}
-			adopted++
+			rep.Adopted++
 		}
 	}
 
@@ -344,31 +377,68 @@ func (h *Handler) reconcile(s *discordgo.Session) {
 	//    while the gateway was disconnected.
 	cutoff := time.Now().Add(-missedJoinWindow)
 	for id, member := range byID {
-		if budget == 0 {
-			h.log.Warn("reconcile: onboarding budget exhausted; the rest wait for the next pass")
-			break
-		}
 		if member.User == nil || member.User.Bot || member.JoinedAt.Before(cutoff) {
 			continue
 		}
 		if _, has := openByUser[id]; has || hasAnyRole(member, protectedRoleIDs) {
 			continue
 		}
+		if budget == 0 {
+			rep.Waiting++
+			continue
+		}
 		h.log.Info("reconcile: onboarding member missed at join time", "user_id", id)
-		h.ensureRegisterChannel(s, guildID, member.User)
+		if h.ensureRegisterChannel(s, guildID, member.User) {
+			rep.Recreated++
+		}
 		budget--
-		recreated++
 	}
 
 	h.sweepHelp(ctx, s)
 
+	h.lastReconcile.Store(time.Now().Unix())
 	h.log.Info("reconcile finished",
-		"members", len(byID), "closed", closed, "recreated", recreated,
-		"orphan_channels_deleted", deleted, "duplicate_channels_deleted", duplicates,
-		"channels_adopted", adopted)
+		"members", rep.Members, "closed", rep.Closed, "recreated", rep.Recreated,
+		"orphan_channels_deleted", rep.Orphans, "duplicate_channels_deleted", rep.Duplicates,
+		"channels_adopted", rep.Adopted, "waiting", rep.Waiting)
+	return rep, nil
 }
 
-// channelFate is what the reconciler does with one register channel.
+// summary is the reply to the moderator who asked for the pass. err is why it
+// stopped early, if it did.
+func (r reconcileReport) summary(err error) string {
+	var b strings.Builder
+	if err != nil {
+		fmt.Fprintf(&b, "⚠️ Ο συγχρονισμός σταμάτησε στη μέση: %v\n", err)
+	} else {
+		fmt.Fprintf(&b, "✅ Ο συγχρονισμός τελείωσε (%d μέλη στον server).\n", r.Members)
+	}
+	if r.changed() == 0 && r.Waiting == 0 {
+		if err == nil {
+			b.WriteString("Όλα ήταν ήδη σωστά, δεν χρειάστηκε καμία αλλαγή.")
+		} else {
+			b.WriteString("Μέχρι εκεί δεν άλλαξε τίποτα.")
+		}
+		return b.String()
+	}
+	line := func(n int, text string) {
+		if n > 0 {
+			fmt.Fprintf(&b, "• %s: %d\n", text, n)
+		}
+	}
+	line(r.Closed, "Εγγραφές που έκλεισαν (το μέλος έφυγε ή επαληθεύτηκε)")
+	line(r.Recreated, "Κανάλια εγγραφής που φτιάχτηκαν")
+	line(r.Adopted, "Κανάλια που ξαναδέθηκαν με την εγγραφή τους")
+	line(r.Orphans, "Κανάλια χωρίς εγγραφή που σβήστηκαν")
+	line(r.Duplicates, "Διπλά κανάλια που σβήστηκαν")
+	if r.Waiting > 0 {
+		fmt.Fprintf(&b, "⚠️ %d μέλη περιμένουν κανάλι: κάθε εκτέλεση φτιάχνει το πολύ %d. Τρέξε ξανά την εντολή.",
+			r.Waiting, maxOnboardPerSweep)
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// channelFate is what reconcile does with one register channel.
 type channelFate int
 
 const (
@@ -417,7 +487,7 @@ func (h *Handler) closeLocked(ctx context.Context, s *discordgo.Session, reg *st
 	h.closeAndCleanup(ctx, s, reg, outcome)
 }
 
-// slimMember keeps only what the reconciler reads: who the member is, their
+// slimMember keeps only what reconcile reads: who the member is, their
 // roles and when they joined.
 func slimMember(m *discordgo.Member) *discordgo.Member {
 	s := &discordgo.Member{GuildID: m.GuildID, Roles: m.Roles, JoinedAt: m.JoinedAt}

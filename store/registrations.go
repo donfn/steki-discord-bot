@@ -396,8 +396,8 @@ func (s *Store) ListKickCandidates(ctx context.Context, idle time.Duration, limi
 	return collectRegistrations(rows)
 }
 
-// ListOpen returns every open registration, oldest activity first. Used by the
-// reconciler and by /reg stuck.
+// ListOpen returns every open registration, oldest activity first. Used
+// by /reg reconcile and /reg stuck.
 func (s *Store) ListOpen(ctx context.Context) ([]*Registration, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		select `+regColumns+` from registrations

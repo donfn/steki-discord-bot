@@ -20,9 +20,11 @@ func openTestStore(t *testing.T) *Store {
 	return s
 }
 
-func TestLogReconciliationTablesAreGone(t *testing.T) {
+// TestDroppedTablesAreGone checks the tables migrations removed with the
+// features that used them.
+func TestDroppedTablesAreGone(t *testing.T) {
 	s := openTestStore(t)
-	for _, table := range []string{"legacy_log_evidence", "log_scan_state"} {
+	for _, table := range []string{"legacy_log_evidence", "log_scan_state", "one_off_jobs"} {
 		var n int
 		if err := s.db.QueryRow(
 			`select count(*) from sqlite_master where type = 'table' and name = ?1`, table).Scan(&n); err != nil {

@@ -38,13 +38,16 @@ func (h *Handler) onMemberAdd(s *discordgo.Session, m *discordgo.GuildMemberAdd)
 
 // ensureRegisterChannel makes sure an unverified member has an open
 // registration with a live channel. It is the one path shared by the gateway
-// join and the reconciler, which is what lets a join missed during a gateway
+// join and /reg reconcile, which is what lets a join missed during a gateway
 // outage be recovered later without duplicating any logic.
 //
 // It is idempotent: the registration row is created under a partial unique
 // index, an existing channel is reused, and the per-member lock keeps a
-// redelivered GUILD_MEMBER_ADD and a reconciler sweep from both creating one.
-func (h *Handler) ensureRegisterChannel(s *discordgo.Session, guildID string, user *discordgo.User) {
+// redelivered GUILD_MEMBER_ADD and a reconcile pass from both creating one.
+//
+// It reports whether the member ends up with a register channel; the moderators
+// have already been told when it does not.
+func (h *Handler) ensureRegisterChannel(s *discordgo.Session, guildID string, user *discordgo.User) bool {
 	defer h.lockUser(user.ID)()
 
 	ctx, cancel := h.ctxTimeout(flowTimeout)
@@ -53,25 +56,25 @@ func (h *Handler) ensureRegisterChannel(s *discordgo.Session, guildID string, us
 	if err := h.st.EnsureMember(ctx, user.ID, user.Username); err != nil {
 		h.log.Error("ensure member failed", "user_id", user.ID, "error", err)
 		h.urgentMods(s, "⚠️ Δεν μπόρεσα να ανοίξω εγγραφή για τον <@%s>: ```%v```", user.ID, err)
-		return
+		return false
 	}
 	reg, created, err := h.st.EnsureOpenRegistration(ctx, user.ID, guildID)
 	if err != nil {
 		h.log.Error("ensure registration failed", "user_id", user.ID, "error", err)
 		h.urgentMods(s, "⚠️ Δεν μπόρεσα να ανοίξω εγγραφή για τον <@%s>: ```%v```", user.ID, err)
-		return
+		return false
 	}
 
 	// An open registration that still points at a live channel needs nothing.
 	if !created && reg.ChannelID != nil {
 		exists, err := h.channelExists(ctx, s, *reg.ChannelID)
 		if err != nil {
-			h.log.Error("cannot confirm register channel, leaving it for the reconciler",
+			h.log.Error("cannot confirm register channel; /reg reconcile will look again",
 				"user_id", user.ID, "channel_id", *reg.ChannelID, "error", err)
-			return
+			return false
 		}
 		if exists {
-			return
+			return true
 		}
 		h.log.Info("registration channel vanished, recreating",
 			"user_id", user.ID, "channel_id", *reg.ChannelID)
@@ -80,17 +83,18 @@ func (h *Handler) ensureRegisterChannel(s *discordgo.Session, guildID string, us
 	ch, categoryID, err := h.placer.Create(ctx, s, guildID, registerChannelData(guildID, user.ID))
 	if err != nil {
 		h.reportChannelFailure(s, user, reg.ID, err)
-		return
+		return false
 	}
 
 	if err := h.st.AttachChannel(ctx, reg.ID, ch.ID, categoryID); err != nil {
-		// The reconciler adopts a register channel its row lost track of.
+		// /reg reconcile adopts a register channel its row lost track of.
 		h.log.Error("attach channel failed", "user_id", user.ID, "channel_id", ch.ID, "error", err)
 	}
 	h.audit(user.ID, reg.ID, store.EventChannelCreated,
 		map[string]any{"channel_id": ch.ID, "category_id": categoryID}, "")
 
 	h.sendWelcome(s, ch.ID, user.ID)
+	return true
 }
 
 // registerChannelData describes a member's registration channel: hidden from
@@ -151,13 +155,13 @@ func (h *Handler) reportChannelFailure(s *discordgo.Session, user *discordgo.Use
 		h.alertMods(s,
 			"🚨 <@&%s> Ο server έφτασε το όριο καναλιών του Discord. "+
 				"Ο χρήστης **%s** (<@%s>) **δεν** πήρε κανάλι εγγραφής.\n"+
-				"Διαγράψτε μερικά κανάλια χειροκίνητα.\n%s",
+				"Διαγράψτε μερικά κανάλια χειροκίνητα και μετά τρέξτε `/reg reconcile`.\n%s",
 			staffRoleID, user.Username, user.ID, detail)
 		return
 	}
 	h.alertMods(s,
 		"🚨 <@&%s> Απέτυχε η δημιουργία καναλιού εγγραφής για τον **%s** (<@%s>).\n"+
-			"Ο χρήστης **δεν** μπορεί να γραφτεί μέχρι να λυθεί το πρόβλημα.\n%s",
+			"Ο χρήστης **δεν** μπορεί να γραφτεί μέχρι να λυθεί το πρόβλημα· μετά τρέξτε `/reg reconcile`.\n%s",
 		staffRoleID, user.Username, user.ID, detail)
 }
 

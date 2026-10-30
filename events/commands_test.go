@@ -69,3 +69,15 @@ func TestCommandDefinitionsFitDiscordLimits(t *testing.T) {
 		check("/"+cmd.Name, cmd.Options)
 	}
 }
+
+// TestEveryCommandIsStaffOnly keeps a new command from being offered to
+// everyone: Discord shows a command to the members its default permission
+// allows, and the on-demand passes (/reg reconcile, /materials stickies, ...)
+// change many things at once.
+func TestEveryCommandIsStaffOnly(t *testing.T) {
+	for _, cmd := range commandDefs {
+		if cmd.DefaultMemberPermissions == nil || *cmd.DefaultMemberPermissions != staffOnly {
+			t.Errorf("/%s is not limited to staff by default", cmd.Name)
+		}
+	}
+}
