@@ -105,7 +105,7 @@ func Harden(h http.Handler, logger *slog.Logger) http.Handler {
 		budget := lim
 		// Assistants call the MCP endpoint in bursts, and the hosted ones share
 		// addresses between many members; every call needs a valid token.
-		if strings.HasPrefix(r.URL.Path, materialFilesPath) || r.URL.Path == mcpPath {
+		if strings.HasPrefix(r.URL.Path, filesPath) || r.URL.Path == mcpPath {
 			budget = files
 		}
 		if r.URL.Path != "/healthz" && !budget.allow(clientIP(r), time.Now()) {

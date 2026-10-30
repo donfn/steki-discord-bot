@@ -26,15 +26,16 @@ import (
 // Discord ever returns a copy without the flag, the bot deletes it, turns the
 // sticky off for the rest of the process and tells the moderators.
 //
-// Reposts are debounced. A conversation produces one repost once it pauses
-// for stickyQuiet, and at most every stickyMaxWait while it does not. A
-// change of the count alone only edits the message, which notifies nobody.
+// Reposts are debounced only enough to coalesce a burst. A message brings the
+// sticky back to the bottom once the channel has been quiet for stickyQuiet,
+// and at most stickyMaxWait later while it keeps going. A change of the count
+// alone only edits the message, which notifies nobody.
 
 const (
 	uploadButtonID = "materials:upload"
 
-	stickyQuiet   = 20 * time.Second
-	stickyMaxWait = 2 * time.Minute
+	stickyQuiet   = 2 * time.Second
+	stickyMaxWait = 10 * time.Second
 	stickyEditLag = 15 * time.Second
 )
 

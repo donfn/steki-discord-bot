@@ -7,7 +7,7 @@
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#FFC900" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0E0E0F" media="(prefers-color-scheme: dark)">
-<title>στέκι · Υλικό{{if .Channel}} · #{{.Channel}}{{end}}</title>
+<title>στέκι{{if .Channel}} · Υλικό · #{{.Channel}}{{end}}</title>
 <link rel="icon" href="/verify/logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -473,7 +473,7 @@
   <div class="stage" id="stage"></div>
 </section>
 
-<script type="application/json" id="data">{"token":{{.Token}},"files":{{.Files}},"total":{{.Total}}}</script>
+<script type="application/json" id="data">{"files":{{.Files}},"total":{{.Total}}}</script>
 <script nonce="{{.Nonce}}" type="module">
   const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/';
   const PDFJS_LIB = PDFJS + 'legacy/build/pdf.min.mjs';
@@ -483,7 +483,6 @@
   const DL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>';
 
   const data = JSON.parse(document.getElementById('data').textContent);
-  const token = data.token;
   const $ = (id) => document.getElementById(id);
 
   const dateFmt = new Intl.DateTimeFormat('el-GR', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -629,10 +628,9 @@
       f.state = 'loading';
       if (expired) { settle(f, 'failed', 'ο σύνδεσμος έληξε'); return; }
       try {
-        const res = await fetch('/materials/files/' + f.id, {
-          headers: { Authorization: 'Bearer ' + token },
+        const res = await fetch('/s/f/' + f.id, {
           cache: 'no-store',
-          credentials: 'omit',
+          credentials: 'same-origin',
         });
         if (res.status === 401) { expired = true; settle(f, 'failed', 'ο σύνδεσμος έληξε'); return; }
         if (res.status === 410) { settle(f, 'failed', 'διαγράφηκε'); return; }
@@ -907,11 +905,10 @@
   </div>
   {{if eq .State "error"}}
   <h1>Κάτι πήγε στραβά</h1>
-  <p>Δεν μπορέσαμε να φορτώσουμε το υλικό αυτή τη στιγμή. Ανανέωσε τη σελίδα σε λίγο ή πάτα ξανά «Προβολή υλικού μαθήματος» στο Discord.</p>
+  <p>Δεν μπορέσαμε να φορτώσουμε τη σελίδα αυτή τη στιγμή. Δοκίμασε ξανά σε λίγο.</p>
   {{else}}
-  <h1>Ο σύνδεσμος δεν ισχύει πια</h1>
-  <p>Οι σύνδεσμοι για το υλικό ισχύουν για μία ώρα. Γύρνα στο κανάλι του μαθήματος στο Discord και πάτα <strong>Προβολή υλικού μαθήματος</strong> για καινούριο.</p>
-  <a class="cta" href="https://discord.com/channels/@me">Άνοιγμα του Discord</a>
+  <h1>Ο σύνδεσμος έληξε</h1>
+  <p>Αυτός ο σύνδεσμος δεν ισχύει πια. Ζήτησε έναν καινούριο από εκεί που τον βρήκες.</p>
   {{end}}
 </main>
 {{end}}
