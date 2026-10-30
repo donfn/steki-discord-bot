@@ -222,6 +222,22 @@ var commandDefs = []*discordgo.ApplicationCommand{
 			Type:        discordgo.ApplicationCommandOptionSubCommand,
 		}},
 	},
+	{
+		Name:                     "mcp",
+		Description:              "Σύνδεση του υλικού με Claude και ChatGPT (MCP)",
+		DefaultMemberPermissions: &staffOnly,
+		Options: []*discordgo.ApplicationCommandOption{{
+			Name:        "announce",
+			Description: "Στέλνει σε ένα κανάλι μήνυμα που εξηγεί τον MCP server, με κουμπί για τις οδηγίες",
+			Type:        discordgo.ApplicationCommandOptionSubCommand,
+			Options: []*discordgo.ApplicationCommandOption{{
+				Name: "channel", Description: "Το κανάλι όπου θα σταλεί το μήνυμα",
+				Type:         discordgo.ApplicationCommandOptionChannel,
+				ChannelTypes: []discordgo.ChannelType{discordgo.ChannelTypeGuildText, discordgo.ChannelTypeGuildNews},
+				Required:     true,
+			}},
+		}},
+	},
 }
 
 // registerCommands installs the command set on the guild. Guild commands
@@ -261,6 +277,7 @@ var commandRoutes = map[string]commandFunc{
 	"email update":   (*Handler).cmdEmailUpdate,
 	"email remove":   (*Handler).cmdEmailRemove,
 	"bot stats":      (*Handler).cmdBotStats,
+	"mcp announce":   (*Handler).cmdMCPAnnounce,
 	"guard status":   (*Handler).cmdGuardStatus,
 	"guard restrict": (*Handler).cmdGuardRestrict,
 	"guard ungrace":  (*Handler).cmdGuardUngrace,

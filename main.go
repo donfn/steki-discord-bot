@@ -18,6 +18,7 @@ import (
 
 	"steki-bot/config"
 	"steki-bot/events"
+	"steki-bot/mcp"
 	"steki-bot/shield"
 	"steki-bot/store"
 	"steki-bot/verify"
@@ -125,7 +126,27 @@ func run() error {
 		logger.Warn("JWT_SECRET is shorter than 32 characters; use a long random value")
 	}
 	logger.Info("verification pages enabled", "public_url", cfg.PublicURL)
-	srv := startHTTPServer(cfg.Port, st, pages, newShield(cfg, sess, logger), logger)
+
+	var mcpServer *mcp.Server
+	switch lib := h.MCPLibrary(sess); {
+	case lib != nil:
+		mcpServer = mcp.New(mcp.Options{
+			PublicURL:           cfg.PublicURL,
+			Secret:              cfg.JWTSecret,
+			DiscordClientID:     cfg.DiscordClientID,
+			DiscordClientSecret: cfg.DiscordClientSecret,
+			Library:             lib,
+			Logger:              logger,
+		})
+		pages.EnableMCPGuide(cfg.PublicURL + mcp.PathMCP)
+		logger.Info("mcp server enabled", "endpoint", cfg.PublicURL+mcp.PathMCP,
+			"discord_redirect_uri", cfg.PublicURL+"/oauth/callback")
+	case cfg.MCPEnabled():
+		logger.Warn("mcp server is off: it needs the material bucket (BUCKET_* variables)")
+	default:
+		logger.Info("mcp server is off: DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET are not set")
+	}
+	srv := startHTTPServer(cfg.Port, st, pages, mcpServer, newShield(cfg, sess, logger), logger)
 
 	logger.Info("bot is running")
 	stop := make(chan os.Signal, 1)
@@ -151,9 +172,12 @@ func run() error {
 
 // startHTTPServer exposes /healthz, so the platform can tell a wedged process
 // from a healthy one, and the registration and media guard pages.
-func startHTTPServer(port string, st *store.Store, pages *verify.Server, sh *shield.Detector, logger *slog.Logger) *http.Server {
+func startHTTPServer(port string, st *store.Store, pages *verify.Server, mcpSrv *mcp.Server, sh *shield.Detector, logger *slog.Logger) *http.Server {
 	mux := http.NewServeMux()
 	pages.Register(mux)
+	if mcpSrv != nil {
+		mcpSrv.Register(mux)
+	}
 	// Health is probed in the background and cached, so a flood of public
 	// requests never reaches the database pool.
 	var dbHealthy atomic.Bool

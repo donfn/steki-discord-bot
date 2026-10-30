@@ -76,6 +76,8 @@ func (h *Handler) startMaterials(s *discordgo.Session) {
 		h.goLoopAfter("sticky_links", materialLinkRotate, func() { h.rotateStickyLinks(s) })
 	})
 	h.goLoop("material_scan", rescanEvery, func() { h.scanMaterials(s) })
+	// The MCP announcements' button links, replaced like the stickies'.
+	h.goLoop("mcp_links", materialLinkRotate, func() { h.rotateMCPLinks(s) })
 }
 
 // isHomeGuild reports whether g is the Steki guild.

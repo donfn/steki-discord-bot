@@ -24,6 +24,11 @@ const (
 	// shares one address, so this is far above the page budget; the
 	// downloads also need a valid link.
 	fileRateLimit = 1200
+
+	// mcpPath and tokenPath are the MCP endpoint and its OAuth token endpoint.
+	// They must match mcp.PathMCP and the token path in package mcp.
+	mcpPath   = "/mcp"
+	tokenPath = "/oauth/token"
 )
 
 // limiter is a fixed-window request counter per client address.
@@ -98,7 +103,9 @@ func Harden(h http.Handler, logger *slog.Logger) http.Handler {
 		}()
 
 		budget := lim
-		if strings.HasPrefix(r.URL.Path, materialFilesPath) {
+		// Assistants call the MCP endpoint in bursts, and the hosted ones share
+		// addresses between many members; every call needs a valid token.
+		if strings.HasPrefix(r.URL.Path, materialFilesPath) || r.URL.Path == mcpPath {
 			budget = files
 		}
 		if r.URL.Path != "/healthz" && !budget.allow(clientIP(r), time.Now()) {
@@ -124,7 +131,11 @@ func Harden(h http.Handler, logger *slog.Logger) http.Handler {
 				http.Error(w, "forbidden", http.StatusForbidden)
 				return
 			}
-			if ct := r.Header.Get("Content-Type"); !strings.HasPrefix(strings.ToLower(ct), "application/json") {
+			want := "application/json"
+			if r.URL.Path == tokenPath {
+				want = "application/x-www-form-urlencoded" // RFC 6749
+			}
+			if ct := r.Header.Get("Content-Type"); !strings.HasPrefix(strings.ToLower(ct), want) {
 				http.Error(w, "unsupported media type", http.StatusUnsupportedMediaType)
 				return
 			}

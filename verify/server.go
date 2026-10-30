@@ -35,7 +35,7 @@ const (
 )
 
 var (
-	//go:embed page.html link.html materials.html
+	//go:embed page.html link.html materials.html mcp_guide.html
 	pagesFS embed.FS
 	//go:embed logo.png
 	logoPNG []byte
@@ -45,6 +45,7 @@ var (
 	guardTmpl = template.Must(template.ParseFS(pagesFS, "page.html"))
 	linkTmpl  = template.Must(template.ParseFS(pagesFS, "link.html"))
 	matTmpl   = template.Must(template.ParseFS(pagesFS, "materials.html"))
+	mcpTmpl   = template.Must(template.ParseFS(pagesFS, "mcp_guide.html"))
 )
 
 // Page states rendered by both pages.
@@ -60,7 +61,10 @@ type Server struct {
 	lifter    Lifter
 	consent   Consenter
 	materials MaterialSource
-	log       *slog.Logger
+	// mcpURL is the MCP endpoint the setup page tells members to add; empty
+	// leaves the page unmounted.
+	mcpURL string
+	log    *slog.Logger
 }
 
 // NewServer returns a Server. materials may be nil, which leaves the
@@ -80,6 +84,9 @@ func (v *Server) Register(mux *http.ServeMux) {
 	if v.materials != nil {
 		mux.HandleFunc("GET /materials", v.materialsPage)
 		mux.HandleFunc("GET "+materialFilesPath+"{id}", v.materialFile)
+	}
+	if v.mcpURL != "" {
+		mux.HandleFunc("GET "+MCPGuidePath, v.mcpGuidePage)
 	}
 
 	mux.HandleFunc("GET /verify/logo.png", func(w http.ResponseWriter, _ *http.Request) {
@@ -144,7 +151,7 @@ func (v *Server) render(w http.ResponseWriter, tmpl *template.Template, data map
 // are refused.
 func (v *Server) guardClaims(raw string) (*Claims, bool) {
 	c, err := v.tokens.Parse(raw)
-	if err != nil || c.Reason == ReasonLink || c.Reason == ReasonMaterials {
+	if err != nil || c.Reason == ReasonLink || c.Reason == ReasonMaterials || c.Reason == ReasonMCPGuide {
 		return nil, false
 	}
 	return c, true

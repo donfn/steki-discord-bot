@@ -57,6 +57,17 @@ type Config struct {
 	// backup, the sticky messages and the material page are all off unless
 	// every field is set.
 	Bucket Bucket
+
+	// DiscordClientID and DiscordClientSecret are the Discord OAuth2
+	// application's credentials, which the MCP server logs members in with.
+	// The MCP server is off unless both are set (and the bucket is).
+	DiscordClientID     string
+	DiscordClientSecret string
+}
+
+// MCPEnabled reports whether the MCP server has the Discord login it needs.
+func (c *Config) MCPEnabled() bool {
+	return c.DiscordClientID != "" && c.DiscordClientSecret != ""
 }
 
 // Bucket holds the S3 connection details of the backup bucket. On Railway
@@ -93,6 +104,9 @@ func Load() (*Config, error) {
 
 		RailwayToken:     strings.TrimSpace(os.Getenv("RAILWAY_TOKEN")),
 		RailwayServiceID: strings.TrimSpace(os.Getenv("RAILWAY_SERVICE_ID")),
+
+		DiscordClientID:     strings.TrimSpace(os.Getenv("DISCORD_CLIENT_ID")),
+		DiscordClientSecret: strings.TrimSpace(os.Getenv("DISCORD_CLIENT_SECRET")),
 
 		Bucket: Bucket{
 			Endpoint:        strings.TrimSpace(os.Getenv("BUCKET_ENDPOINT")),

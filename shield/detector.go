@@ -16,6 +16,9 @@ import (
 // which are exempt from the flood count when they succeed.
 const MaterialFilesPrefix = "/materials/files/"
 
+// MCPPath is the MCP endpoint, whose successful calls are exempt too.
+const MCPPath = "/mcp"
+
 const (
 	// rateSeconds is the window the request rate is averaged over, so one
 	// page load (about four requests) never looks like a flood.
@@ -176,6 +179,11 @@ func (d *Detector) Middleware(next http.Handler) http.Handler {
 				status = http.StatusOK
 			}
 			if status == http.StatusOK && strings.HasPrefix(r.URL.Path, MaterialFilesPrefix) {
+				return
+			}
+			// An assistant works through several calls a second; they only
+			// succeed with a valid token, and refused ones are still counted.
+			if (status == http.StatusOK || status == http.StatusAccepted) && r.URL.Path == MCPPath {
 				return
 			}
 			if reason := d.observe(status, time.Now()); reason != "" {

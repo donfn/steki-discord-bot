@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#FFC900" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E0E0F" media="(prefers-color-scheme: dark)">
+<title>στέκι · Σύνδεση εφαρμογής</title>
+<link rel="icon" href="/verify/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap">
+<style>
+  :root {
+    --brand: #FFC900;
+    --ink: #0B0B0C;
+    --bg: var(--brand);
+    --card: #FFFFFF;
+    --tile: #F6F5F1;
+    --text: var(--ink);
+    --muted: rgba(11, 11, 12, 0.62);
+    --hairline: rgba(11, 11, 12, 0.10);
+    --button: var(--ink);
+    --button-text: #FFFFFF;
+    --warn: #B42318;
+    --shadow: 0 1px 2px rgba(60, 45, 0, 0.08), 0 12px 40px -12px rgba(60, 45, 0, 0.35);
+    --radius: 28px;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0E0E0F;
+      --card: #1A1A1C;
+      --tile: #232326;
+      --text: #F5F5F7;
+      --muted: rgba(245, 245, 247, 0.62);
+      --hairline: rgba(255, 255, 255, 0.10);
+      --button: var(--brand);
+      --button-text: var(--ink);
+      --warn: #FF8A80;
+      --shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 20px 60px -20px rgba(0, 0, 0, 0.8);
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    display: grid;
+    place-items: center;
+    padding: max(24px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+    background: var(--bg);
+    color: var(--text);
+    font: 500 1rem/1.55 Manrope, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  main {
+    width: min(100%, 440px);
+    padding: 32px 28px 28px;
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+  }
+  .logo { display: block; width: 56px; height: 56px; margin: 0 0 20px; border-radius: 16px; }
+  h1 { margin: 0 0 8px; font-size: 1.5rem; line-height: 1.2; font-weight: 800; letter-spacing: -0.02em; }
+  p { margin: 0 0 16px; color: var(--muted); }
+  strong { color: var(--text); font-weight: 700; }
+  ul { list-style: none; margin: 0 0 20px; padding: 0; display: grid; gap: 8px; }
+  li {
+    padding: 12px 14px 12px 42px;
+    position: relative;
+    background: var(--tile);
+    border-radius: 14px;
+    font-size: 0.94rem;
+  }
+  li::before {
+    content: "✓";
+    position: absolute; left: 14px; top: 11px;
+    display: grid; place-items: center;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: var(--brand); color: var(--ink);
+    font-size: 0.75rem; font-weight: 800;
+  }
+  .actions { display: grid; gap: 10px; margin-top: 4px; }
+  .btn {
+    display: block;
+    padding: 15px 20px;
+    border-radius: 16px;
+    text-align: center;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 1rem;
+    background: var(--button);
+    color: var(--button-text);
+  }
+  .btn.ghost { background: transparent; color: var(--muted); font-weight: 600; }
+  .btn:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
+  .btn:active { transform: scale(0.985); }
+  .fine { margin: 16px 0 0; font-size: 0.82rem; text-align: center; }
+  .warn { color: var(--warn); }
+  @media (prefers-reduced-motion: no-preference) {
+    .btn { transition: transform 120ms ease; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <img class="logo" src="/verify/logo.png" alt="" width="56" height="56">
+{{if eq .State "consent"}}
+  <h1>Σύνδεση εφαρμογής</h1>
+  <p>Η εφαρμογή <strong>{{.ClientName}}</strong> ζητά πρόσβαση στο υλικό μαθημάτων του Steki ως <strong>{{.UserName}}</strong>.</p>
+  <ul>
+    <li>Λίστα μαθημάτων, ευρετήριο υλικού και λήψη αρχείων</li>
+    <li>Μόνο ανάγνωση: δεν μπορεί να γράψει, να διαγράψει ή να στείλει μηνύματα</li>
+    <li>Ισχύει για {{.Days}} ημέρες και βλέπει μόνο τα κανάλια που βλέπεις κι εσύ</li>
+  </ul>
+  <div class="actions">
+    <a class="btn" href="{{.ApproveURL}}">Επιτρέπω</a>
+    <a class="btn ghost" href="{{.DenyURL}}">Ακύρωση</a>
+  </div>
+  <p class="fine">Μετά την επιλογή σου θα επιστρέψεις στο <strong>{{.RedirectHost}}</strong>. Αν δεν ξεκίνησες εσύ αυτή τη σύνδεση, πάτα Ακύρωση.</p>
+{{else if eq .State "denied"}}
+  <h1>Δεν έχεις πρόσβαση</h1>
+  <p>{{if .UserName}}Ο λογαριασμός <strong>{{.UserName}}</strong> δεν{{else}}Ο λογαριασμός σου δεν{{end}} μπορεί να συνδέσει εφαρμογή. Η σύνδεση με AI είναι διαθέσιμη μόνο σε <strong>επαληθευμένα μέλη</strong> και <strong>επαληθευμένους εξωτερικούς</strong> του Steki.</p>
+  <p class="fine">Αν έχεις ήδη ολοκληρώσει την εγγραφή σου και νομίζεις ότι είναι λάθος, μίλα με κάποιον από τους moderators.</p>
+{{else}}
+  <h1 class="warn">Κάτι πήγε στραβά</h1>
+  <p>{{.Message}}</p>
+{{end}}
+</main>
+</body>
+</html>

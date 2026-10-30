@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#FFC900" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E0E0F" media="(prefers-color-scheme: dark)">
+<title>στέκι · Σύνδεση με AI</title>
+<link rel="icon" href="/verify/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap">
+<style>
+  :root {
+    --brand: #FFC900;
+    --ink: #0B0B0C;
+    --bg: var(--brand);
+    --card: #FFFFFF;
+    --tile: #F6F5F1;
+    --text: var(--ink);
+    --muted: rgba(11, 11, 12, 0.62);
+    --hairline: rgba(11, 11, 12, 0.10);
+    --button: var(--ink);
+    --button-text: #FFFFFF;
+    --code: #0B0B0C;
+    --code-text: #FFE27A;
+    --warn: #B42318;
+    --shadow: 0 1px 2px rgba(60, 45, 0, 0.08), 0 12px 40px -12px rgba(60, 45, 0, 0.35);
+    --radius: 28px;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0E0E0F;
+      --card: #1A1A1C;
+      --tile: #232326;
+      --text: #F5F5F7;
+      --muted: rgba(245, 245, 247, 0.62);
+      --hairline: rgba(255, 255, 255, 0.10);
+      --button: var(--brand);
+      --button-text: var(--ink);
+      --code: #0E0E0F;
+      --warn: #FF8A80;
+      --shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 20px 60px -20px rgba(0, 0, 0, 0.8);
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    padding: max(24px, env(safe-area-inset-top)) 16px max(32px, env(safe-area-inset-bottom));
+    background: var(--bg);
+    color: var(--text);
+    font: 500 1rem/1.55 Manrope, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { width: min(100%, 720px); margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .card {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 28px;
+  }
+  .hero { padding-top: 32px; }
+  .logo { display: block; width: 56px; height: 56px; margin: 0 0 20px; border-radius: 16px; }
+  .eyebrow {
+    display: inline-block; margin: 0 0 10px; padding: 4px 10px;
+    border-radius: 999px; background: var(--brand); color: var(--ink);
+    font-size: 0.75rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
+  }
+  h1 { margin: 0 0 10px; font-size: clamp(1.6rem, 5vw, 2.1rem); line-height: 1.12; font-weight: 800; letter-spacing: -0.025em; }
+  h2 { margin: 0 0 14px; font-size: 1.2rem; line-height: 1.25; font-weight: 800; letter-spacing: -0.015em; }
+  p { margin: 0 0 14px; color: var(--muted); }
+  p:last-child { margin-bottom: 0; }
+  strong { color: var(--text); font-weight: 700; }
+  code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.88em; }
+  :not(pre) > code {
+    padding: 2px 7px; border-radius: 8px; background: var(--tile); color: var(--text);
+  }
+
+  /* The address to copy */
+  .url {
+    display: flex; align-items: center; gap: 10px;
+    margin: 18px 0 0; padding: 8px 8px 8px 16px;
+    background: var(--code); border-radius: 18px;
+  }
+  .url code {
+    flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap;
+    color: var(--code-text); font-size: 0.92rem; background: none; padding: 0;
+    scrollbar-width: none;
+  }
+  .url code::-webkit-scrollbar { display: none; }
+  .copy {
+    flex: none; appearance: none; border: 0; cursor: pointer;
+    padding: 11px 18px; border-radius: 12px;
+    background: var(--brand); color: var(--ink);
+    font: 700 0.92rem/1 Manrope, system-ui, sans-serif;
+  }
+  .copy:focus-visible, label:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
+  .copy:active { transform: scale(0.97); }
+
+  /* Tabs, without script */
+  .vh { position: absolute; opacity: 0; pointer-events: none; }
+  .tabs {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;
+    padding: 4px; margin-bottom: 22px; background: var(--tile); border-radius: 16px;
+  }
+  .tabs label {
+    padding: 11px 6px; border-radius: 12px; text-align: center; cursor: pointer;
+    font-weight: 700; font-size: 0.95rem; color: var(--muted);
+  }
+  #t-claude:checked ~ .tabs [for="t-claude"],
+  #t-chatgpt:checked ~ .tabs [for="t-chatgpt"],
+  #t-dev:checked ~ .tabs [for="t-dev"] {
+    background: var(--card); color: var(--text);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  }
+  #t-claude:focus-visible ~ .tabs [for="t-claude"],
+  #t-chatgpt:focus-visible ~ .tabs [for="t-chatgpt"],
+  #t-dev:focus-visible ~ .tabs [for="t-dev"] { outline: 3px solid var(--brand); outline-offset: 2px; }
+  .panel { display: none; }
+  #t-claude:checked ~ .p-claude,
+  #t-chatgpt:checked ~ .p-chatgpt,
+  #t-dev:checked ~ .p-dev { display: block; }
+
+  /* Numbered steps */
+  ol.steps { list-style: none; counter-reset: step; margin: 0 0 18px; padding: 0; display: grid; gap: 12px; }
+  ol.steps li {
+    counter-increment: step; position: relative;
+    padding: 4px 0 4px 46px; min-height: 34px; color: var(--muted);
+  }
+  ol.steps li::before {
+    content: counter(step);
+    position: absolute; left: 0; top: 0;
+    display: grid; place-items: center; width: 32px; height: 32px;
+    border-radius: 50%; background: var(--brand); color: var(--ink);
+    font-weight: 800; font-size: 0.9rem;
+  }
+  ol.steps li strong, ol.steps li b { color: var(--text); }
+  .note {
+    padding: 14px 16px; border-radius: 16px; background: var(--tile);
+    font-size: 0.9rem; color: var(--muted);
+  }
+  pre {
+    margin: 0 0 18px; padding: 16px; overflow-x: auto; border-radius: 16px;
+    background: var(--code); color: var(--code-text); font-size: 0.86rem; line-height: 1.6;
+  }
+
+  /* Tiles */
+  .grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+  .tile { padding: 16px; border-radius: 18px; background: var(--tile); }
+  .tile h3 { margin: 0 0 4px; font-size: 0.98rem; font-weight: 800; }
+  .tile p { font-size: 0.9rem; }
+  .tile .mono { color: var(--text); font-weight: 700; }
+  .prompts { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .prompts li {
+    padding: 12px 16px; border-radius: 16px; background: var(--tile);
+    color: var(--text); font-weight: 600; font-size: 0.95rem;
+  }
+  .prompts li::before { content: "“"; color: var(--muted); margin-right: 2px; }
+  .prompts li::after { content: "”"; color: var(--muted); margin-left: 2px; }
+  ul.checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  ul.checks li { position: relative; padding-left: 30px; color: var(--muted); }
+  ul.checks li::before {
+    content: "✓"; position: absolute; left: 0; top: 2px;
+    display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%;
+    background: var(--brand); color: var(--ink); font-size: 0.72rem; font-weight: 800;
+  }
+  .foot { text-align: center; font-size: 0.82rem; color: var(--ink); opacity: 0.7; }
+  @media (prefers-color-scheme: dark) { .foot { color: var(--text); opacity: 0.5; } }
+  .gone { text-align: center; }
+  .gone h1 { color: var(--warn); }
+  @media (max-width: 440px) {
+    .card { padding: 22px 18px; }
+    .copy { padding: 11px 14px; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .copy, .tabs label { transition: transform 120ms ease, background-color 160ms ease; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+{{if eq .State "ready"}}
+  <header class="card hero">
+    <img class="logo" src="/verify/logo.png" alt="" width="56" height="56">
+    <span class="eyebrow">Νέο · MCP</span>
+    <h1>Το υλικό του Steki, μέσα στο AI σου</h1>
+    <p>Συνδέεις το Claude ή το ChatGPT με το υλικό των μαθημάτων και τους ζητάς να βρουν, να διαβάσουν και να συνοψίσουν σημειώσεις και θέματα. Μόνο ανάγνωση, με τον λογαριασμό σου στο Discord.</p>
+    <div class="url">
+      <code id="mcp-url">{{.URL}}</code>
+      <button class="copy" type="button" data-copy="{{.URL}}">Αντιγραφή</button>
+    </div>
+  </header>
+
+  <section class="card">
+    <h2>Οδηγίες σύνδεσης</h2>
+    <input class="vh" type="radio" name="tab" id="t-claude" checked>
+    <input class="vh" type="radio" name="tab" id="t-chatgpt">
+    <input class="vh" type="radio" name="tab" id="t-dev">
+    <div class="tabs" role="presentation">
+      <label for="t-claude">Claude</label>
+      <label for="t-chatgpt">ChatGPT</label>
+      <label for="t-dev">Για developers</label>
+    </div>
+
+    <div class="panel p-claude">
+      <ol class="steps">
+        <li>Άνοιξε το Claude (claude.ai ή την εφαρμογή) και πήγαινε στο <strong>Settings → Connectors</strong>.</li>
+        <li>Πάτα <strong>Add custom connector</strong>.</li>
+        <li>Στο όνομα γράψε <code>Steki</code> και στο URL επικόλλησε τη διεύθυνση από πάνω. Πάτα <strong>Add</strong>.</li>
+        <li>Πάτα <strong>Connect</strong>. Ανοίγει το Discord: συνδέσου και πάτα <strong>Επιτρέπω</strong>.</li>
+        <li>Σε μια νέα συνομιλία ενεργοποίησε το connector <strong>Steki</strong> από το μενού των εργαλείων και ρώτα ό,τι θέλεις.</li>
+      </ol>
+      <p class="note">Αν το Claude σου ανήκει σε οργανισμό, ίσως χρειαστεί να προσθέσει το connector ο διαχειριστής του. Αφού συνδεθείς στον υπολογιστή, το connector φαίνεται και στο κινητό.</p>
+    </div>
+
+    <div class="panel p-chatgpt">
+      <ol class="steps">
+        <li>Στο ChatGPT πήγαινε στο <strong>Settings → Apps</strong> (σε παλιότερες εκδόσεις: Connectors) και άνοιξε τα <strong>Advanced settings</strong>.</li>
+        <li>Ενεργοποίησε το <strong>Developer mode</strong>.</li>
+        <li>Πάτα <strong>Create</strong> για νέα εφαρμογή, γράψε όνομα <code>Steki</code> και στο <strong>MCP server URL</strong> επικόλλησε τη διεύθυνση από πάνω.</li>
+        <li>Στο <strong>Authentication</strong> διάλεξε <strong>OAuth</strong>, δέξου την προειδοποίηση εμπιστοσύνης και πάτα <strong>Create</strong>.</li>
+        <li>Πάτα <strong>Connect</strong>, συνδέσου στο Discord και πάτα <strong>Επιτρέπω</strong>.</li>
+        <li>Σε νέα συνομιλία διάλεξε το <strong>Steki</strong> από το <strong>+ → More</strong> (με το Developer mode ενεργό) και ρώτα.</li>
+      </ol>
+      <p class="note">Το Developer mode υπάρχει σε επιλεγμένα πλάνα του ChatGPT και τα ονόματα στα μενού αλλάζουν συχνά. Αν δεν βρίσκεις μια επιλογή, ψάξε για «custom connector» ή «MCP» στις ρυθμίσεις.</p>
+    </div>
+
+    <div class="panel p-dev">
+      <p>Ο server μιλάει Streamable HTTP MCP με OAuth 2.1 (PKCE και dynamic client registration), άρα δουλεύει με κάθε σύγχρονο MCP client.</p>
+      <p><strong>Claude Code</strong></p>
+      <pre><span class="mono">claude mcp add --transport http steki {{.URL}}</span></pre>
+      <ol class="steps">
+        <li>Μέσα στο Claude Code γράψε <code>/mcp</code>, διάλεξε <strong>steki</strong> και <strong>Authenticate</strong>.</li>
+        <li>Συνδέσου στο Discord και πάτα <strong>Επιτρέπω</strong>. Ο browser γυρίζει στο τερματικό.</li>
+      </ol>
+      <p class="note">Άλλοι clients (Cursor, VS Code, MCP Inspector κ.ά.): πρόσθεσε έναν remote server τύπου HTTP με αυτό το URL. Το metadata βρίσκεται στο <code>/.well-known/oauth-authorization-server</code> και τα δημόσια κλειδιά (JWKS) στο <code>/.well-known/jwks.json</code>.</p>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Τι μπορεί να κάνει</h2>
+    <div class="grid">
+      <div class="tile"><h3 class="mono">list_course_channels</h3><p>Βρίσκει τα κανάλια των μαθημάτων, με πόσα αρχεία έχει το καθένα.</p></div>
+      <div class="tile"><h3 class="mono">get_material_index</h3><p>Δείχνει όλο το υλικό ενός καναλιού: ονόματα, περιγραφές, ημερομηνίες, ποιος το ανέβασε.</p></div>
+      <div class="tile"><h3 class="mono">download_material</h3><p>Κατεβάζει ένα PDF ή μια φωτογραφία, ώστε το AI να τη διαβάσει.</p></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Δοκίμασε να ρωτήσεις</h2>
+    <ul class="prompts">
+      <li>Τι μαθήματα έχουν υλικό στο Steki;</li>
+      <li>Βρες τα θέματα εξετάσεων που έχουν ανέβει για το μάθημα Αλγόριθμοι.</li>
+      <li>Διάβασε τις πιο πρόσφατες σημειώσεις του καναλιού και φτιάξε μου περίληψη.</li>
+      <li>Λύσε το Θέμα 2 από το πιο πρόσφατο αρχείο θεμάτων.</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>Ασφάλεια και ιδιωτικότητα</h2>
+    <ul class="checks">
+      <li><strong>Μόνο ανάγνωση.</strong> Δεν μπορεί να γράψει, να διαγράψει ή να στείλει μηνύματα.</li>
+      <li><strong>Βλέπει ό,τι βλέπεις.</strong> Μόνο τα κανάλια που έχεις πρόσβαση στο Discord, και μόνο όσο είσαι ολοκληρωμένο μέλος του server.</li>
+      <li><strong>Λήγει σε 30 ημέρες.</strong> Μετά συνδέεσαι ξανά με ένα κλικ.</li>
+      <li><strong>Το Discord δίνει μόνο το όνομά σου.</strong> Το bot δεν κρατά κωδικούς ούτε tokens του Discord.</li>
+      <li><strong>Ανάκληση.</strong> Αφαίρεσε το connector από τις ρυθμίσεις του Claude ή του ChatGPT, ή βγες από τον server.</li>
+    </ul>
+  </section>
+
+  <p class="foot">Αυτή η σελίδα ανανεώνεται μέσω του κουμπιού στο μήνυμα του Steki.</p>
+{{else}}
+  <main class="card gone">
+    <img class="logo" src="/verify/logo.png" alt="" width="56" height="56" style="margin-inline:auto">
+    <h1>Το link έληξε</h1>
+    <p>Τα links αυτής της σελίδας ανανεώνονται κάθε λίγο. Πάτα ξανά το κουμπί στο μήνυμα του Steki για να ανοίξεις την τρέχουσα.</p>
+  </main>
+{{end}}
+</div>
+<script nonce="{{.Nonce}}">
+document.querySelectorAll('[data-copy]').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var text = b.getAttribute('data-copy'), done = function () {
+      b.textContent = 'Αντιγράφηκε ✓';
+      setTimeout(function () { b.textContent = 'Αντιγραφή'; }, 1800);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, fallback);
+    } else { fallback(); }
+    function fallback() {
+      var r = document.createRange();
+      r.selectNodeContents(document.getElementById('mcp-url'));
+      var s = getSelection(); s.removeAllRanges(); s.addRange(r);
+      try { document.execCommand('copy'); done(); } catch (e) {}
+    }
+  });
+});
+</script>
+</body>
+</html>

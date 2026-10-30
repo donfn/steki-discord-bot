@@ -257,6 +257,34 @@ func (s *Store) CountMemberMaterials(ctx context.Context, homeChannelID string) 
 	return n, err
 }
 
+// CourseStat summarises the listed material of one course channel.
+type CourseStat struct {
+	Files  int
+	Bytes  int64
+	Latest time.Time
+}
+
+// CourseMaterialStats counts the listed material of every course channel, by
+// home channel ID. Channels without material are absent.
+func (s *Store) CourseMaterialStats(ctx context.Context) (map[string]CourseStat, error) {
+	rows, err := s.db.QueryContext(ctx, `select home_channel_id, count(*), coalesce(sum(size), 0), max(posted_at)
+		from materials where `+visibleMaterial+` group by home_channel_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]CourseStat{}
+	for rows.Next() {
+		var id string
+		var st CourseStat
+		if err := rows.Scan(&id, &st.Files, &st.Bytes, timeDest{&st.Latest}); err != nil {
+			return nil, err
+		}
+		out[id] = st
+	}
+	return out, rows.Err()
+}
+
 // MaterialStats summarises the backup for /bot stats.
 type MaterialStats struct {
 	Total, BackedUp, Failed, Listed int
