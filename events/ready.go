@@ -77,6 +77,9 @@ func (h *Handler) startMaterials(s *discordgo.Session) {
 	go func() {
 		defer h.wg.Done()
 		h.safely("sticky_update", func() { h.updateStickies(s) })
+		if h.mcpEnabled() {
+			h.safely("mcp_announcement_update", func() { h.convertMCPAnnouncements(s) })
+		}
 	}()
 }
 
