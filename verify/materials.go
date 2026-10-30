@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"steki-bot/analytics"
 )
 
 // ErrNoMaterial is returned by a MaterialSource for a channel that has no
@@ -86,7 +88,9 @@ func (v *Server) materialsPage(w http.ResponseWriter, r *http.Request) {
 
 	data := map[string]any{"State": stateInvalid}
 	raw := r.URL.Query().Get("t")
+	analytics.Tag(ctx, "", "page", "materials")
 	if c, ok := v.materialClaims(raw); ok {
+		analytics.Tag(ctx, c.Subject, "channel_id", c.ChannelID)
 		ch, err := v.materials.Channel(ctx, c.ChannelID)
 		switch {
 		case errors.Is(err, ErrNoMaterial):
@@ -139,6 +143,7 @@ func (v *Server) materialFile(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), fileTimeout)
 	defer cancel()
+	analytics.Tag(ctx, c.Subject, "channel_id", c.ChannelID, "file_id", id)
 	f, err := v.materials.Open(ctx, c.ChannelID, id)
 	switch {
 	// Gone rather than Not Found: 404s count towards the flood shield, and

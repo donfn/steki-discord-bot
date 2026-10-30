@@ -12,6 +12,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"steki-bot/analytics"
 )
 
 // ErrLinkUsed is returned by a Lifter or Consenter when the link was already
@@ -182,6 +184,10 @@ func (v *Server) page(w http.ResponseWriter, r *http.Request) {
 
 	raw := r.URL.Query().Get("t")
 	c, state := v.active(ctx, raw)
+	analytics.Tag(ctx, "", "page", "media_guard", "state", state)
+	if c != nil {
+		analytics.Tag(ctx, c.Subject)
+	}
 	reason := ""
 	if state != stateReady {
 		raw = ""
@@ -236,9 +242,11 @@ func (v *Server) readSolve(w http.ResponseWriter, r *http.Request, parse func(st
 		return nil, false
 	}
 	if !v.tokens.checkSolution(req.Payload, c.ID) {
+		analytics.Tag(r.Context(), c.Subject, "captcha", "failed")
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "captcha"})
 		return nil, false
 	}
+	analytics.Tag(r.Context(), c.Subject, "captcha", "solved")
 	return c, true
 }
 
@@ -258,6 +266,7 @@ func (v *Server) solve(w http.ResponseWriter, r *http.Request) {
 		v.log.Error("verify: lift failed", "user_id", c.Subject, "error", err)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": stateError})
 	default:
+		analytics.Tag(ctx, "", "outcome", "media_restriction_lifted")
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	}
 }

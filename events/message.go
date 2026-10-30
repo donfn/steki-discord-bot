@@ -15,6 +15,9 @@ func (h *Handler) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if m.Author == nil || m.GuildID == "" {
 		return
 	}
+	if h.inHomeGuild(m.GuildID) {
+		h.track(m.Author.ID, "discord_message_sent", messageProps(m.Message))
+	}
 	if m.Author.Bot {
 		h.onBotMessage(s, m.Message)
 		return

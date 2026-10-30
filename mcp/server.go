@@ -23,6 +23,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"steki-bot/analytics"
 )
 
 const (
@@ -291,6 +293,7 @@ func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	env := &callEnv{user: user, rd: rd}
+	analytics.Tag(r.Context(), user, "mcp_method", req.Method)
 	start := time.Now()
 	switch req.Method {
 	case "initialize":
@@ -352,6 +355,7 @@ func (s *Server) callTool(w http.ResponseWriter, r *http.Request, req rpcRequest
 		return
 	}
 	env.args = p.Arguments
+	analytics.Tag(r.Context(), "", "tool", p.Name)
 
 	timeout := callTimeout
 	if t.Name == toolDownload {

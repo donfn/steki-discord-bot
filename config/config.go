@@ -69,6 +69,12 @@ type Config struct {
 	// or show people wait for an admin. GoogleAIModel overrides the model.
 	GoogleAIToken string
 	GoogleAIModel string
+
+	// PostHogKey is the PostHog project API key. With it, the gateway events
+	// and the pages the bot serves are reported to PostHog from the server;
+	// without it analytics is off. PostHogHost is the ingestion endpoint.
+	PostHogKey  string
+	PostHogHost string
 }
 
 // MCPEnabled reports whether the MCP server has the Discord login it needs.
@@ -116,6 +122,9 @@ func Load() (*Config, error) {
 
 		GoogleAIToken: strings.TrimSpace(os.Getenv("GOOGLE_AI_TOKEN")),
 		GoogleAIModel: strings.TrimSpace(os.Getenv("GOOGLE_AI_MODEL")),
+
+		PostHogKey:  strings.TrimSpace(os.Getenv("POSTHOG_API_KEY")),
+		PostHogHost: envOr("POSTHOG_HOST", "https://eu.i.posthog.com"),
 
 		Bucket: Bucket{
 			Endpoint:        strings.TrimSpace(os.Getenv("BUCKET_ENDPOINT")),

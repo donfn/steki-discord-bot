@@ -22,6 +22,8 @@ import (
 	"unicode"
 
 	"github.com/golang-jwt/jwt/v5"
+
+	"steki-bot/analytics"
 )
 
 // The server is its own OAuth 2.1 authorization server, and Discord is only the
@@ -460,8 +462,10 @@ func (s *Server) callback(w http.ResponseWriter, r *http.Request) {
 		s.errorPage(w, http.StatusBadGateway, "Δεν μπόρεσα να επικοινωνήσω με το Discord. Δοκίμασε ξανά σε λίγο.")
 		return
 	}
+	analytics.Tag(ctx, user.ID, "page", "mcp_login")
 	switch _, err := s.lib.Reader(ctx, user.ID); {
 	case errors.Is(err, ErrForbidden):
+		analytics.Tag(ctx, "", "outcome", "login_refused")
 		s.log.Info("mcp: login refused", "user_id", user.ID)
 		s.setBind(w, "", -1)
 		s.page(w, http.StatusForbidden, pageData{State: "denied", UserName: user.display()})
@@ -535,6 +539,7 @@ func (s *Server) approve(w http.ResponseWriter, r *http.Request) {
 	if ap.State != "" {
 		p.Set("state", ap.State)
 	}
+	analytics.Tag(r.Context(), ap.Subject, "page", "mcp_consent", "outcome", "client_approved", "client", ap.ClientName)
 	s.log.Info("mcp: client approved", "user_id", ap.Subject, "client", ap.ClientName)
 	s.redirectBack(w, r, ap.Redirect, p)
 }

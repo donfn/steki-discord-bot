@@ -6,7 +6,16 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"steki-bot/analytics"
 )
+
+// emailDomain is the part of an address after the @, which is all analytics
+// ever sees of it.
+func emailDomain(email string) string {
+	_, domain, _ := strings.Cut(email, "@")
+	return domain
+}
 
 // Consent is what the link page shows the member before they accept: who they
 // are on Discord and which address they are about to connect.
@@ -74,9 +83,11 @@ func (v *Server) linkPage(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	raw := r.URL.Query().Get("t")
-	_, info, state := v.pending(ctx, raw)
+	c, info, state := v.pending(ctx, raw)
 	data := map[string]any{"State": state}
+	analytics.Tag(ctx, "", "page", "registration_link", "state", state)
 	if state == stateReady {
+		analytics.Tag(ctx, c.Subject, "university", info.University, "email_domain", emailDomain(info.Email))
 		uni := Universities[info.University]
 		data["Token"] = raw
 		data["Username"] = info.Username
@@ -123,6 +134,7 @@ func (v *Server) linkAccept(w http.ResponseWriter, r *http.Request) {
 		v.log.Error("link: accept failed", "user_id", c.Subject, "error", err)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": stateError})
 	default:
+		analytics.Tag(ctx, "", "outcome", "registration_accepted")
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	}
 }

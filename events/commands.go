@@ -367,6 +367,9 @@ var commandRoutes = map[string]commandFunc{
 // command Discord shows as "didn't respond" is otherwise indistinguishable
 // from one that never reached the bot.
 func (h *Handler) onInteractionCreate(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	if h.inHomeGuild(i.GuildID) {
+		h.track(actorID(i), "discord_interaction", interactionProps(i))
+	}
 	switch i.Type {
 	case discordgo.InteractionMessageComponent:
 		h.onComponent(s, i)

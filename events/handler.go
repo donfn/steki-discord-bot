@@ -14,6 +14,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"steki-bot/analytics"
 	"steki-bot/config"
 	"steki-bot/dc"
 	"steki-bot/mail"
@@ -29,6 +30,8 @@ type Handler struct {
 	st     *store.Store
 	mailer *mail.Mailer
 	log    *slog.Logger
+	// an reports interactions to PostHog; nil when analytics is off.
+	an *analytics.Client
 
 	linkChk *moderation.LinkChecker
 	phish   *moderation.PhishFeed
@@ -145,6 +148,7 @@ func (h *Handler) Register(s *discordgo.Session) {
 	s.AddHandler(guard(h, "member_add", h.onMemberAdd))
 	s.AddHandler(guard(h, "member_remove", h.onMemberRemove))
 	s.AddHandler(guard(h, "reaction_add", h.onReactionAdd))
+	s.AddHandler(guard(h, "reaction_remove", h.onReactionRemove))
 	s.AddHandler(guard(h, "interaction_create", h.onInteractionCreate))
 }
 
@@ -262,6 +266,9 @@ func (h *Handler) alertModsOnce(s *discordgo.Session, key, format string, args .
 // audit writes an audit event, logging rather than propagating failures: the
 // trail must never break the flow it describes.
 func (h *Handler) audit(userID, regID, kind string, detail map[string]any, actorID string) {
+	// Every registration step, moderator action and upload passes through
+	// here, so this one call gives analytics the whole funnel.
+	h.track(userID, "audit_"+kind, auditProps(regID, actorID, detail))
 	ctx, cancel := h.ctx()
 	defer cancel()
 	if err := h.st.LogEvent(ctx, userID, regID, kind, detail, actorID); err != nil {
