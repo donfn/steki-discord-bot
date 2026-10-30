@@ -34,16 +34,21 @@ var ErrUnsupportedImage = errors.New("materials: unsupported image")
 type Converter struct {
 	url    string
 	client *http.Client
+	// stream has no overall timeout: those requests are bounded by their
+	// context, as a large file takes minutes.
+	stream *http.Client
 }
 
 // NewConverter returns a client for the blastdoor service at baseURL.
 func NewConverter(baseURL string) *Converter {
+	noRedirect := func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return &Converter{
-		url: strings.TrimRight(baseURL, "/") + "/convert",
+		stream: &http.Client{CheckRedirect: noRedirect},
+		url:    strings.TrimRight(baseURL, "/") + "/convert",
 		client: &http.Client{
 			Timeout: convertTimeout,
 			// The service is untrusted: it must not steer the bot elsewhere.
-			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+			CheckRedirect: noRedirect,
 		},
 	}
 }

@@ -90,6 +90,9 @@ type Handler struct {
 	statusIndex   atomic.Int64
 	lastReconcile atomic.Int64 // Unix seconds of the last finished /reg reconcile; 0 before the first
 
+	// compressing is set while /materials compress runs.
+	compressing atomic.Bool
+
 	// base is cancelled by Stop, which aborts in-flight work on shutdown.
 	base      context.Context
 	cancel    context.CancelFunc
@@ -107,6 +110,8 @@ func NewHandler(cfg *config.Config, st *store.Store, logger *slog.Logger) *Handl
 		var err error
 		if bucket, err = materials.NewBucket(b.Endpoint, b.Region, b.AccessKeyID, b.SecretAccessKey, b.Name); err != nil {
 			logger.Error("material backup off: bucket misconfigured", "error", err)
+		} else {
+			bucket.SetCodec(materials.NewConverter(cfg.BlastdoorURL))
 		}
 	} else {
 		logger.Info("BUCKET_* not set; material backup, stickies and the material page are off")

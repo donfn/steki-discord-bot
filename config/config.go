@@ -77,7 +77,8 @@ type Config struct {
 	GoogleAIModel string
 
 	// BlastdoorURL is the isolated service that decodes uploaded PNG, WebP and
-	// HEIC images. Without it those uploads are refused.
+	// HEIC images and compresses the files in the bucket. Without it those
+	// uploads are refused and bucket files cannot be stored or read.
 	BlastdoorURL string
 
 	// PostHogKey is the PostHog project API key. With it, the gateway events

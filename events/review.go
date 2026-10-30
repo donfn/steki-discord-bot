@@ -237,6 +237,29 @@ func (h *Handler) cmdMaterialsRescan(s *discordgo.Session, i *discordgo.Interact
 		"ο έλεγχος περιμένει και συνεχίζει μόνος του. Αν το bot επανεκκινηθεί πριν τελειώσει, τρέξε ξανά την εντολή.", n))
 }
 
+// cmdMaterialsCompress compresses the files stored before compression existed.
+// It can be rerun at any time: files already compressed are skipped.
+func (h *Handler) cmdMaterialsCompress(s *discordgo.Session, i *discordgo.InteractionCreate, _ *discordgo.ApplicationCommandInteractionDataOption) {
+	if h.mat == nil {
+		h.reply(s, i, "Το bucket είναι ανενεργό.")
+		return
+	}
+	if !h.compressing.CompareAndSwap(false, true) {
+		h.reply(s, i, "⏳ Η συμπίεση τρέχει ήδη. Το αποτέλεσμα θα έρθει στο κανάλι των logs.")
+		return
+	}
+	h.log.Info("materials: compression started", "user_id", actorID(i))
+	h.reply(s, i, "🗜️ Ξεκίνησε η συμπίεση των αρχείων του bucket. Το αποτέλεσμα θα έρθει στο κανάλι των logs. "+
+		"Αν το bot επανεκκινηθεί πριν τελειώσει, τρέξε ξανά την εντολή.")
+	go h.safely("materials_compress", func() {
+		defer h.compressing.Store(false)
+		r := h.mat.CompressAll(h.base)
+		h.log.Info("materials: compression finished", "result", fmt.Sprintf("%+v", r))
+		h.modlog.Post(s, fmt.Sprintf("🗜️ Συμπίεση bucket: **%d** νέα, **%d** ήδη συμπιεσμένα, **%d** λείπουν από το bucket, **%d** απέτυχαν. "+
+			"Τα νέα πήγαν από %s σε %s.", r.Compressed, r.Already, r.Missing, r.Failed, formatBytes(r.Before), formatBytes(r.After)))
+	})
+}
+
 // messageIDFrom reads a message ID from a Discord message link or a bare ID.
 func messageIDFrom(v string) (string, bool) {
 	v = strings.TrimSpace(v)

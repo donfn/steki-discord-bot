@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/url"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/minio/minio-go/v7"
@@ -30,7 +31,15 @@ const partSize = 5 << 20
 type Bucket struct {
 	client *minio.Client
 	name   string
+	// codec compresses and decompresses the objects.
+	codec *Converter
+	// writes keeps a delete from being undone: a flagged file removed while
+	// the backfill compresses it must not be written back.
+	writes sync.Mutex
 }
+
+// SetCodec sets the service that compresses and decompresses the objects.
+func (b *Bucket) SetCodec(c *Converter) { b.codec = c }
 
 // NewBucket connects to a bucket at endpoint (a URL such as
 // https://t3.storageapi.dev). Railway buckets use virtual-hosted-style URLs.
@@ -51,8 +60,8 @@ func NewBucket(endpoint, region, accessKey, secretKey, name string) (*Bucket, er
 	return &Bucket{client: client, name: name}, nil
 }
 
-// Put streams size bytes from r into the object at key.
-func (b *Bucket) Put(ctx context.Context, key string, r io.Reader, size int64, contentType string) error {
+// put streams size bytes from r into the object at key as they are.
+func (b *Bucket) put(ctx context.Context, key string, r io.Reader, size int64, contentType string) error {
 	_, err := b.client.PutObject(ctx, b.name, key, r, size, minio.PutObjectOptions{
 		ContentType: contentType,
 		PartSize:    partSize,
@@ -63,23 +72,9 @@ func (b *Bucket) Put(ctx context.Context, key string, r io.Reader, size int64, c
 
 // Delete removes the object at key. Removing one that is not there succeeds.
 func (b *Bucket) Delete(ctx context.Context, key string) error {
+	b.writes.Lock()
+	defer b.writes.Unlock()
 	return b.client.RemoveObject(ctx, b.name, key, minio.RemoveObjectOptions{})
-}
-
-// Open returns the object at key and its size. The caller closes it.
-func (b *Bucket) Open(ctx context.Context, key string) (io.ReadCloser, int64, error) {
-	obj, err := b.client.GetObject(ctx, b.name, key, minio.GetObjectOptions{})
-	if err != nil {
-		return nil, 0, err
-	}
-	// GetObject is lazy; Stat makes the request, so a missing object fails
-	// here rather than on the first read.
-	info, err := obj.Stat()
-	if err != nil {
-		_ = obj.Close()
-		return nil, 0, err
-	}
-	return obj, info.Size, nil
 }
 
 // Check confirms the bucket exists and the credentials can reach it.

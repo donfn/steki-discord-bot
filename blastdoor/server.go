@@ -15,13 +15,21 @@ const (
 	// slots is how many conversions run at once; the rest wait, so a burst
 	// cannot run the container out of memory.
 	slots = 2
+
+	// compressSlots is one because level 22 can take 1.3 GiB; a decompression
+	// takes at most about 130 MiB.
+	compressSlots   = 1
+	decompressSlots = 4
 )
 
-// Handler serves POST /convert (image in, JPEG out) and GET /healthz. A 422
-// means the image cannot be read; anything else is the service's own failure.
+// Handler serves POST /convert (image in, JPEG out), POST /compress and POST
+// /decompress (see stream.go) and GET /healthz. A 422 from /convert means the
+// image cannot be read; anything else is the service's own failure.
 func Handler(log *slog.Logger) http.Handler {
 	sem := make(chan struct{}, slots)
 	mux := http.NewServeMux()
+	mux.HandleFunc("POST /compress", handleCompress(make(chan struct{}, compressSlots)))
+	mux.HandleFunc("POST /decompress", handleDecompress(make(chan struct{}, decompressSlots)))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
@@ -60,7 +68,7 @@ func NewServer(addr string, log *slog.Logger) *http.Server {
 		Addr:              addr,
 		Handler:           Handler(log),
 		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       time.Minute,
-		WriteTimeout:      3 * time.Minute,
+		ReadTimeout:       streamTimeout,
+		WriteTimeout:      streamTimeout,
 	}
 }

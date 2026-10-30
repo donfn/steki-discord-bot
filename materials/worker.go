@@ -26,7 +26,7 @@ const (
 	batch = 25
 
 	// copyTimeout bounds one file's download and upload.
-	copyTimeout = 10 * time.Minute
+	copyTimeout = 45 * time.Minute
 
 	// screenTimeout bounds one screening.
 	screenTimeout = 2 * time.Minute
@@ -284,7 +284,7 @@ type httpStatusError struct{ code int }
 
 func (e *httpStatusError) Error() string { return fmt.Sprintf("download: HTTP %d", e.code) }
 
-// copy streams the file at url into the bucket without holding it in memory.
+// copy compresses the file at url into the bucket without holding it in memory.
 func (w *Worker) copy(ctx context.Context, m *store.Material, url string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -302,7 +302,7 @@ func (w *Worker) copy(ctx context.Context, m *store.Material, url string) error 
 	if size < 0 {
 		size = m.Size
 	}
-	if err := w.bucket.Put(ctx, m.ObjectKey, io.LimitReader(resp.Body, size), size, m.ContentType); err != nil {
+	if err := w.bucket.Store(ctx, m.ObjectKey, io.LimitReader(resp.Body, size), size, m.ContentType); err != nil {
 		return fmt.Errorf("upload: %w", err)
 	}
 	return nil

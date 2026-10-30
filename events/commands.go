@@ -256,6 +256,10 @@ var commandDefs = []*discordgo.ApplicationCommand{
 			Description: "Ελέγχει με AI όσες εικόνες έχουν ήδη ανέβει και αφαιρεί όσες δεν είναι υλικό μαθήματος",
 			Type:        discordgo.ApplicationCommandOptionSubCommand,
 		}, {
+			Name:        "compress",
+			Description: "Συμπιέζει στο bucket όσα αρχεία έχουν ανέβει χωρίς συμπίεση",
+			Type:        discordgo.ApplicationCommandOptionSubCommand,
+		}, {
 			Name:        "scan",
 			Description: "Ψάχνει νέο υλικό στο ιστορικό των καναλιών μαθημάτων και ανανεώνει τα sticky",
 			Type:        discordgo.ApplicationCommandOptionSubCommand,
@@ -413,6 +417,7 @@ var commandRoutes = map[string]commandFunc{
 	"rules post":         (*Handler).cmdRulesPost,
 	"materials rescan":   (*Handler).cmdMaterialsRescan,
 	"materials remove":   (*Handler).cmdMaterialsRemove,
+	"materials compress": (*Handler).cmdMaterialsCompress,
 	"materials scan":     (*Handler).cmdMaterialsScan,
 	"materials stickies": (*Handler).cmdMaterialsStickies,
 	"materials cards":    (*Handler).cmdMaterialsCards,
