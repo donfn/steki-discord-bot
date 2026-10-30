@@ -15,6 +15,13 @@ import (
 // system is the distinct ID of events no member performed.
 const system = "steki-bot"
 
+// The most events, and batches of them, held in memory while PostHog cannot be
+// reached. Further events are dropped.
+const (
+	maxQueuedEvents  = 1000
+	maxQueuedBatches = 20
+)
+
 // Client forwards events to PostHog. The zero value and nil are valid and
 // drop everything, so callers never check whether analytics is configured.
 type Client struct {
@@ -35,6 +42,13 @@ func New(key, host string, logger *slog.Logger) (*Client, error) {
 		// Every request reaches PostHog from this server, so its location
 		// says nothing about the member.
 		DisableGeoIP: &noGeo,
+		// Analytics is best effort. Left alone the library buffers up to
+		// 10,000 events and 1,000 batches while PostHog is unreachable, tens
+		// of megabytes in a process whose heap is held to 24 MiB; with these
+		// limits an outage costs a few thousand events at most, and Capture
+		// never blocks.
+		MaxQueueSize:        maxQueuedEvents,
+		MaxEnqueuedRequests: maxQueuedBatches,
 	})
 	if err != nil {
 		return nil, err

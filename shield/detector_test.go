@@ -88,6 +88,23 @@ func TestQuietAfterTrigger(t *testing.T) {
 	}
 }
 
+// TestCooldownKeepsNothing is the memory side of the cooldown: a scanner that
+// keeps hitting unknown paths while the protection is on must not make the
+// detector remember each request.
+func TestCooldownKeepsNothing(t *testing.T) {
+	d := newTest()
+	now := time.Unix(1000, 0)
+	for i := 0; i <= maxNotFound; i++ {
+		d.observe(404, now)
+	}
+	for i := 0; i < 100000; i++ {
+		d.observe(404, now.Add(time.Duration(i)*time.Millisecond))
+	}
+	if n := len(d.notFound); n != 0 {
+		t.Errorf("%d 404s remembered during the cooldown, want none", n)
+	}
+}
+
 func TestMiddlewareFiresAndRetriesAfterFailure(t *testing.T) {
 	calls := make(chan struct{}, 4)
 	notified := make(chan error, 4)

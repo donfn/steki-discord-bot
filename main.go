@@ -195,14 +195,6 @@ func startHTTPServer(port string, st *store.Store, pages *verify.Server, mcpSrv 
 	// requests never reaches the database pool.
 	var dbHealthy atomic.Bool
 	dbHealthy.Store(true)
-	go func() {
-		for {
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			dbHealthy.Store(st.Ping(ctx) == nil)
-			cancel()
-			time.Sleep(5 * time.Second)
-		}
-	}()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		if !dbHealthy.Load() {
 			http.Error(w, "database unreachable", http.StatusServiceUnavailable)
@@ -231,6 +223,23 @@ func startHTTPServer(port string, st *store.Store, pages *verify.Server, mcpSrv 
 		IdleTimeout:       60 * time.Second,
 		MaxHeaderBytes:    16 << 10,
 	}
+	// The probe runs until the server is shut down.
+	stopProbe := make(chan struct{})
+	srv.RegisterOnShutdown(func() { close(stopProbe) })
+	go func() {
+		tick := time.NewTicker(5 * time.Second)
+		defer tick.Stop()
+		for {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			dbHealthy.Store(st.Ping(ctx) == nil)
+			cancel()
+			select {
+			case <-stopProbe:
+				return
+			case <-tick.C:
+			}
+		}
+	}()
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Error("http server failed", "error", err)
