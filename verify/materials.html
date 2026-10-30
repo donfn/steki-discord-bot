@@ -647,6 +647,11 @@
   .stage.photo { display: flex; }
   .photo-wrap { position: relative; flex: none; margin: auto; }
   .stage .photo-wrap img.photo { margin: 0; }
+  /* The photo and its ink turn together inside the wrap, which takes the
+     turned size so the stage scrolls and centres it as it is seen. */
+  .photo-turn { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%) rotate(var(--turn, 0deg)); }
+  .stage .photo-turn img.photo { width: 100%; height: 100%; }
+  #rotate[hidden] { display: none; }
 
   /* The member's own layer: pen and highlighter strokes over a page. */
   .ink { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; mix-blend-mode: multiply; pointer-events: none; }
@@ -716,7 +721,7 @@
   /* Without the socket nothing can be saved, so nothing can be edited. */
   .private-note.offline { color: var(--color-text); font-weight: 600; }
   body.read-only .title-edit, body.read-only #ink-toggle, body.read-only #ink-bar,
-  body.read-only .pad-tools { display: none !important; }
+  body.read-only .pad-tools, body.read-only #rotate { display: none !important; }
   body.read-only .done-btn { pointer-events: none; }
   .notes-form label { display: block; margin: 0 0 0.3rem; font-weight: 700; font-size: 0.875rem; }
   .notes-form input {
@@ -907,6 +912,7 @@
     </button>
     <button class="icon-btn" type="button" id="ink-toggle" aria-pressed="false" aria-label="Στυλό και μαρκαδόρος" title="Στυλό και μαρκαδόρος"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h6"/><path d="M14.5 4.5l5 5L11 18H6v-5z"/></svg></button>
     <button class="icon-btn" type="button" id="pad-toggle" aria-pressed="false" aria-label="Σημειώσεις" title="Σημειώσεις"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg></button>
+    <button class="icon-btn" type="button" id="rotate" aria-label="Περιστροφή φωτογραφίας" title="Περιστροφή (R)" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 4v6h-6"/><path d="M20 10a8 8 0 1 0 1.5 6"/></svg></button>
     <button class="icon-btn" type="button" id="viewer-copy" aria-label="Αντιγραφή ή κοινοποίηση αρχείου" title="Αντιγραφή"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button>
     <button class="icon-btn" type="button" id="viewer-report" aria-label="Αναφορά αρχείου" title="Αναφορά"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4M5 4h11l-1.5 4L16 12H5"/></svg></button>
     <a class="icon-btn" id="viewer-dl" aria-label="Λήψη αρχείου">
@@ -1585,6 +1591,7 @@
     doc = null;
     photo = null;
     stage.classList.remove('photo');
+    $('rotate').hidden = true;
   }
 
   async function openViewer(f, replace) {
@@ -1645,10 +1652,13 @@
       photo = img;
       stage.classList.add('photo');
       const wrap = el('div', 'photo-wrap');
-      wrap.append(img);
+      const turn = el('div', 'photo-turn');
+      turn.append(img);
+      wrap.append(turn);
       stage.replaceChildren(wrap);
+      $('rotate').hidden = false;
       if (!img.complete) await img.decode().catch(() => {});
-      if (gen === generation) { fitPhoto(); inkLayer(wrap, '1'); }
+      if (gen === generation) { fitPhoto(); inkLayer(turn, '1'); }
       return;
     }
 
@@ -1728,18 +1738,42 @@
     }
   }
 
-  // The photo's size at zoom 1: as large as fits the stage both ways.
+  // How far the member turned a photo, in degrees clockwise: 0, 90, 180, 270.
+  const turnOf = (f) => (f && kindOf(f) === 'jpg' ? (mine(f).r || 0) : 0);
+
+  // The photo's size at zoom 1: as large as fits the stage both ways, as it
+  // is seen after turning.
   function fitPhoto() {
     if (!photo?.naturalWidth) return;
+    const turn = photo.parentElement;
+    const wrap = turn.parentElement;
+    const r = turnOf(current);
+    const side = r === 90 || r === 270;
+    const nw = photo.naturalWidth;
+    const nh = photo.naturalHeight;
     const cs = getComputedStyle(stage);
     const w = stage.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
     const h = stage.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
-    const fit = Math.max(0.01, Math.min(w / photo.naturalWidth, h / photo.naturalHeight));
-    photo.style.width = Math.floor(photo.naturalWidth * fit * zoom) + 'px';
-    photo.style.height = Math.floor(photo.naturalHeight * fit * zoom) + 'px';
-    const c = photo.parentElement?.querySelector('.ink');
+    const fit = Math.max(0.01, side ? Math.min(w / nh, h / nw) : Math.min(w / nw, h / nh));
+    const W = Math.floor(nw * fit * zoom);
+    const H = Math.floor(nh * fit * zoom);
+    turn.style.width = W + 'px';
+    turn.style.height = H + 'px';
+    turn.style.setProperty('--turn', r + 'deg');
+    wrap.style.width = (side ? H : W) + 'px';
+    wrap.style.height = (side ? W : H) + 'px';
+    const c = turn.querySelector('.ink');
     if (c) sizeInk(c);
   }
+
+  // Turns the open photo a quarter clockwise and saves it with the member's
+  // other marks.
+  function rotatePhoto() {
+    if (!photo || !current) return;
+    saveMine(current, { r: (turnOf(current) + 90) % 360 });
+    fitPhoto();
+  }
+  $('rotate').addEventListener('click', rotatePhoto);
 
   function showZoom() { $('zoom-level').textContent = Math.round(zoom * 100) + '%'; }
 
@@ -1872,10 +1906,16 @@
   }
   async function asPng(f) {
     const bmp = await createImageBitmap(await readyBlob(f));
+    // Copied as the member sees it, turned.
+    const r = turnOf(f);
+    const side = r === 90 || r === 270;
     const c = document.createElement('canvas');
-    c.width = bmp.width;
-    c.height = bmp.height;
-    c.getContext('2d').drawImage(bmp, 0, 0);
+    c.width = side ? bmp.height : bmp.width;
+    c.height = side ? bmp.width : bmp.height;
+    const ctx = c.getContext('2d');
+    ctx.translate(c.width / 2, c.height / 2);
+    ctx.rotate((r * Math.PI) / 180);
+    ctx.drawImage(bmp, -bmp.width / 2, -bmp.height / 2);
     return new Promise((ok, fail) => c.toBlob((b) => (b ? ok(b) : fail(new Error('png'))), 'image/png'));
   }
   async function asText(f) {
@@ -1989,7 +2029,13 @@
   }
   function inkPoint(c, e) {
     const r = c.getBoundingClientRect();
-    return [Math.round(((e.clientX - r.left) / r.width) * 1e4) / 1e4, Math.round(((e.clientY - r.top) / r.height) * 1e4) / 1e4];
+    const u = (e.clientX - r.left) / r.width;
+    const v = (e.clientY - r.top) / r.height;
+    // On a turned photo the box on screen is turned too; strokes are kept
+    // in the photo's own coordinates, so they turn with it.
+    const turn = c.parentElement?.classList.contains('photo-turn') ? turnOf(current) : 0;
+    const [x, y] = turn === 90 ? [v, 1 - u] : turn === 180 ? [1 - u, 1 - v] : turn === 270 ? [1 - v, u] : [u, v];
+    return [Math.round(x * 1e4) / 1e4, Math.round(y * 1e4) / 1e4];
   }
   function eraseAt(c, x, y) {
     const list = ink[current.id]?.[c.dataset.page];
@@ -2238,6 +2284,8 @@
     if (e.target.closest?.('textarea, input') && e.key !== 'Escape') return;
     if (inkState.on && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undoInk(); return; }
     if (e.key === 'Escape') { e.preventDefault(); closeViewer(); }
+    else if ((e.key === 'r' || e.key === 'R') && !e.ctrlKey && !e.metaKey && !e.altKey &&
+      !e.target.isContentEditable && photo) { e.preventDefault(); rotatePhoto(); }
     else if (e.key === 'ArrowLeft') step(-1);
     else if (e.key === 'ArrowRight') step(1);
     else if ((e.key === '+' || e.key === '=') && (e.ctrlKey || e.metaKey)) { e.preventDefault(); setZoom(zoom + zoomStep()); }
