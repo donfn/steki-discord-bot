@@ -9,6 +9,7 @@ const (
 	modViewRoleID  = "887348241350402138" // can view register channels
 	hmuRoleID      = "886993717725102103"
 	outsiderRoleID = "993612908074381352"
+	goldenRoleID   = "943889393863774279"
 )
 
 // verifiedRoleIDs are the roles that mean a member has completed registration.
