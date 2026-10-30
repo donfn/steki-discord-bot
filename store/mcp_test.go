@@ -182,6 +182,52 @@ func TestRemoveMaterial(t *testing.T) {
 	}
 }
 
+func TestBanEmails(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	uid := "u1"
+	if err := s.AddVerifiedEmail(ctx, "Ann@Uni.gr", &uid, "moderator"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddLegacyHash(ctx, LegacyHash("old@uni.gr"), &uid, "moderator"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddVerifiedEmail(ctx, "other@uni.gr", nil, "moderator"); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := s.BanEmails(ctx, uid, "Extra@uni.gr", "spam", "mod")
+	if err != nil || len(res.Emails) != 2 || res.Hashes != 1 {
+		t.Fatalf("ban = %+v, %v; want 2 addresses and 1 hash", res, err)
+	}
+	for email, want := range map[string]bool{
+		"ann@uni.gr": true, " ANN@uni.gr ": true, "extra@uni.gr": true,
+		"old@uni.gr": true, "other@uni.gr": false,
+	} {
+		if got, _ := s.IsEmailBanned(ctx, email); got != want {
+			t.Errorf("banned(%q) = %v, want %v", email, got, want)
+		}
+	}
+
+	// Banning twice changes nothing; unbanning frees the member's addresses and
+	// an extra address on request.
+	if res, err := s.BanEmails(ctx, uid, "", "", "mod"); err != nil || len(res.Emails) != 1 {
+		t.Fatalf("second ban = %+v, %v", res, err)
+	}
+	if n, err := s.UnbanEmails(ctx, uid, ""); err != nil || n != 3 {
+		t.Fatalf("unban lifted %d, %v; want 3", n, err)
+	}
+	if got, _ := s.IsEmailBanned(ctx, "ann@uni.gr"); got {
+		t.Error("address still banned after unban")
+	}
+	if _, err := s.BanEmails(ctx, "u2", "x@uni.gr", "", "mod"); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := s.UnbanEmails(ctx, "u3", "x@uni.gr"); n != 1 {
+		t.Errorf("unban by address lifted %d, want 1", n)
+	}
+}
+
 func TestCourseMaterialStats(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()

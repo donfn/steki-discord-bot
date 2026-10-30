@@ -264,6 +264,37 @@ var commandDefs = []*discordgo.ApplicationCommand{
 		}},
 	},
 	{
+		Name:                     "member",
+		Description:              "Αποκλεισμός μελών",
+		DefaultMemberPermissions: &staffOnly,
+		Options: []*discordgo.ApplicationCommandOption{{
+			Name:        "ban",
+			Description: "Αποκλείει τον χρήστη από τον server και τα email του από νέα εγγραφή",
+			Type:        discordgo.ApplicationCommandOptionSubCommand,
+			Options: []*discordgo.ApplicationCommandOption{{
+				Name: "user", Description: "Ο χρήστης",
+				Type: discordgo.ApplicationCommandOptionUser, Required: true,
+			}, {
+				Name: "reason", Description: "Ο λόγος (φαίνεται στο audit log)",
+				Type: discordgo.ApplicationCommandOptionString,
+			}, {
+				Name: "email", Description: "Επιπλέον email που να αποκλειστεί",
+				Type: discordgo.ApplicationCommandOptionString,
+			}},
+		}, {
+			Name:        "unban",
+			Description: "Άρση αποκλεισμού του χρήστη και των email του",
+			Type:        discordgo.ApplicationCommandOptionSubCommand,
+			Options: []*discordgo.ApplicationCommandOption{{
+				Name: "user", Description: "Ο χρήστης",
+				Type: discordgo.ApplicationCommandOptionUser, Required: true,
+			}, {
+				Name: "email", Description: "Επιπλέον email που να ελευθερωθεί",
+				Type: discordgo.ApplicationCommandOptionString,
+			}},
+		}},
+	},
+	{
 		Name:                     "rules",
 		Description:              "Κανόνες και ρόλοι του server",
 		DefaultMemberPermissions: &staffOnly,
@@ -318,6 +349,8 @@ var commandRoutes = map[string]commandFunc{
 	"email update":     (*Handler).cmdEmailUpdate,
 	"email remove":     (*Handler).cmdEmailRemove,
 	"bot stats":        (*Handler).cmdBotStats,
+	"member ban":       (*Handler).cmdMemberBan,
+	"member unban":     (*Handler).cmdMemberUnban,
 	"mcp announce":     (*Handler).cmdMCPAnnounce,
 	"rules post":       (*Handler).cmdRulesPost,
 	"materials rescan": (*Handler).cmdMaterialsRescan,

@@ -84,6 +84,10 @@ func (h *Handler) stepSendEmail(ctx context.Context, s *discordgo.Session,
 		return result(cardTooMany)
 	}
 
+	if h.emailBanned(ctx, s, reg, email) {
+		return result(cardInUse)
+	}
+
 	use, err := h.st.CheckEmail(ctx, email)
 	if err != nil {
 		h.log.Error("email dedup check failed", "error", err)
@@ -129,6 +133,24 @@ func (h *Handler) stepSendEmail(ctx context.Context, s *discordgo.Session,
 	return result(cardSent)
 }
 
+// emailBanned reports whether an address was closed by /member ban, recording
+// the attempt and telling moderators. A failed lookup counts as not banned: the
+// address still goes through the dedup check, and blocking every registration
+// on a database hiccup would be worse.
+func (h *Handler) emailBanned(ctx context.Context, s *discordgo.Session, reg *store.Registration, email string) bool {
+	banned, err := h.st.IsEmailBanned(ctx, email)
+	if err != nil {
+		h.log.Error("ban check failed", "error", err)
+		return false
+	}
+	if !banned {
+		return false
+	}
+	h.audit(reg.UserID, reg.ID, store.EventEmailInUse, map[string]any{"email": email, "banned": true}, "")
+	h.alertModsOnce(s, "banned:"+reg.UserID, "🚫 Ο <@%s> προσπάθησε να εγγραφεί με αποκλεισμένο email: `%s`.", reg.UserID, email)
+	return true
+}
+
 // reportUsedEmail records an attempt at a taken address and tells moderators
 // who holds it.
 func (h *Handler) reportUsedEmail(s *discordgo.Session, reg *store.Registration, email string, use store.EmailUse) {
@@ -171,6 +193,14 @@ func (h *Handler) completeVerification(ctx context.Context, s *discordgo.Session
 		return errIneligibleEmail
 	}
 	email := *reg.Email
+
+	// A link sent before the address was banned must not still work.
+	if h.emailBanned(ctx, s, reg, email) {
+		if channelID != "" {
+			h.postCard(s, channelID, card{userID: reg.UserID, state: cardInUse, email: email})
+		}
+		return errIneligibleEmail
+	}
 
 	err := h.grantVerification(ctx, s, guildID, reg, email)
 	switch {
