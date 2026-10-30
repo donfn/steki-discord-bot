@@ -33,7 +33,7 @@
   :root {
     --color-brand: oklch(0.855 0.172 87);
     --color-on-brand: oklch(0.2 0.012 80);
-    --color-paper: oklch(0.955 0.04 92);
+    --color-paper: var(--color-brand);
     --color-dot: oklch(0.2 0.012 80 / 0.08);
     --color-sheet: oklch(0.986 0.012 95);
     --color-tile: oklch(0.953 0.03 94);
@@ -654,19 +654,14 @@
   }
   .notes-form input:focus-visible { outline: 3px solid var(--color-marker); outline-offset: 2px; }
   .top { display: none; }
-  .pill {
-    padding: 2px 9px;
-    border: 1.5px solid var(--color-line);
-    border-radius: 99px;
-    background: var(--color-tile);
-    color: var(--color-ink);
-    font: 700 0.6875rem/1.6 var(--font-mono);
-    white-space: nowrap;
+  /* A quiet line above the picture: the file's kind and age, as plain text. */
+  .top { font-size: 0.75rem; line-height: 1.4; color: var(--color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .top .kind { font-weight: 700; letter-spacing: 0.02em; color: var(--color-ink); }
+  .top .fresh { color: var(--color-ink); }
+  .top .fresh::before {
+    content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 5px 1px 0;
+    border-radius: 50%; background: var(--color-brand); box-shadow: 0 0 0 1px var(--color-line);
   }
-  .pill.fresh { background: var(--color-brand); color: var(--color-on-brand); }
-  .pill.old { border-style: dashed; color: var(--color-muted); }
-  .pill.kind-pdf { color: var(--color-marker); }
-  .pill.kind-jpg { color: var(--color-sky); }
   .thumb canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: top; }
 
   .files[data-view="grid"] {
@@ -691,7 +686,7 @@
   }
   .files[data-view="grid"] .file[hidden] { display: none; }
   .files[data-view="grid"] .file:hover { background: var(--color-sheet); transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--color-shadow); }
-  .files[data-view="grid"] .top { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 10px 8px; }
+  .files[data-view="grid"] .top { display: block; padding: 8px 12px 7px; }
   .files[data-view="grid"] .open { flex: 1 1 auto; display: flex; flex-direction: column; align-items: stretch; gap: 0.6rem; padding: 0; border-radius: 0; text-align: left; }
   .files[data-view="grid"] .thumb { width: 100%; height: auto; aspect-ratio: 4 / 3; border-width: 2px 0; border-radius: 0; font-size: 1.1rem; }
   .files[data-view="grid"] .thumb .spinner { width: 16px; height: 16px; right: 8px; bottom: 8px; }
@@ -1015,9 +1010,9 @@
 
     const top = el('div', 'top');
     const age = ageOf(f.posted);
-    const ageChip = el('span', 'pill ' + age.tone, age.text);
-    ageChip.title = dateFmt.format(new Date(f.posted));
-    top.append(ageChip, el('span', 'pill kind-' + kindOf(f), kindOf(f) === 'pdf' ? 'PDF' : 'JPG'));
+    const ageEl = el('span', age.tone, age.text);
+    ageEl.title = dateFmt.format(new Date(f.posted));
+    top.append(el('span', 'kind', kindOf(f) === 'pdf' ? 'PDF' : 'Εικόνα'), ' · ', ageEl);
 
     // The card opens the file; its title is the button for keyboards and
     // screen readers, and the title's edit button sits beside it.
@@ -1078,7 +1073,7 @@
     copy.addEventListener('click', () => copyFile(f, copy));
 
     const acts = el('div', 'acts');
-    acts.append(done, copy, dl, rep);
+    acts.append(done, copy, rep, dl);
     li.append(top, open, acts);
     $('files').append(li);
     f.row = { li, thumb, spin, meta, dl, bits, nameEl, capEl, noteEl, done, edit };
