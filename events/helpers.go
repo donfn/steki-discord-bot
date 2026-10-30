@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/bwmarrin/discordgo"
@@ -90,6 +91,19 @@ func truncate(s string, limit int) string {
 		cut--
 	}
 	return s[:cut] + marker
+}
+
+// cleanLine turns member text into one plain line: whitespace collapsed to
+// single spaces, and control and format characters (zero-width, bidirectional
+// overrides) dropped, so the text cannot hide or reorder what surrounds it.
+func cleanLine(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if unicode.Is(unicode.Cf, r) || (unicode.IsControl(r) && !unicode.IsSpace(r)) {
+			return -1
+		}
+		return r
+	}, s)
+	return strings.Join(strings.Fields(s), " ")
 }
 
 // quote makes user-supplied text safe to embed in a ``` code block, where a

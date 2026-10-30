@@ -274,7 +274,7 @@ func (h *Handler) onUploadSubmit(s *discordgo.Session, u *uploadSubmit) {
 	}
 
 	title, _ := u.field(uploadTitleID)
-	title = truncateRunes(strings.Join(strings.Fields(title), " "), uploadTitleMax)
+	title = truncateRunes(cleanLine(title), uploadTitleMax)
 	if title == "" {
 		answer("Γράψε έναν τίτλο για το υλικό.")
 		return

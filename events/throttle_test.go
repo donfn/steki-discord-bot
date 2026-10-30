@@ -23,7 +23,7 @@ func TestRateGatesLimitPerKey(t *testing.T) {
 }
 
 func TestIdentityShowsHandleAndStripsBidi(t *testing.T) {
-	u := &discordgo.User{Username: "real", GlobalName: "Prof‮ Smith"}
+	u := &discordgo.User{Username: "real", GlobalName: "Prof\u202e Smith"}
 	if got := identity(u); got != "Prof Smith (@real)" {
 		t.Fatalf("identity = %q", got)
 	}
