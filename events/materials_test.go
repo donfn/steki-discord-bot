@@ -45,7 +45,7 @@ func TestExamTitle(t *testing.T) {
 }
 
 func TestStickyCard(t *testing.T) {
-	comps := stickyCard(12, "https://x/materials?t=abc", false)
+	comps := stickyCard(12, "https://x/materials?t=abc")
 	if len(comps) != 1 {
 		t.Errorf("card has %d rows, want only the one with the buttons", len(comps))
 	}
@@ -54,19 +54,6 @@ func TestStickyCard(t *testing.T) {
 	if len(row.Components) != 2 || view.Label != "Προβολή υλικού μαθήματος (12)" ||
 		view.Style != discordgo.LinkButton || view.URL != "https://x/materials?t=abc" || view.CustomID != "" ||
 		upload.Label != "Ανέβασμα υλικού" || upload.CustomID != uploadButtonID {
-		t.Errorf("sticky buttons: %+v", row.Components)
-	}
-}
-
-func TestStickyCardWithActivity(t *testing.T) {
-	row := stickyCard(12, "https://x/materials?t=abc", true)[0].(discordgo.ActionsRow)
-	if len(row.Components) != 3 {
-		t.Fatalf("sticky has %d buttons, want 3", len(row.Components))
-	}
-	launch, web, upload := row.Components[0].(discordgo.Button), row.Components[1].(discordgo.Button), row.Components[2].(discordgo.Button)
-	if launch.Label != "Προβολή υλικού μαθήματος (12)" || launch.CustomID != activityButtonID || launch.URL != "" ||
-		web.Style != discordgo.LinkButton || web.URL != "https://x/materials?t=abc" ||
-		upload.CustomID != uploadButtonID {
 		t.Errorf("sticky buttons: %+v", row.Components)
 	}
 }

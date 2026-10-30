@@ -41,7 +41,6 @@ func (h *Handler) onGuildCreate(s *discordgo.Session, g *discordgo.GuildCreate) 
 		if err := h.registerCommands(s); err != nil {
 			h.log.Error("register slash commands failed", "error", err)
 		}
-		h.quietLaunchCommand(s)
 		h.reconcile(s)
 	})
 	h.materialsOnce.Do(func() { h.startMaterials(s) })

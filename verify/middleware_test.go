@@ -70,24 +70,3 @@ func TestHardenRateLimitsPerAddress(t *testing.T) {
 		t.Fatal("client was limited by a forgeable header entry")
 	}
 }
-
-func TestHardenGivesTheActivityTheFileBudget(t *testing.T) {
-	h := hardened()
-	hdr := map[string]string{"X-Forwarded-For": "7.7.7.7"}
-	// Discord's proxy puts many members behind one address.
-	for i := 0; i < rateLimit*3; i++ {
-		if w := do(h, "GET", "/activity/static/x", hdr); w.Code == 429 {
-			t.Fatalf("activity request %d limited at the page budget", i)
-		}
-	}
-	// The login, which calls Discord, keeps the page budget.
-	var got429 bool
-	for i := 0; i < rateLimit+5; i++ {
-		if do(h, "POST", "/activity/token", map[string]string{"X-Forwarded-For": "6.6.6.6", "Content-Type": "application/json"}).Code == 429 {
-			got429 = true
-		}
-	}
-	if !got429 {
-		t.Fatal("the activity login is not rate limited at the page budget")
-	}
-}

@@ -220,25 +220,17 @@ func (v *Server) materialFile(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), fileTimeout)
 	defer cancel()
 	analytics.Tag(ctx, subject, "channel_id", channelID, "file_id", id)
-	if v.streamMaterial(ctx, w, channelID, id) && v.sessions.complete(sid, id) {
-		analytics.Tag(ctx, subject, "outcome", "material_session_completed")
-	}
-}
-
-// streamMaterial writes one file of a channel and reports whether all of it
-// went out. It writes the error response itself when the file cannot be read.
-func (v *Server) streamMaterial(ctx context.Context, w http.ResponseWriter, channelID, id string) bool {
 	f, err := v.materials.Open(ctx, channelID, id)
 	switch {
 	// Gone rather than Not Found: 404s count towards the flood shield, and
 	// a file deleted while the page was open is not a scanner.
 	case errors.Is(err, ErrNoMaterial):
 		writeJSON(w, http.StatusGone, map[string]string{"error": "gone"})
-		return false
+		return
 	case err != nil:
 		v.log.Error("verify: open material", "channel_id", channelID, "file_id", id, "error", err)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": stateError})
-		return false
+		return
 	}
 	defer f.Body.Close()
 
@@ -257,9 +249,11 @@ func (v *Server) streamMaterial(ctx context.Context, w http.ResponseWriter, chan
 	n, err := io.Copy(w, f.Body)
 	if err != nil || n != f.Size {
 		v.log.Debug("verify: material download interrupted", "file_id", id, "error", err)
-		return false
+		return
 	}
-	return true
+	if v.sessions.complete(sid, id) {
+		analytics.Tag(ctx, subject, "outcome", "material_session_completed")
+	}
 }
 
 // isSnowflake reports whether s looks like a Discord ID.
