@@ -45,6 +45,13 @@ func (g *rateGates) allow(key string, limit int, window time.Duration) bool {
 	return true
 }
 
+// clear forgets the events recorded for key.
+func (g *rateGates) clear(key string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	delete(g.hits, key)
+}
+
 const (
 	// maxMailsPerUserHour, maxMailsPerAddrHour and maxMailsPerHour bound the
 	// verification emails one member, one address and the whole bot may
