@@ -35,6 +35,10 @@ const (
 	// ReasonMCPGuide marks a link to the MCP setup page. Only that page
 	// accepts it.
 	ReasonMCPGuide = "mcpguide"
+
+	// ReasonSocket marks a token that opens the material page's socket, for
+	// one member and one course channel. Nothing else accepts it.
+	ReasonSocket = "socket"
 )
 
 // Claims identify one restriction: the member (Subject), the guild they were
@@ -82,6 +86,23 @@ func (t *Tokens) IssueMaterials(userID, guildID, channelID, tokenID string, expi
 	claims := Claims{
 		GuildID:   guildID,
 		Reason:    ReasonMaterials,
+		ChannelID: channelID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    issuer,
+			Subject:   userID,
+			ID:        tokenID,
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(expires),
+		},
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(t.secret)
+}
+
+// IssueSocket signs a token that opens the material page's socket once.
+func (t *Tokens) IssueSocket(userID, guildID, channelID, tokenID string, expires time.Time) (string, error) {
+	claims := Claims{
+		GuildID:   guildID,
+		Reason:    ReasonSocket,
 		ChannelID: channelID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    issuer,

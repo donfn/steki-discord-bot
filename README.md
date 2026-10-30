@@ -53,7 +53,10 @@ members have shared, with two buttons:
   its threads, searchable, with PDFs (pdf.js) and images viewed in the page.
   It downloads every file as soon as it opens. Studied marks, the member's
   own titles, notes and ink are saved per member (`study_notes`) and come back
-  on any device; the latest save wins. The MCP announcement's «Οδηγίες
+  on any device; the latest save wins. The page sends them over a WebSocket on
+  `/s`, opened with a one-time token that lasts 30 minutes; the server sends a
+  fresh one every 5 minutes so the page can reconnect after a drop. If it
+  cannot (the token ran out), the page turns read-only. The MCP announcement's «Οδηγίες
   σύνδεσης» button hands out links to `/mcp/setup` the same way.
 - **Ανέβασμα υλικού** opens a form with a title and a file picker (PDF or JPG,
   up to 10 files). During an exam period the title starts as

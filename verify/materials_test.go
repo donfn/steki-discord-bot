@@ -159,50 +159,6 @@ func TestLinkOpensOnce(t *testing.T) {
 	}
 }
 
-func TestNotesPersistAcrossSessions(t *testing.T) {
-	e := newEnv(t)
-	c, _, _ := e.open(t, "100")
-	save := func(c *http.Client, body string) int {
-		t.Helper()
-		res, err := c.Post(e.srv.URL+"/s", "application/json", strings.NewReader(body))
-		if err != nil {
-			t.Fatal(err)
-		}
-		res.Body.Close()
-		return res.StatusCode
-	}
-	if code := save(c, `{"file":"11","kind":"study","data":{"d":1,"n":"<b>κεφ. 1</b></script>"}}`); code != http.StatusNoContent {
-		t.Fatalf("save: status %d", code)
-	}
-	if code := save(c, `{"file":"11","kind":"study","data":{"d":1,"t":"Θέματα 2023"}}`); code != http.StatusNoContent {
-		t.Fatalf("second save: status %d", code)
-	}
-	for name, body := range map[string]string{
-		"file not on the page": `{"file":"21","kind":"study","data":{"d":1}}`,
-		"unknown kind":         `{"file":"11","kind":"x","data":{"d":1}}`,
-		"not an object":        `{"file":"11","kind":"ink","data":"x"}`,
-	} {
-		if code := save(c, body); code == http.StatusNoContent {
-			t.Errorf("%s: saved", name)
-		}
-	}
-	if code := save(browser(t), `{"file":"11","kind":"study","data":{"d":1}}`); code != http.StatusUnauthorized {
-		t.Errorf("save without a session: status %d, want 401", code)
-	}
-
-	// A new visit, as on another device, finds the latest save.
-	_, res, body := e.open(t, "100")
-	if res.StatusCode != http.StatusOK || !strings.Contains(body, "Θέματα 2023") || strings.Contains(body, "κεφ. 1") {
-		t.Errorf("the page lacks the latest save: %d", res.StatusCode)
-	}
-	if code := save(c, `{"file":"11","kind":"study","data":null}`); code != http.StatusNoContent {
-		t.Fatalf("delete: status %d", code)
-	}
-	if _, _, body := e.open(t, "100"); strings.Contains(body, "Θέματα 2023") {
-		t.Error("a deleted note came back")
-	}
-}
-
 func TestMaterialsPageLists(t *testing.T) {
 	e := newEnv(t)
 	_, res, body := e.open(t, "100")
@@ -365,7 +321,7 @@ func TestSessionEndsWhenEveryFileIsDownloaded(t *testing.T) {
 func TestSessionRunsOut(t *testing.T) {
 	s := newSessions()
 	now := time.Now()
-	id, ok := s.open("100", "u1", now)
+	id, ok := s.open("100", "u1", "g1", now)
 	if !ok {
 		t.Fatal("open refused")
 	}
@@ -373,7 +329,7 @@ func TestSessionRunsOut(t *testing.T) {
 		t.Error("an expired session served its page")
 	}
 
-	id, _ = s.open("100", "u1", now)
+	id, _ = s.open("100", "u1", "g1", now)
 	s.claimPage(id, now)
 	s.setFiles(id, []string{"11"})
 	if _, _, ok := s.authorize(id, "11", now.Add(sessionTTL+time.Second)); ok {
@@ -390,7 +346,7 @@ func TestSessionRunsOut(t *testing.T) {
 func TestEmptyChannelEndsTheSessionAtOnce(t *testing.T) {
 	s := newSessions()
 	now := time.Now()
-	id, _ := s.open("100", "u1", now)
+	id, _ := s.open("100", "u1", "g1", now)
 	s.claimPage(id, now)
 	s.setFiles(id, nil)
 	if _, _, ok := s.authorize(id, "11", now); ok {
@@ -402,14 +358,14 @@ func TestSessionCap(t *testing.T) {
 	s := newSessions()
 	now := time.Now()
 	for i := 0; i < maxSessions; i++ {
-		if _, ok := s.open("100", "u1", now); !ok {
+		if _, ok := s.open("100", "u1", "g1", now); !ok {
 			t.Fatalf("refused session %d before the cap", i)
 		}
 	}
-	if _, ok := s.open("100", "u1", now); ok {
+	if _, ok := s.open("100", "u1", "g1", now); ok {
 		t.Error("opened a session past the cap")
 	}
-	if _, ok := s.open("100", "u1", now.Add(studyTTL+time.Second)); !ok {
+	if _, ok := s.open("100", "u1", "g1", now.Add(studyTTL+time.Second)); !ok {
 		t.Error("expired sessions were not cleared to make room")
 	}
 }

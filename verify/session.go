@@ -48,6 +48,7 @@ const (
 type session struct {
 	channelID string
 	subject   string
+	guildID   string
 	opened    time.Time
 	// served is set when the page has been handed out; it is never unset on a
 	// success, which is what makes a refresh fail.
@@ -68,7 +69,7 @@ func newSessions() *sessions { return &sessions{m: map[string]*session{}} }
 
 // open starts a session and returns its cookie value. It refuses, returning
 // false, when too many are open.
-func (s *sessions) open(channelID, subject string, now time.Time) (string, bool) {
+func (s *sessions) open(channelID, subject, guildID string, now time.Time) (string, bool) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", false
@@ -87,7 +88,7 @@ func (s *sessions) open(channelID, subject string, now time.Time) (string, bool)
 			return "", false
 		}
 	}
-	s.m[id] = &session{channelID: channelID, subject: subject, opened: now}
+	s.m[id] = &session{channelID: channelID, subject: subject, guildID: guildID, opened: now}
 	return id, true
 }
 
@@ -120,6 +121,16 @@ func (s *sessions) claimPage(id string, now time.Time) (channelID, subject strin
 	}
 	sess.served = true
 	return sess.channelID, sess.subject, true
+}
+
+// guild returns the guild a session's link was for.
+func (s *sessions) guild(id string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if sess := s.m[id]; sess != nil {
+		return sess.guildID
+	}
+	return ""
 }
 
 // unclaimPage gives the page view back, for a page that failed to load, so the

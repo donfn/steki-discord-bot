@@ -110,7 +110,7 @@ func (v *Server) materialsPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	analytics.Tag(r.Context(), "channel_id", c.ChannelID)
-	id, ok := v.sessions.open(c.ChannelID, c.Subject, time.Now())
+	id, ok := v.sessions.open(c.ChannelID, c.Subject, c.GuildID, time.Now())
 	if !ok {
 		v.expired(w, r)
 		return
@@ -170,13 +170,19 @@ func (v *Server) sessionPage(w http.ResponseWriter, r *http.Request) {
 	}
 	v.sessions.setFiles(id, ids)
 	notes := v.notesFor(ctx, subject, ids)
+	socket, socketExp, err := v.socketToken(subject, v.sessions.guild(id), channelID)
+	if err != nil {
+		v.log.Error("verify: issue socket token", "error", err)
+	}
 	v.renderMaterials(w, http.StatusOK, map[string]any{
-		"State":   stateReady,
-		"Channel": ch.Name,
-		"Course":  courseName(ch.Name),
-		"Files":   files,
-		"Total":   total,
-		"Notes":   notes,
+		"Socket":    socket,
+		"SocketExp": socketExp.UnixMilli(),
+		"State":     stateReady,
+		"Channel":   ch.Name,
+		"Course":    courseName(ch.Name),
+		"Files":     files,
+		"Total":     total,
+		"Notes":     notes,
 	})
 }
 
