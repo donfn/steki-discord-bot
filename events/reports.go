@@ -20,6 +20,8 @@ import (
 // A member reports a file from the material page. The check runs at once; a
 // report that holds pulls the file off the page and the bot posts a card in
 // the log channel. An admin then removes the file for good or puts it back.
+// When the check cannot run, the file is pulled all the same and left to the
+// admins. A report that does not hold gets a silent card, for the record.
 // Unlike the cards of /materials rescan, the bucket copy stays until the
 // admin decides, so putting a file back is instant.
 
@@ -28,6 +30,9 @@ const (
 	reportRestorePrefix = "matrep:ok:"
 
 	reportCardsPerPass = 10
+
+	// uncheckedNote is the verdict of a report whose check could not run.
+	uncheckedNote = "Ο αυτόματος έλεγχος δεν ήταν διαθέσιμος· το αρχείο κρύφτηκε μέχρι να αποφασίσει κάποιος admin."
 )
 
 // reportMu keeps two passes from posting the same card.
@@ -36,9 +41,6 @@ var reportMu sync.Mutex
 // Report implements verify.Reporter.
 func (src *materialSource) Report(ctx context.Context, userID, channelID, fileID, reason string) (*verify.ReportResult, error) {
 	h := src.h
-	if h.judge == nil {
-		return nil, verify.ErrReportUnavailable
-	}
 	m, err := h.st.ChannelMaterial(ctx, channelID, fileID)
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, verify.ErrNoMaterial
@@ -57,7 +59,7 @@ func (src *materialSource) Report(ctx context.Context, userID, channelID, fileID
 	case err != nil:
 		return nil, err
 	}
-	// A report whose check could not run is given back.
+	// A report that leaves no card is given back.
 	drop := func() {
 		dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), dbTimeout)
 		defer cancel()
@@ -70,17 +72,21 @@ func (src *materialSource) Report(ctx context.Context, userID, channelID, fileID
 		r, _, err := h.mat.Bucket().Open(ctx, m.ObjectKey)
 		return r, err
 	}
-	v, err := h.judge.JudgeReport(ctx, m, open, reason)
-	if err != nil {
-		drop()
-		h.log.Warn("report: check failed", "attachment_id", fileID, "error", err)
-		return nil, verify.ErrReportUnavailable
+	// Without a verdict the file is pulled anyway and the admins decide.
+	v := materials.ReportVerdict{Valid: true, Note: uncheckedNote}
+	if h.judge != nil {
+		if got, err := h.judge.JudgeReport(ctx, m, open, reason); err != nil {
+			h.log.Warn("report: check failed; leaving it to the admins", "attachment_id", fileID, "error", err)
+		} else {
+			v = got
+		}
 	}
 	if !v.Valid {
 		if err := h.st.SettleReport(ctx, id, store.ReportInvalid, v.Note); err != nil {
 			h.log.Error("report: record verdict", "report_id", id, "error", err)
 		}
 		h.log.Info("report: declined", "attachment_id", fileID, "user_id", userID, "note", v.Note)
+		go h.safely("report_cards", func() { h.announceReports(src.s) })
 		return &verify.ReportResult{Note: v.Note, Left: left}, nil
 	}
 
@@ -104,12 +110,22 @@ func (src *materialSource) Report(ctx context.Context, userID, channelID, fileID
 	return &verify.ReportResult{Pulled: true, Note: v.Note, Left: left}, nil
 }
 
-// reportCard is the log-channel message for one pulled file.
+// reportCard is the log-channel message for one report. A pulled file gets
+// the admin's buttons; a declined report is only for the record.
 func reportCard(m *store.Material, r *store.Report, imageURL string) (*discordgo.MessageEmbed, []discordgo.MessageComponent) {
+	desc := "Ο αυτόματος έλεγχος έκρινε την αναφορά βάσιμη, οπότε το αρχείο κρύφτηκε από τη σελίδα υλικού. Το αντίγραφο στο bucket μένει μέχρι να αποφασίσει κάποιος admin."
+	color := 0xE67E22
+	switch {
+	case r.Status == store.ReportInvalid:
+		desc = "Ο αυτόματος έλεγχος δεν βρήκε πρόβλημα, οπότε το αρχείο μένει στη σελίδα. Δεν χρειάζεται κάτι από εσάς, εκτός αν διαφωνείτε."
+		color = 0x95A5A6
+	case r.Note == uncheckedNote:
+		desc = "Ο αυτόματος έλεγχος δεν ήταν διαθέσιμος, οπότε το αρχείο κρύφτηκε από τη σελίδα υλικού χωρίς έλεγχο. Το αντίγραφο στο bucket μένει μέχρι να αποφασίσει κάποιος admin."
+	}
 	e := &discordgo.MessageEmbed{
 		Title:       "🚩 Αναφορά υλικού",
-		Description: "Ο αυτόματος έλεγχος έκρινε την αναφορά βάσιμη, οπότε το αρχείο κρύφτηκε από τη σελίδα υλικού. Το αντίγραφο στο bucket μένει μέχρι να αποφασίσει κάποιος admin.",
-		Color:       0xE67E22,
+		Description: desc,
+		Color:       color,
 		Fields: []*discordgo.MessageEmbedField{
 			{Name: "Λόγος", Value: orDash(truncateRunes(r.Reason, 600))},
 			{Name: "Έλεγχος", Value: orDash(r.Note)},
@@ -125,6 +141,9 @@ func reportCard(m *store.Material, r *store.Report, imageURL string) (*discordgo
 	}
 	if imageURL != "" {
 		e.Image = &discordgo.MessageEmbedImage{URL: imageURL}
+	}
+	if r.Status == store.ReportInvalid {
+		return e, nil
 	}
 	return e, []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{
 		discordgo.Button{Label: "Αφαίρεση οριστικά", Style: discordgo.DangerButton, CustomID: reportRemovePrefix + m.AttachmentID},
@@ -166,10 +185,15 @@ func (h *Handler) announceReports(s *discordgo.Session) {
 			}
 		}
 		embed, components := reportCard(m, r, url)
-		msg, err := s.ChannelMessageSendComplex(config.LogChannelID, &discordgo.MessageSend{
+		send := &discordgo.MessageSend{
 			Embeds: []*discordgo.MessageEmbed{embed}, Components: components,
 			AllowedMentions: &discordgo.MessageAllowedMentions{},
-		}, discordgo.WithContext(ctx))
+		}
+		if components == nil {
+			// Nothing to decide: the card is posted without a notification.
+			send.Flags = discordgo.MessageFlagsSuppressNotifications
+		}
+		msg, err := s.ChannelMessageSendComplex(config.LogChannelID, send, discordgo.WithContext(ctx))
 		if err != nil {
 			h.log.Error("report: post card", "attachment_id", r.AttachmentID, "error", err)
 			time.AfterFunc(reviewRetry, func() {

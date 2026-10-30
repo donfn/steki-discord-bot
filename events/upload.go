@@ -352,7 +352,7 @@ func (h *Handler) onUploadSubmit(s *discordgo.Session, u *uploadSubmit) {
 	}); err != nil {
 		pinned = false
 		log.Warn("upload: pin", "error", err)
-		h.alertModsOnce(s, "pin:"+ch.ID, "⚠️ Δεν μπόρεσα να καρφιτσώσω το υλικό που ανέβηκε στο <#%s> (%v). "+
+		h.urgentModsOnce(s, "pin:"+ch.ID, "⚠️ Δεν μπόρεσα να καρφιτσώσω το υλικό που ανέβηκε στο <#%s> (%v). "+
 			"Ίσως το κανάλι έχει φτάσει το όριο των καρφιτσωμένων μηνυμάτων.", ch.ID, err)
 	}
 	// The post and the "pinned a message" notice both came from the bot,

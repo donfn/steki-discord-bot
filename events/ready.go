@@ -59,7 +59,7 @@ func (h *Handler) startMaterials(s *discordgo.Session) {
 	cancel()
 	if err != nil {
 		h.log.Error("material backup off: bucket unreachable", "error", err)
-		h.alertMods(s, "⚠️ Δεν έχω πρόσβαση στο bucket των αντιγράφων (%v). Η αποθήκευση υλικού είναι απενεργοποιημένη μέχρι την επόμενη επανεκκίνηση.", err)
+		h.urgentMods(s, "⚠️ Δεν έχω πρόσβαση στο bucket των αντιγράφων (%v). Η αποθήκευση υλικού είναι απενεργοποιημένη μέχρι την επόμενη επανεκκίνηση.", err)
 		return
 	}
 	h.log.Info("material backup enabled")

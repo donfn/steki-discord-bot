@@ -315,3 +315,16 @@ func TestSessionCap(t *testing.T) {
 		t.Error("expired sessions were not cleared to make room")
 	}
 }
+
+func TestCourseName(t *testing.T) {
+	for in, want := range map[string]string{
+		"δομές-δεδομένων":   "Δομές δεδομένων",
+		"άλγεβρα":           "Άλγεβρα",
+		"λειτουργικά--συστ": "Λειτουργικά συστ",
+		"":                  "",
+	} {
+		if got := courseName(in); got != want {
+			t.Errorf("courseName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

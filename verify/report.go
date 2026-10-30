@@ -117,12 +117,13 @@ func (v *Server) reportFile(w http.ResponseWriter, r *http.Request) {
 		v.log.Error("verify: report failed", "user_id", subject, "file_id", in.File, "error", err)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": stateError})
 	default:
+		// The member is only told the file is under review: the check's
+		// verdict and note stay with the admins.
 		outcome := "report_declined"
-		status := "declined"
 		if res.Pulled {
-			outcome, status = "report_pulled", "pulled"
+			outcome = "report_pulled"
 		}
 		analytics.Tag(ctx, "outcome", outcome)
-		writeJSON(w, http.StatusOK, map[string]any{"status": status, "note": res.Note, "left": res.Left})
+		writeJSON(w, http.StatusOK, map[string]any{"status": "received", "left": res.Left})
 	}
 }

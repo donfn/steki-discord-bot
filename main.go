@@ -256,7 +256,12 @@ func newShield(cfg *config.Config, sess *discordgo.Session, logger *slog.Logger)
 		if err != nil {
 			msg = "⚠️ Δεν μπόρεσα να ενεργοποιήσω το Under Attack Mode (" + reason + "). Ξαναπροσπαθώ σε λίγα λεπτά."
 		}
-		if _, sendErr := sess.ChannelMessageSend(config.LogChannelID, msg); sendErr != nil {
+		// Only a failure needs an admin; the switch itself is posted silently.
+		send := &discordgo.MessageSend{Content: msg}
+		if err == nil {
+			send.Flags = discordgo.MessageFlagsSuppressNotifications
+		}
+		if _, sendErr := sess.ChannelMessageSendComplex(config.LogChannelID, send); sendErr != nil {
 			logger.Warn("shield: log channel message", "error", sendErr)
 		}
 	}

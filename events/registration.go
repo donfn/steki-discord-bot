@@ -74,7 +74,7 @@ func (h *Handler) stepSendEmail(ctx context.Context, s *discordgo.Session,
 
 	if reg.CodeSentCount >= maxCodeSends ||
 		!h.gate.allow("mail-user:"+reg.UserID, maxMailsPerUserHour, time.Hour) {
-		h.alertModsOnce(s, "toomany:"+reg.UserID, "⚠️ Ο χρήστης <@%s> ζήτησε %d email εγγραφής. Ίσως πρόκειται για κατάχρηση.",
+		h.urgentModsOnce(s, "toomany:"+reg.UserID, "⚠️ Ο χρήστης <@%s> ζήτησε %d email εγγραφής. Ίσως πρόκειται για κατάχρηση.",
 			reg.UserID, reg.CodeSentCount)
 		return result(cardTooMany)
 	}
@@ -118,7 +118,7 @@ func (h *Handler) stepSendEmail(ctx context.Context, s *discordgo.Session,
 		h.log.Error("send verification email failed", "user_id", reg.UserID, "error", err)
 		h.audit(reg.UserID, reg.ID, store.EventCodeSendFailed,
 			map[string]any{"email": email, "error": err.Error()}, "")
-		h.alertMods(s, "🚨 Απέτυχε η αποστολή email στον <@%s> (`%s`): ```%v```",
+		h.urgentMods(s, "🚨 Απέτυχε η αποστολή email στον <@%s> (`%s`): ```%v```",
 			reg.UserID, email, err)
 		return result(cardFailed)
 	}
@@ -189,7 +189,7 @@ func (h *Handler) completeVerification(ctx context.Context, s *discordgo.Session
 	guildID, channelID string, reg *store.Registration) error {
 
 	if reg.Email == nil {
-		h.alertMods(s, "⚠️ Ο <@%s> πάτησε τον σύνδεσμο, αλλά δεν υπάρχει email του στη βάση. Ελέγξτε την εγγραφή του.", reg.UserID)
+		h.urgentMods(s, "⚠️ Ο <@%s> πάτησε τον σύνδεσμο, αλλά δεν υπάρχει email του στη βάση. Ελέγξτε την εγγραφή του.", reg.UserID)
 		return errIneligibleEmail
 	}
 	email := *reg.Email
@@ -217,7 +217,7 @@ func (h *Handler) completeVerification(ctx context.Context, s *discordgo.Session
 		}
 		return err
 	case errors.Is(err, errIneligibleEmail):
-		h.alertMods(s, "⚠️ Ο <@%s> ολοκλήρωσε την εγγραφή με το `%s`, που δεν είναι αποδεκτό ακαδημαϊκό email. Ελέγξτε την εγγραφή του.",
+		h.urgentMods(s, "⚠️ Ο <@%s> ολοκλήρωσε την εγγραφή με το `%s`, που δεν είναι αποδεκτό ακαδημαϊκό email. Ελέγξτε την εγγραφή του.",
 			reg.UserID, email)
 		h.send(s, channelID, "⚠️ Κάτι πήγε στραβά. Η Ομάδα Διαχείρισης το είδε και θα σε βοηθήσει σύντομα.")
 		return err
@@ -225,7 +225,7 @@ func (h *Handler) completeVerification(ctx context.Context, s *discordgo.Session
 		// The address is recorded; only the role is missing. Keep the channel
 		// so the member is not left with nothing while a moderator steps in.
 		h.log.Error("grant role failed", "user_id", reg.UserID, "error", err)
-		h.alertMods(s, "🚨 <@&%s> Ο <@%s> επαληθεύτηκε αλλά δεν μπόρεσα να του δώσω ρόλο. "+
+		h.urgentMods(s, "🚨 <@&%s> Ο <@%s> επαληθεύτηκε αλλά δεν μπόρεσα να του δώσω ρόλο. "+
 			"Δώστε του τον ρόλο χειροκίνητα: ```%v```", staffRoleID, reg.UserID, err)
 		h.send(s, channelID, "⚠️ Κάτι πήγε στραβά. Η Ομάδα Διαχείρισης το είδε και θα σε βοηθήσει σύντομα.")
 		return err

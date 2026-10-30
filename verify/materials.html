@@ -33,22 +33,22 @@
   :root {
     --color-brand: oklch(0.855 0.172 87);
     --color-on-brand: oklch(0.2 0.012 80);
-    --color-paper: var(--color-brand);
-    --color-dot: oklch(0.2 0.012 80 / 0.2);
+    --color-paper: oklch(0.955 0.04 92);
+    --color-dot: oklch(0.2 0.012 80 / 0.08);
     --color-sheet: oklch(0.986 0.012 95);
     --color-tile: oklch(0.953 0.03 94);
     --color-ink: oklch(0.2 0.012 80);
-    --color-muted: oklch(0.43 0.02 80);
-    --color-line: oklch(0.2 0.012 80);
-    --color-soft: oklch(0.2 0.012 80 / 0.16);
-    --color-shadow: oklch(0.2 0.012 80);
+    --color-muted: oklch(0.46 0.018 80);
+    --color-line: oklch(0.2 0.012 80 / 0.2);
+    --color-soft: oklch(0.2 0.012 80 / 0.12);
+    --color-shadow: oklch(0.2 0.012 80 / 0.1);
     --color-marker: oklch(0.52 0.2 28);
     --color-sky: oklch(0.5 0.16 255);
     --color-tape: oklch(0.72 0.14 28 / 0.8);
-    --color-stage: oklch(0.9 0.025 92);
+    --color-stage: oklch(0.93 0.02 92);
     --color-page: oklch(1 0 0);
     --color-code: oklch(0.2 0.012 80);
-    --color-scrim: oklch(0.2 0.012 80 / 0.6);
+    --color-scrim: oklch(0.2 0.012 80 / 0.4);
 
     --font-display: "Fira Sans Extra Condensed", "Arial Narrow", system-ui, sans-serif;
     --font-body: "Fira Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -70,9 +70,9 @@
 
     --radius-card: 10px;
     --radius-ctl: 8px;
-    --border: 2px solid var(--color-line);
-    --shadow-card: 6px 6px 0 var(--color-shadow);
-    --shadow-ctl: 3px 3px 0 var(--color-shadow);
+    --border: 1.5px solid var(--color-line);
+    --shadow-card: 0 1px 2px oklch(0.2 0.012 80 / 0.05), 0 12px 32px -8px oklch(0.2 0.012 80 / 0.14);
+    --shadow-ctl: 0 1px 2px oklch(0.2 0.012 80 / 0.08);
 
     --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
     --dur-short: 140ms;
@@ -80,15 +80,18 @@
     color-scheme: light;
   }
   :root[data-theme="dark"] {
-    --color-paper: oklch(0.17 0.008 80);
-    --color-dot: oklch(0.95 0.02 92 / 0.09);
+    --color-paper: oklch(0.19 0.008 80);
+    --color-dot: oklch(0.95 0.02 92 / 0.05);
     --color-sheet: oklch(0.225 0.01 80);
     --color-tile: oklch(0.275 0.012 80);
     --color-ink: oklch(0.95 0.02 92);
-    --color-muted: oklch(0.77 0.02 90);
-    --color-line: oklch(0.95 0.02 92 / 0.9);
-    --color-soft: oklch(0.95 0.02 92 / 0.18);
-    --color-shadow: var(--color-brand);
+    --color-ink: oklch(0.92 0.015 92);
+    --color-muted: oklch(0.72 0.015 90);
+    --color-line: oklch(0.95 0.02 92 / 0.16);
+    --color-soft: oklch(0.95 0.02 92 / 0.1);
+    --color-shadow: oklch(0 0 0 / 0.3);
+    --shadow-card: 0 1px 2px oklch(0 0 0 / 0.3), 0 12px 32px -8px oklch(0 0 0 / 0.5);
+    --shadow-ctl: 0 1px 2px oklch(0 0 0 / 0.35);
     --color-marker: oklch(0.76 0.15 28);
     --color-sky: oklch(0.78 0.11 250);
     --color-stage: oklch(0.13 0.006 80);
@@ -236,6 +239,24 @@
     font-size: 0.875rem;
     line-height: 1.5;
   }
+  .toast {
+    position: fixed; left: 50%; bottom: max(20px, env(safe-area-inset-bottom)); z-index: 20;
+    max-width: min(92vw, 28rem); padding: 0.7rem 1rem; border-radius: var(--radius-ctl);
+    background: var(--color-ink); color: var(--color-sheet); font-size: 0.875rem; font-weight: 500;
+    box-shadow: var(--shadow-card); transform: translateX(-50%);
+    animation: toast-in 180ms var(--ease-out) both;
+  }
+  .toast[hidden] { display: none; }
+  @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 6px); } }
+  @media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
+  .study-foot {
+    margin: var(--space-md) 0 0;
+    padding: var(--space-sm) var(--space-sm) calc(var(--space-sm) - 0.25rem);
+    border-radius: var(--radius-ctl);
+    background: var(--color-tile);
+  }
+  .study-foot h2 { margin: 0 0 0.35rem; font: 800 1.35rem/1.1 var(--font-display); text-wrap: balance; }
+  .study-foot p { font-size: 0.9375rem; }
   .credit { margin: var(--space-xs) 0 0; font-size: var(--text-xs); line-height: 1.5; }
   .credit a, .footnote a { font-weight: 700; text-underline-offset: 0.15em; }
 
@@ -285,7 +306,7 @@
     @keyframes fade { from { opacity: 0; } }
   }
   @media (prefers-contrast: more) {
-    :root { --color-muted: var(--color-ink); --color-soft: var(--color-line); }
+    :root { --color-muted: var(--color-ink); --color-line: var(--color-ink); --color-soft: var(--color-ink); --border: 2px solid var(--color-ink); }
   }
 
   body.locked { overflow: hidden; }
@@ -458,9 +479,8 @@
     position: fixed;
     inset: 0;
     z-index: 10;
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
-    grid-template-columns: minmax(0, 1fr);
+    display: flex;
+    flex-direction: column;
     background: var(--color-stage);
     animation: rise 300ms var(--ease-out) both;
   }
@@ -530,6 +550,54 @@
   /* Photos are sized in script (fit to the stage, times the zoom); margin: auto
      centres them while they are smaller than the stage and scrolls once larger. */
   .stage.photo { display: flex; }
+  .photo-wrap { position: relative; flex: none; margin: auto; }
+  .stage .photo-wrap img.photo { margin: 0; }
+
+  /* The member's own layer: pen and highlighter strokes over a page. */
+  .ink { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; mix-blend-mode: multiply; pointer-events: none; }
+  .viewer.inking .ink { pointer-events: auto; touch-action: none; cursor: crosshair; }
+  .ink-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 8px; background: var(--color-sheet); border-bottom: var(--border); }
+  .ink-bar[hidden] { display: none; }
+  .ink-bar .icon-btn[aria-pressed="true"], .bar-top .icon-btn[aria-pressed="true"] { background: var(--color-brand); color: var(--color-on-brand); border-color: var(--color-line); }
+  .swatches { display: flex; gap: 6px; padding: 0 4px; }
+  .swatches[hidden] { display: none; }
+  .swatch { width: 28px; height: 28px; padding: 0; border: 2px solid var(--color-line); border-radius: 50%; cursor: pointer; }
+  .swatch[aria-pressed="true"] { box-shadow: 0 0 0 3px var(--color-sheet), 0 0 0 5px var(--color-ink); }
+  .swatch:focus-visible { outline: 3px solid var(--color-marker); outline-offset: 4px; }
+  .ink-sep { width: 2px; height: 24px; margin: 0 2px; background: var(--color-soft); }
+  .ink-hint { margin-left: auto; padding-right: 4px; font-size: var(--text-xs); color: var(--color-muted); }
+  @media (max-width: 640px) { .ink-hint { display: none; } }
+
+  /* The notes panel: beside the file on wide screens, over its lower half on phones. */
+  .viewer-body { position: relative; display: flex; flex: 1 1 auto; min-height: 0; }
+  .viewer-body .stage { flex: 1 1 auto; min-width: 0; }
+  .pad { display: flex; flex-direction: column; flex: none; width: min(380px, 40%); border-left: var(--border); background: var(--color-sheet); }
+  .pad[hidden] { display: none; }
+  @media (max-width: 899px) {
+    .pad { position: absolute; inset: auto 0 0; z-index: 3; width: auto; height: 55%; border-left: 0; border-top: var(--border); }
+  }
+  .pad-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 8px; border-bottom: 1.5px dashed var(--color-soft); }
+  .pad-tools { display: flex; flex-wrap: wrap; gap: 2px; }
+  .pad-tools .icon-btn { width: 38px; height: 38px; font: 700 0.9375rem/1 var(--font-body); }
+  .pad-tools .icon-btn svg { width: 18px; height: 18px; }
+  .pad-text { flex: 1; min-height: 0; overflow: auto; padding: 12px 16px; outline: none; font-size: 0.9375rem; line-height: 1.55; }
+  .pad-text:focus-visible { box-shadow: inset 0 0 0 3px var(--color-marker); }
+  .pad-text:empty::before { content: attr(data-placeholder); color: var(--color-muted); pointer-events: none; }
+  .pad-foot { margin: 0; padding: 8px 14px max(8px, env(safe-area-inset-bottom)); border-top: 1.5px dashed var(--color-soft); font-size: var(--text-xs); color: var(--color-muted); }
+  .md h1, .md h2, .md h3 { margin: 0.8em 0 0.3em; font: 800 1.35rem/1.1 var(--font-display); }
+  .md h2 { font-size: 1.15rem; }
+  .md h3 { font-size: 1rem; }
+  .md > :first-child { margin-top: 0; }
+  .md p, .md ul, .md ol, .md blockquote, .md pre { margin: 0 0 0.7em; color: var(--color-ink); }
+  .md ul, .md ol { padding-left: 1.3em; }
+  .md code { padding: 0 0.3em; border-radius: 4px; background: var(--color-tile); font: 500 0.875em var(--font-mono); }
+  .md pre { padding: 0.6em 0.8em; border-radius: 6px; background: var(--color-tile); overflow: auto; }
+  .md pre code { padding: 0; background: none; }
+  .md blockquote { padding-left: 0.8em; border-left: 3px solid var(--color-brand); color: var(--color-muted); }
+  .md a { color: var(--color-ink); text-decoration-color: var(--color-marker); }
+  .md mark { background: var(--color-brand); color: var(--color-on-brand); }
+  .md hr { border: 0; border-top: 1.5px dashed var(--color-soft); }
+  .md .empty-md { color: var(--color-muted); }
   .stage img.photo { display: block; flex: none; margin: auto; max-width: none; border-radius: 4px; box-shadow: 0 0 0 2px var(--color-line); }
   .stage iframe { display: block; width: 100%; height: calc(100% - 4px); min-height: 70vh; border: 0; border-radius: 4px; background: var(--color-page); }
   .stage .loading {
@@ -544,6 +612,19 @@
   .views .chip { width: 46px; padding: 0; display: grid; place-items: center; }
   .views svg { width: 20px; height: 20px; }
   .acts { display: flex; align-items: center; }
+  .note { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; margin-top: 0.25rem; padding-left: 0.5rem; border-left: 3px solid var(--color-brand); font-size: 0.8125rem; line-height: 1.4; color: var(--color-ink); white-space: pre-line; overflow-wrap: anywhere; }
+  .note[hidden] { display: none; }
+  .icon-btn.done-btn[aria-pressed="true"] { background: var(--color-brand); color: var(--color-on-brand); border-color: var(--color-line); }
+  .file.done .name { text-decoration: line-through; text-decoration-thickness: 2px; text-decoration-color: var(--color-marker); }
+  .file.done .thumb { opacity: 0.55; }
+  .private-note { margin: 0 0 var(--space-sm); font-size: var(--text-xs); color: var(--color-muted); }
+  .notes-form label { display: block; margin: 0 0 0.3rem; font-weight: 700; font-size: 0.875rem; }
+  .notes-form input {
+    width: 100%; height: 46px; margin-bottom: 0.8rem; padding: 0 0.8rem;
+    border: var(--border); border-radius: var(--radius-ctl);
+    background: var(--color-tile); color: var(--color-ink); font: 500 1rem var(--font-body);
+  }
+  .notes-form input:focus-visible { outline: 3px solid var(--color-marker); outline-offset: 2px; }
   .top { display: none; }
   .pill {
     padding: 2px 9px;
@@ -686,6 +767,8 @@
     </div>
   </div>
 
+  <p class="private-note" id="private-note">✓ μελετημένα, σημειώσεις, δικοί σου τίτλοι και ό,τι γράφεις πάνω στα αρχεία αποθηκεύονται τοπικά, σε αυτόν τον browser. Τα βλέπεις μόνο εσύ και δεν μεταφέρονται σε άλλη συσκευή.</p>
+
   <ul class="files" id="files" data-view="grid"></ul>
 
   <div class="empty" id="empty" hidden>
@@ -695,6 +778,12 @@
     <h2 id="empty-title">Δεν υπάρχει υλικό ακόμα</h2>
     <p id="empty-text">Ό,τι ανεβαίνει στο κανάλι εμφανίζεται εδώ. Μπορείς να ανεβάσεις κι εσύ υλικό με το κουμπί «Ανέβασμα υλικού» στο Discord.</p>
   </div>
+
+  <footer class="study-foot" id="study-foot">
+    <h2>Προσωπικός χώρος μελέτης για το μάθημα {{.Course}}</h2>
+    <p>Ένα εργαλείο του Steki για να διαβάζεις πιο οργανωμένα στην εξεταστική. Τσέκαρε ό,τι έχεις διαβάσει, δώσε στα αρχεία δικούς σου τίτλους, κράτα σημειώσεις δίπλα σε κάθε αρχείο και γράψε ή υπογράμμισε πάνω στις σελίδες.</p>
+    <p>Όλα αποθηκεύονται μόνο σε αυτόν τον browser. Δεν στέλνονται στο Steki ούτε πουθενά αλλού και τα βλέπεις μόνο εσύ. Αν καθαρίσεις τα δεδομένα του browser ή ανοίξεις τη σελίδα σε άλλη συσκευή, δεν θα τα βρεις εκεί.</p>
+  </footer>
 
   <p class="footnote">Τα αρχεία τα ανέβασαν μέλη του Steki και κατεβαίνουν όλα μόλις ανοίξει η σελίδα. Αν την ανανεώσεις, θα χρειαστείς νέο σύνδεσμο από το Discord.</p>
 </main>
@@ -721,19 +810,67 @@
     <button class="icon-btn nav-file" type="button" id="next" aria-label="Επόμενο αρχείο">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
     </button>
+    <button class="icon-btn" type="button" id="ink-toggle" aria-pressed="false" aria-label="Στυλό και μαρκαδόρος" title="Στυλό και μαρκαδόρος"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h6"/><path d="M14.5 4.5l5 5L11 18H6v-5z"/></svg></button>
+    <button class="icon-btn" type="button" id="pad-toggle" aria-pressed="false" aria-label="Σημειώσεις" title="Σημειώσεις"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg></button>
+    <button class="icon-btn" type="button" id="viewer-copy" aria-label="Αντιγραφή αρχείου" title="Αντιγραφή"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button>
     <button class="icon-btn" type="button" id="viewer-report" aria-label="Αναφορά αρχείου" title="Αναφορά"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4M5 4h11l-1.5 4L16 12H5"/></svg></button>
     <a class="icon-btn" id="viewer-dl" aria-label="Λήψη αρχείου">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
     </a>
   </div>
-  <div class="stage" id="stage"></div>
+  <div class="ink-bar" id="ink-bar" role="toolbar" aria-label="Στυλό και μαρκαδόρος" hidden>
+    <button class="icon-btn" type="button" data-tool="pen" aria-pressed="true" aria-label="Στυλό" title="Στυλό"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></button>
+    <button class="icon-btn" type="button" data-tool="hl" aria-pressed="false" aria-label="Μαρκαδόρος" title="Μαρκαδόρος"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h6"/><path d="M14.5 4.5l5 5L11 18H6v-5z"/></svg></button>
+    <button class="icon-btn" type="button" data-tool="eraser" aria-pressed="false" aria-label="Γόμα" title="Γόμα"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 20h13"/><path d="M5 14l8.5-8.5a2 2 0 0 1 2.8 0l2.2 2.2a2 2 0 0 1 0 2.8L12 17H8z"/></svg></button>
+    <span class="ink-sep" aria-hidden="true"></span>
+    <div class="swatches" id="swatches" role="group" aria-label="Χρώμα"></div>
+    <span class="ink-sep" aria-hidden="true"></span>
+    <button class="icon-btn" type="button" id="ink-undo" aria-label="Αναίρεση" title="Αναίρεση"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
+    <button class="icon-btn" type="button" id="ink-clear" aria-label="Σβήσιμο όλων" title="Σβήσιμο όλων"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button>
+    <span class="ink-hint" id="ink-hint">Αποθηκεύονται τοπικά, σε αυτόν τον browser. Τα βλέπεις μόνο εσύ.</span>
+  </div>
+  <div class="viewer-body">
+    <div class="stage" id="stage"></div>
+    <aside class="pad" id="pad" aria-label="Σημειώσεις" hidden>
+      <div class="pad-head">
+        <div class="pad-tools" role="toolbar" aria-label="Μορφοποίηση">
+          <button class="icon-btn" type="button" data-cmd="bold" aria-label="Έντονα" title="Έντονα"><b>B</b></button>
+          <button class="icon-btn" type="button" data-cmd="italic" aria-label="Πλάγια" title="Πλάγια"><i>I</i></button>
+          <button class="icon-btn" type="button" data-cmd="mark" aria-label="Υπογράμμιση με μαρκαδόρο" title="Μαρκαδόρος"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h6"/><path d="M14.5 4.5l5 5L11 18H6v-5z"/></svg></button>
+          <button class="icon-btn" type="button" data-cmd="heading" aria-label="Επικεφαλίδα" title="Επικεφαλίδα">H</button>
+          <button class="icon-btn" type="button" data-cmd="insertUnorderedList" aria-label="Λίστα" title="Λίστα"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></svg></button>
+          <button class="icon-btn" type="button" data-cmd="insertOrderedList" aria-label="Αριθμημένη λίστα" title="Αριθμημένη λίστα"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 6h10M10 12h10M10 18h10"/><path d="M4 5l1.5-1v5M4 14h2.5L4 18h2.5"/></svg></button>
+        </div>
+        <button class="icon-btn" type="button" id="pad-close" aria-label="Κλείσιμο σημειώσεων"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+      <div class="pad-text md" id="pad-text" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Σημειώσεις" spellcheck="true" data-placeholder="Γράψε τις σημειώσεις σου εδώ…"></div>
+      <p class="pad-foot">Αποθηκεύονται τοπικά, σε αυτόν τον browser. Τα βλέπεις μόνο εσύ.</p>
+    </aside>
+  </div>
 </section>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<dialog class="report notes-form" id="notes" aria-labelledby="notes-title">
+  <form id="notes-form" method="dialog">
+    <h2 id="notes-title">Δικός σου τίτλος</h2>
+    <p>Ο τίτλος αποθηκεύεται <strong>τοπικά, σε αυτόν τον browser</strong>. Τον βλέπεις μόνο εσύ· δεν στέλνεται πουθενά.</p>
+    <p class="report-file" id="notes-file"></p>
+    <label for="notes-name">Τίτλος</label>
+    <input id="notes-name" maxlength="120" autocomplete="off">
+    <p class="report-count">Για σημειώσεις, άνοιξε το αρχείο και πάτα το εικονίδιο σημειώσεων.</p>
+    <div class="report-row">
+      <button class="btn ghost" type="button" id="notes-cancel">Άκυρο</button>
+      <button class="btn" type="submit" id="notes-save">Αποθήκευση</button>
+    </div>
+  </form>
+</dialog>
 
 <dialog class="report" id="report" aria-labelledby="report-title">
   <form id="report-form" novalidate>
     <div id="report-ask">
       <h2 id="report-title">Τι πρόβλημα έχει αυτό το αρχείο;</h2>
-      <p>Γράψε με δικά σου λόγια τι δεν πάει καλά. Ένα AI ελέγχει την αναφορά μαζί με το αρχείο· αν ισχύει, το αρχείο κρύβεται αμέσως και το εξετάζει ένας διαχειριστής.</p>
+      <p>Γράψε με δικά σου λόγια τι δεν πάει καλά. Οι διαχειριστές θα εξετάσουν το αρχείο.</p>
       <p class="report-file" id="report-file"></p>
       <label class="sr-only" for="report-reason">Λόγος αναφοράς</label>
       <textarea id="report-reason" maxlength="500" placeholder="Π.χ. είναι meme και όχι υλικό, έχει προσωπικά στοιχεία, δεν ανοίγει…"></textarea>
@@ -760,6 +897,28 @@
   const PDFJS_WORKER_SRI = 'sha384-vbNBYP03jHFPlgtK4qSXtazEmGfmpTWlSsfq9OiU20MroW/Q9TbaEXiM7PpeWg+6';
   const PARALLEL = 3;
   const DL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>';
+
+  const COPY_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>';
+  const CHECK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+  const PEN_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>';
+
+  // What the member marks for themselves: studied, their own title, notes.
+  // It stays in this browser only, keyed by file id: { d: 1, t: '', n: '' }.
+  const STUDY_KEY = 'study';
+  let study = {};
+  try { study = JSON.parse(localStorage.getItem(STUDY_KEY) || '{}') || {}; } catch { study = {}; }
+  const mine = (f) => study[f.id] || {};
+  function saveMine(f, patch) {
+    const next = { ...mine(f), ...patch };
+    for (const k of Object.keys(next)) if (!next[k]) delete next[k];
+    if (Object.keys(next).length) study[f.id] = next; else delete study[f.id];
+    try { localStorage.setItem(STUDY_KEY, JSON.stringify(study)); } catch {}
+  }
+  const titleOf = (f) => mine(f).t || f.caption || f.name;
+  // The notes as one line of text, for the list and its search.
+  const plainOf = (html) => new DOMParser()
+    .parseFromString('<body>' + (html || '').replace(/<\/(p|div|li|h3)>|<br>/g, ' $&'), 'text/html')
+    .body.textContent.replace(/\s+/g, ' ').trim();
 
   const data = JSON.parse(document.getElementById('data').textContent);
   const $ = (id) => document.getElementById(id);
@@ -811,11 +970,13 @@
           files.length + ' ' + plural(files.length, 'αρχείο', 'αρχεία'),
           pdfs && imgs ? pdfs + ' PDF, ' + imgs + ' ' + plural(imgs, 'εικόνα', 'εικόνες') : null,
           size(files.reduce((n, f) => n + f.size, 0)),
+          files.some((f) => mine(f).d) ? files.filter((f) => mine(f).d).length + '/' + files.length + ' μελετημένα' : null,
         ].filter(Boolean).join(' · ')
       : 'Υλικό μαθήματος';
   }
   function syncTools() {
     $('tools').hidden = !files.length;
+    $('private-note').hidden = !files.length;
     $('chips').hidden = !countOf('pdf') || !countOf('jpg');
   }
   renderSummary();
@@ -823,7 +984,6 @@
   for (const f of files) {
     const li = el('li', 'file');
     li.dataset.kind = kindOf(f);
-    li.dataset.search = [f.name, f.caption, f.by, f.thread].filter(Boolean).join(' ').toLocaleLowerCase('el');
 
     const top = el('div', 'top');
     const age = ageOf(f.posted);
@@ -838,13 +998,15 @@
     const spin = el('span', 'spinner');
     thumb.append(spin);
     const info = el('span', 'info');
-    info.append(el('span', 'name', f.name));
-    if (f.caption) info.append(el('span', 'caption', f.caption));
+    const nameEl = el('span', 'name');
+    const capEl = el('span', 'caption');
+    const noteEl = el('span', 'note');
+    info.append(nameEl, capEl);
     const bits = [size(f.size), dateFmt.format(new Date(f.posted))];
     if (f.by) bits.push(f.by);
     if (f.thread) bits.push('νήμα: ' + f.thread);
     const meta = el('span', 'meta', bits.join(' · '));
-    info.append(meta);
+    info.append(meta, noteEl);
     open.append(thumb, info);
     open.addEventListener('click', () => openViewer(f));
 
@@ -861,12 +1023,76 @@
     rep.innerHTML = FLAG_ICON;
     rep.addEventListener('click', () => openReport(f, rep));
 
+    const done = el('button', 'icon-btn done-btn');
+    done.type = 'button';
+    done.title = 'Το διάβασα';
+    done.innerHTML = CHECK_ICON;
+    done.addEventListener('click', () => {
+      saveMine(f, { d: mine(f).d ? 0 : 1 });
+      paintMine(f);
+      renderSummary();
+    });
+
+    const edit = el('button', 'icon-btn');
+    edit.type = 'button';
+    edit.title = 'Δικός σου τίτλος';
+    edit.innerHTML = PEN_ICON;
+    edit.addEventListener('click', () => openNotes(f, edit));
+
+    const copy = el('button', 'icon-btn');
+    copy.type = 'button';
+    copy.title = 'Αντιγραφή';
+    copy.setAttribute('aria-label', 'Αντιγραφή: ' + f.name);
+    copy.innerHTML = COPY_ICON;
+    copy.addEventListener('click', () => copyFile(f, copy));
+
     const acts = el('div', 'acts');
-    acts.append(dl, rep);
+    acts.append(done, edit, copy, dl, rep);
     li.append(top, open, acts);
     $('files').append(li);
-    f.row = { li, thumb, spin, meta, dl, bits };
+    f.row = { li, thumb, spin, meta, dl, bits, nameEl, capEl, noteEl, done, edit };
+    paintMine(f);
   }
+
+  // Shows the member's own marks on a row.
+  function paintMine(f) {
+    const m = mine(f);
+    const r = f.row;
+    r.nameEl.textContent = m.t || f.name;
+    const cap = m.t ? [f.name, f.caption].filter(Boolean).join(' · ') : f.caption;
+    r.capEl.textContent = cap || '';
+    r.capEl.hidden = !cap;
+    r.noteEl.textContent = plainOf(m.n);
+    r.noteEl.hidden = !r.noteEl.textContent;
+    r.li.classList.toggle('done', !!m.d);
+    r.done.setAttribute('aria-pressed', String(!!m.d));
+    r.done.setAttribute('aria-label', 'Το διάβασα: ' + titleOf(f));
+    r.edit.setAttribute('aria-label', 'Δικός σου τίτλος: ' + titleOf(f));
+    r.li.dataset.search = [f.name, f.caption, f.by, f.thread, m.t, r.noteEl.textContent].filter(Boolean).join(' ').toLocaleLowerCase('el');
+  }
+
+  // ── Own title and notes ─────────────────────────────────────────────────
+  let noting = null;
+  function openNotes(f, opener) {
+    noting = { f, opener };
+    $('notes-file').textContent = f.name;
+    $('notes-name').value = mine(f).t || '';
+    $('notes-name').placeholder = f.caption || f.name;
+    $('notes').showModal();
+    $('notes-name').focus();
+  }
+  $('notes-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!noting) return;
+    const f = noting.f;
+    saveMine(f, { t: $('notes-name').value.trim() });
+    paintMine(f);
+    applyFilter();
+    $('notes').close();
+  });
+  $('notes-cancel').addEventListener('click', () => $('notes').close());
+  $('notes').addEventListener('click', (e) => { if (e.target === $('notes')) $('notes').close(); });
+  $('notes').addEventListener('close', () => { noting?.opener?.isConnected && noting.opener.focus?.(); noting = null; });
 
   // ── View: grid by default, list on request ──────────────────────────────
   function setView(v) {
@@ -1079,13 +1305,19 @@
       // The back button (or gesture) closes the viewer instead of the page.
       history.pushState({ viewer: true }, '');
     }
+    savePad();
     current = f;
     const gen = ++generation;
     zoom = 1;
     teardown();
+    inkUndo = [];
+    syncInkButtons();
+    $('ink-toggle').hidden = false;
+    padFile = f;
+    loadPad(f);
 
-    $('viewer-name').textContent = f.caption || f.name;
-    $('viewer-meta').textContent = (f.caption ? f.name + ' · ' : '') + f.row.bits.join(' · ');
+    $('viewer-name').textContent = titleOf(f);
+    $('viewer-meta').textContent = (titleOf(f) !== f.name ? f.name + ' · ' : '') + f.row.bits.join(' · ');
     const vis = visibleFiles();
     const at = vis.indexOf(f);
     $('prev').setAttribute('aria-disabled', String(at <= 0));
@@ -1120,9 +1352,11 @@
       img.src = f.url;
       photo = img;
       stage.classList.add('photo');
-      stage.replaceChildren(img);
+      const wrap = el('div', 'photo-wrap');
+      wrap.append(img);
+      stage.replaceChildren(wrap);
       if (!img.complete) await img.decode().catch(() => {});
-      if (gen === generation) fitPhoto();
+      if (gen === generation) { fitPhoto(); inkLayer(wrap, '1'); }
       return;
     }
 
@@ -1148,6 +1382,9 @@
       frame.title = f.name;
       frame.src = f.url;
       $('zoom').hidden = true;
+      // The browser's viewer cannot be drawn on.
+      setInking(false);
+      $('ink-toggle').hidden = true;
       stage.replaceChildren(frame);
     }
   }
@@ -1193,7 +1430,7 @@
       canvas.setAttribute('role', 'img');
       canvas.setAttribute('aria-label', 'Σελίδα ' + box.dataset.n);
       await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
-      if (gen === generation) box.prepend(canvas);
+      if (gen === generation) { box.prepend(canvas); inkLayer(box, box.dataset.n); }
     } catch {
       delete box.dataset.drawn;
     }
@@ -1208,6 +1445,8 @@
     const fit = Math.max(0.01, Math.min(w / photo.naturalWidth, h / photo.naturalHeight));
     photo.style.width = Math.floor(photo.naturalWidth * fit * zoom) + 'px';
     photo.style.height = Math.floor(photo.naturalHeight * fit * zoom) + 'px';
+    const c = photo.parentElement?.querySelector('.ink');
+    if (c) sizeInk(c);
   }
 
   function showZoom() { $('zoom-level').textContent = Math.round(zoom * 100) + '%'; }
@@ -1225,8 +1464,337 @@
     layoutPages(generation).then(() => { stage.scrollTop = keep * stage.scrollHeight; });
   }
 
+  // ── Copy: the file to the clipboard, e.g. to paste into an AI assistant ─
+  // Browsers only put pictures (as PNG) and text on the clipboard, so a
+  // photo goes as a PNG and a PDF as its text.
+  let toastTimer;
+  function toast(text) {
+    const t = $('toast');
+    t.textContent = text;
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.hidden = true; }, 3200);
+  }
+  async function readyBlob(f) {
+    if (f.state !== 'ready') await fetchFile(f);
+    if (f.state !== 'ready') throw new Error('not ready');
+    return f.blob;
+  }
+  async function asPng(f) {
+    const bmp = await createImageBitmap(await readyBlob(f));
+    const c = document.createElement('canvas');
+    c.width = bmp.width;
+    c.height = bmp.height;
+    c.getContext('2d').drawImage(bmp, 0, 0);
+    return new Promise((ok, fail) => c.toBlob((b) => (b ? ok(b) : fail(new Error('png'))), 'image/png'));
+  }
+  async function asText(f) {
+    const lib = await loadPdfjs();
+    const d = await lib.getDocument({ data: new Uint8Array(await (await readyBlob(f)).arrayBuffer()), isEvalSupported: false }).promise;
+    const parts = [titleOf(f) + '\n'];
+    try {
+      for (let n = 1; n <= d.numPages; n++) {
+        const page = await d.getPage(n);
+        const tc = await page.getTextContent();
+        parts.push(tc.items.map((i) => i.str + (i.hasEOL ? '\n' : ' ')).join('').trim());
+      }
+    } finally {
+      d.destroy();
+    }
+    const text = parts.join('\n\n').trim();
+    if (text.length <= titleOf(f).length + 5) throw Object.assign(new Error('empty'), { empty: true });
+    return new Blob([text], { type: 'text/plain' });
+  }
+  async function copyFile(f, btn) {
+    const img = kindOf(f) === 'jpg';
+    // The promise goes to the clipboard at once, so Safari still counts the click.
+    const data = img ? asPng(f) : asText(f);
+    data.catch(() => {});
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ [img ? 'image/png' : 'text/plain']: data })]);
+      btn.innerHTML = CHECK_ICON;
+      setTimeout(() => { btn.innerHTML = COPY_ICON; }, 1500);
+      toast(img ? 'Η εικόνα αντιγράφηκε. Κάνε επικόλληση όπου τη θέλεις.' : 'Το κείμενο του PDF αντιγράφηκε. Κάνε επικόλληση όπου το θέλεις.');
+    } catch {
+      const empty = await data.then(() => false, (e) => !!e.empty);
+      toast(empty
+        ? 'Αυτό το PDF είναι σκαναρισμένο και δεν έχει κείμενο. Κατέβασέ το και ανέβασέ το ως αρχείο.'
+        : 'Η αντιγραφή δεν έγινε. Κατέβασε το αρχείο και ανέβασέ το εκεί που το χρειάζεσαι.');
+    }
+  }
+  $('viewer-copy').addEventListener('click', () => { if (current) copyFile(current, $('viewer-copy')); });
+
+  // ── Ink: pen and highlighter on top of the file ─────────────────────────
+  // Strokes stay in this browser only, per file and page, in coordinates
+  // relative to the page so they survive zoom: { t, c, w, p: [x, y, …] }.
+  const INK_KEY = 'ink';
+  let ink = {};
+  try { ink = JSON.parse(localStorage.getItem(INK_KEY) || '{}') || {}; } catch { ink = {}; }
+  const COLORS = { pen: ['#1B1A17', '#E5383B', '#2F6FDB'], hl: ['#FFD60A', '#5BE37D', '#FF7AB6', '#4DC9FF'] };
+  const inkState = { on: false, tool: 'pen', color: { pen: COLORS.pen[0], hl: COLORS.hl[0] } };
+  let inkUndo = [];
+  let drawing = null;
+
+  const strokesOf = (f, page) => ((ink[f.id] ||= {})[page] ||= []);
+  function saveInk() {
+    const m = current && ink[current.id];
+    if (m) {
+      for (const k of Object.keys(m)) if (!m[k].length) delete m[k];
+      if (!Object.keys(m).length) delete ink[current.id];
+    }
+    try {
+      localStorage.setItem(INK_KEY, JSON.stringify(ink));
+    } catch {
+      $('ink-hint').textContent = 'Ο χώρος του browser γέμισε· τα τελευταία δεν αποθηκεύτηκαν.';
+    }
+  }
+  function inkLayer(host, page) {
+    const c = document.createElement('canvas');
+    c.className = 'ink';
+    c.dataset.page = page;
+    host.append(c);
+    sizeInk(c);
+  }
+  function sizeInk(c) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (!c.clientWidth || !c.clientHeight) return;
+    c.width = Math.round(c.clientWidth * dpr);
+    c.height = Math.round(c.clientHeight * dpr);
+    paintInk(c);
+  }
+  function strokePath(ctx, s, W, H) {
+    const hl = s.t === 'hl';
+    ctx.globalAlpha = hl ? 0.5 : 1;
+    ctx.strokeStyle = s.c;
+    ctx.lineWidth = s.w * W;
+    ctx.lineCap = hl ? 'butt' : 'round';
+    ctx.lineJoin = 'round';
+    const p = s.p;
+    ctx.beginPath();
+    ctx.moveTo(p[0] * W, p[1] * H);
+    if (p.length === 2) ctx.lineTo(p[0] * W + 0.5, p[1] * H);
+    for (let i = 2; i < p.length; i += 2) ctx.lineTo(p[i] * W, p[i + 1] * H);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  function paintInk(c, extra) {
+    if (!current) return;
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, c.width, c.height);
+    for (const s of ink[current.id]?.[c.dataset.page] || []) strokePath(ctx, s, c.width, c.height);
+    if (extra) strokePath(ctx, extra, c.width, c.height);
+  }
+  function inkPoint(c, e) {
+    const r = c.getBoundingClientRect();
+    return [Math.round(((e.clientX - r.left) / r.width) * 1e4) / 1e4, Math.round(((e.clientY - r.top) / r.height) * 1e4) / 1e4];
+  }
+  function eraseAt(c, x, y) {
+    const list = ink[current.id]?.[c.dataset.page];
+    if (!list) return;
+    const r = 0.015;
+    const ratio = c.height / c.width;
+    for (let i = list.length - 1; i >= 0; i--) {
+      const p = list[i].p;
+      for (let j = 0; j < p.length; j += 2) {
+        const dx = p[j] - x;
+        const dy = (p[j + 1] - y) * ratio;
+        if (dx * dx + dy * dy < r * r) {
+          inkUndo.push({ op: 'del', page: c.dataset.page, s: list[i], i });
+          list.splice(i, 1);
+          paintInk(c);
+          break;
+        }
+      }
+    }
+  }
+  function undoInk() {
+    const a = inkUndo.pop();
+    if (!a || !current) return;
+    const list = strokesOf(current, a.page);
+    if (a.op === 'add') {
+      const i = list.lastIndexOf(a.s);
+      if (i >= 0) list.splice(i, 1);
+    } else {
+      list.splice(Math.min(a.i, list.length), 0, a.s);
+    }
+    saveInk();
+    for (const c of stage.querySelectorAll('.ink')) if (c.dataset.page === a.page) paintInk(c);
+    syncInkButtons();
+  }
+  function clearInk() {
+    if (!current || !ink[current.id]) return;
+    if (!confirm('Να σβηστούν όσα έγραψες πάνω σε αυτό το αρχείο;')) return;
+    delete ink[current.id];
+    inkUndo = [];
+    saveInk();
+    for (const c of stage.querySelectorAll('.ink')) paintInk(c);
+    syncInkButtons();
+  }
+  function syncInkButtons() {
+    $('ink-undo').setAttribute('aria-disabled', String(!inkUndo.length));
+    $('ink-clear').setAttribute('aria-disabled', String(!(current && ink[current.id])));
+  }
+  function syncInkTools() {
+    for (const b of document.querySelectorAll('[data-tool]')) b.setAttribute('aria-pressed', String(b.dataset.tool === inkState.tool));
+    const sw = $('swatches');
+    sw.hidden = inkState.tool === 'eraser';
+    sw.replaceChildren(...(COLORS[inkState.tool] || []).map((c) => {
+      const b = el('button', 'swatch');
+      b.type = 'button';
+      b.style.background = c;
+      b.setAttribute('aria-label', 'Χρώμα ' + c);
+      b.setAttribute('aria-pressed', String(inkState.color[inkState.tool] === c));
+      b.addEventListener('click', () => { inkState.color[inkState.tool] = c; syncInkTools(); });
+      return b;
+    }));
+  }
+  function setInking(on) {
+    inkState.on = on;
+    $('viewer').classList.toggle('inking', on);
+    $('ink-bar').hidden = !on;
+    $('ink-toggle').setAttribute('aria-pressed', String(on));
+    syncInkButtons();
+  }
+  for (const b of document.querySelectorAll('[data-tool]')) {
+    b.addEventListener('click', () => { inkState.tool = b.dataset.tool; syncInkTools(); });
+  }
+  syncInkTools();
+  $('ink-toggle').addEventListener('click', () => setInking(!inkState.on));
+  $('ink-undo').addEventListener('click', undoInk);
+  $('ink-clear').addEventListener('click', clearInk);
+
+  stage.addEventListener('pointerdown', (e) => {
+    const c = e.target.closest?.('.ink');
+    if (!c || !inkState.on || !current || e.button > 0) return;
+    e.preventDefault();
+    c.setPointerCapture(e.pointerId);
+    const [x, y] = inkPoint(c, e);
+    if (inkState.tool === 'eraser') {
+      drawing = { c, id: e.pointerId, erase: true };
+      eraseAt(c, x, y);
+      return;
+    }
+    const t = inkState.tool;
+    drawing = { c, id: e.pointerId, s: { t, c: inkState.color[t], w: t === 'hl' ? 0.022 : 0.003, p: [x, y] } };
+    paintInk(c, drawing.s);
+  });
+  stage.addEventListener('pointermove', (e) => {
+    if (!drawing || e.pointerId !== drawing.id) return;
+    for (const ev of e.getCoalescedEvents?.() || [e]) {
+      const [x, y] = inkPoint(drawing.c, ev);
+      if (drawing.erase) eraseAt(drawing.c, x, y);
+      else drawing.s.p.push(x, y);
+    }
+    if (!drawing.erase) paintInk(drawing.c, drawing.s);
+  });
+  function endStroke(e) {
+    if (!drawing || e.pointerId !== drawing.id) return;
+    const d = drawing;
+    drawing = null;
+    if (!d.erase) {
+      strokesOf(current, d.c.dataset.page).push(d.s);
+      inkUndo.push({ op: 'add', page: d.c.dataset.page, s: d.s });
+      paintInk(d.c);
+    }
+    saveInk();
+    syncInkButtons();
+  }
+  stage.addEventListener('pointerup', endStroke);
+  stage.addEventListener('pointercancel', endStroke);
+
+  // ── Notes panel: formatted notes beside the file ────────────────────────
+  // The notes are kept as HTML, cleaned to a few tags whenever they are read
+  // or written, so nothing pasted or stored can run code.
+  const padText = $('pad-text');
+  let padFile = null;
+  let padTimer = null;
+  let padOpen = false;
+  try { padOpen = localStorage.getItem('pad') === '1'; } catch {}
+
+  const KEEP = new Set(['P', 'DIV', 'BR', 'B', 'STRONG', 'I', 'EM', 'MARK', 'H3', 'UL', 'OL', 'LI']);
+  function cleanHTML(html) {
+    const doc = new DOMParser().parseFromString('<body>' + html, 'text/html');
+    const walk = (node) => {
+      for (const c of [...node.childNodes]) {
+        if (c.nodeType === 3) continue;
+        if (c.nodeType !== 1) { c.remove(); continue; }
+        walk(c);
+        if (!KEEP.has(c.tagName)) { c.replaceWith(...c.childNodes); continue; }
+        for (const a of [...c.attributes]) c.removeAttribute(a.name);
+      }
+    };
+    walk(doc.body);
+    return doc.body.innerHTML;
+  }
+
+  function loadPad(f) {
+    padText.innerHTML = cleanHTML(mine(f).n || '');
+  }
+  function savePad() {
+    clearTimeout(padTimer);
+    padTimer = null;
+    if (!padFile) return;
+    const n = padText.textContent.trim() ? cleanHTML(padText.innerHTML) : '';
+    if (n === (mine(padFile).n || '')) return;
+    saveMine(padFile, { n });
+    paintMine(padFile);
+  }
+  function setPad(open) {
+    padOpen = open;
+    $('pad').hidden = !open;
+    $('pad-toggle').setAttribute('aria-pressed', String(open));
+    try { localStorage.setItem('pad', open ? '1' : '0'); } catch {}
+    // The file gets the room that is left.
+    if (current) window.dispatchEvent(new Event('resize'));
+    if (open) padText.focus();
+  }
+  function format(cmd) {
+    padText.focus();
+    if (cmd === 'mark') {
+      const sel = getSelection();
+      if (!sel.rangeCount || sel.isCollapsed) return;
+      const range = sel.getRangeAt(0);
+      const inMark = (n) => (n.nodeType === 1 ? n : n.parentElement)?.closest('mark');
+      const m = inMark(range.commonAncestorContainer);
+      if (m && padText.contains(m)) m.replaceWith(...m.childNodes);
+      else { const w = document.createElement('mark'); w.append(range.extractContents()); range.insertNode(w); }
+    } else if (cmd === 'heading') {
+      const block = (getSelection().anchorNode?.nodeType === 1 ? getSelection().anchorNode : getSelection().anchorNode?.parentElement)?.closest('h3');
+      document.execCommand('formatBlock', false, block ? 'p' : 'h3');
+    } else {
+      document.execCommand(cmd);
+    }
+    padText.dispatchEvent(new Event('input'));
+  }
+  for (const b of document.querySelectorAll('[data-cmd]')) {
+    // Keep the selection in the notes while the button is pressed.
+    b.addEventListener('pointerdown', (e) => e.preventDefault());
+    b.addEventListener('click', () => format(b.dataset.cmd));
+  }
+  padText.addEventListener('paste', (e) => {
+    // Pasted text comes in plain, so formatting from elsewhere does not follow it.
+    e.preventDefault();
+    document.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
+  });
+  padText.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'h' && e.shiftKey) { e.preventDefault(); format('mark'); }
+  });
+  padText.addEventListener('input', () => {
+    if (!padText.textContent.trim() && !padText.querySelector('li')) padText.innerHTML = '';
+    clearTimeout(padTimer);
+    padTimer = setTimeout(savePad, 400);
+  });
+  $('pad-toggle').addEventListener('click', () => setPad(!padOpen));
+  $('pad-close').addEventListener('click', () => setPad(false));
+  $('pad').hidden = !padOpen;
+  $('pad-toggle').setAttribute('aria-pressed', String(padOpen));
+  window.addEventListener('pagehide', savePad);
+
   function closeViewer(fromHistory) {
     if (!current) return;
+    savePad();
+    padFile = null;
+    setInking(false);
     generation++;
     teardown();
     current = null;
@@ -1253,7 +1821,10 @@
   $('next').addEventListener('click', () => step(1));
   window.addEventListener('popstate', () => closeViewer(true));
   document.addEventListener('keydown', (e) => {
-    if (!current || $('report').open) return;
+    if (!current || $('report').open || $('notes').open) return;
+    // Typing in the notes keeps its keys, except Escape.
+    if (e.target.closest?.('textarea, input') && e.key !== 'Escape') return;
+    if (inkState.on && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undoInk(); return; }
     if (e.key === 'Escape') { e.preventDefault(); closeViewer(); }
     else if (e.key === 'ArrowLeft') step(-1);
     else if (e.key === 'ArrowRight') step(1);
@@ -1276,7 +1847,7 @@
     sending = on;
     $('report-send').disabled = on;
     $('report-spin').hidden = !on;
-    $('report-label').textContent = on ? 'Έλεγχος…' : 'Αναφορά';
+    $('report-label').textContent = on ? 'Αποστολή…' : 'Αναφορά';
   }
   function leftText(n) {
     if (typeof n !== 'number') return '';
@@ -1330,7 +1901,6 @@
     }
     const f = reporting.f;
     reportBusy(true);
-    reportMsg('Η αναφορά ελέγχεται μαζί με το αρχείο. Θα πάρει λίγα δευτερόλεπτα.');
     try {
       const res = await fetch('/s/report', {
         method: 'POST',
@@ -1340,13 +1910,8 @@
       });
       const body = await res.json().catch(() => ({}));
       if (res.ok) {
-        const note = body.note ? body.note.replace(/[.\s]+$/, '') + '. ' : '';
-        if (body.status === 'pulled') {
-          removeFile(f);
-          reportDone('Η αναφορά έγινε δεκτή', 'Το αρχείο κρύφτηκε από τη σελίδα και θα το εξετάσουν οι διαχειριστές. ' + note + leftText(body.left));
-        } else {
-          reportDone('Η αναφορά δεν έγινε δεκτή', note + 'Το αρχείο μένει στη σελίδα. ' + leftText(body.left));
-        }
+        removeFile(f);
+        reportDone('Ευχαριστούμε', 'Το αρχείο εξετάζεται από τους διαχειριστές και δεν θα το βλέπεις σε αυτή τη σελίδα. ' + leftText(body.left));
         return;
       }
       if (res.status === 401) reportMsg('Η σελίδα έληξε. Άνοιξε νέο σύνδεσμο από το Discord για να στείλεις αναφορά.', 'error');
@@ -1354,7 +1919,7 @@
       else if (res.status === 410) { removeFile(f); reportDone('Το αρχείο αφαιρέθηκε', 'Το αρχείο έχει ήδη αφαιρεθεί από τη σελίδα.'); }
       else if (res.status === 429) {
         reportMsg('Έφτασες το όριο των 5 αναφορών την εβδομάδα. Μπορείς να στείλεις ξανά από ' + (body.resets ? resetFmt.format(new Date(body.resets)) : 'την επόμενη εβδομάδα') + '.', 'error');
-      } else if (res.status === 503) reportMsg('Ο έλεγχος δεν είναι διαθέσιμος αυτή τη στιγμή. Δοκίμασε ξανά σε λίγο· αυτή η προσπάθεια δεν μετράει στο όριό σου.', 'error');
+      } else if (res.status === 503) reportMsg('Η αναφορά δεν στάλθηκε. Δοκίμασε ξανά σε λίγο· αυτή η προσπάθεια δεν μετράει στο όριό σου.', 'error');
       else if (body.error === 'reason') reportMsg('Ο λόγος πρέπει να έχει από ' + REPORT_MIN + ' έως 500 χαρακτήρες.', 'error');
       else reportMsg('Κάτι πήγε στραβά. Δοκίμασε ξανά σε λίγο.', 'error');
     } catch {

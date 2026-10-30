@@ -255,8 +255,14 @@ func (h *Handler) safely(name string, fn func()) {
 // alertMods posts to the moderator log channel. Used for every failure a
 // moderator has to know about — most importantly a registration channel that
 // could not be created, which previously vanished into stdout.
+// The post is silent; urgentMods is for the ones an admin has to act on.
 func (h *Handler) alertMods(s *discordgo.Session, format string, args ...any) {
 	h.modlog.Post(s, fmt.Sprintf(format, args...))
+}
+
+// urgentMods posts to the moderator log channel with a notification.
+func (h *Handler) urgentMods(s *discordgo.Session, format string, args ...any) {
+	h.modlog.Alert(s, fmt.Sprintf(format, args...))
 }
 
 // alertModsOnce is alertMods limited to one post per key per alertEvery, so a
@@ -264,6 +270,13 @@ func (h *Handler) alertMods(s *discordgo.Session, format string, args ...any) {
 func (h *Handler) alertModsOnce(s *discordgo.Session, key, format string, args ...any) {
 	if h.gate.allow("alert:"+key, 1, alertEvery) {
 		h.alertMods(s, format, args...)
+	}
+}
+
+// urgentModsOnce is urgentMods limited the same way.
+func (h *Handler) urgentModsOnce(s *discordgo.Session, key, format string, args ...any) {
+	if h.gate.allow("alert:"+key, 1, alertEvery) {
+		h.urgentMods(s, format, args...)
 	}
 }
 
