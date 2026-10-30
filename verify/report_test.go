@@ -137,7 +137,7 @@ func TestReportsWorkAfterTheDownloadsAreDone(t *testing.T) {
 func TestReportsStopWhenTheSessionRunsOut(t *testing.T) {
 	s := newSessions()
 	now := time.Now()
-	id, _ := s.open("100", "u1", "g1", Profile{}, now)
+	id, _ := s.open("100", "u1", "g1", "", now)
 	s.claimPage(id, now)
 	s.setFiles(id, []string{"11"})
 	if _, _, ok := s.authorizeOnPage(id, "11", now); !ok {
@@ -154,8 +154,7 @@ func TestReportsStopWhenTheSessionRunsOut(t *testing.T) {
 func TestViewAsIsReadOnly(t *testing.T) {
 	e, fr := newReportEnv(t)
 	_ = e.fm.SaveNote(context.Background(), "u2", "11", NoteStudy, json.RawMessage(`{"t":"Οι σημειώσεις του μέλους"}`))
-	who := Profile{Name: "Νίκος", Username: "nikos", Viewer: "staff1"}
-	tok, err := e.tk.IssueMaterials("u2", "g1", "100", "view1", who, time.Now().Add(time.Minute))
+	tok, err := e.tk.IssueMaterials("u2", "g1", "100", "view1", "staff1", time.Now().Add(time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}

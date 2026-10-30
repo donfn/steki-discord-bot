@@ -49,24 +49,23 @@ type Claims struct {
 	Reason  string `json:"rsn,omitempty"`
 	// ChannelID is the course channel a material page link is for.
 	ChannelID string `json:"cid,omitempty"`
-	// Profile is who a material page link was handed to, for the page to
-	// show whose it is.
-	Profile *Profile `json:"pf,omitempty"`
+	// Viewer, on a material page link, is the staff member opening the page as
+	// its member (/materials view-as). Such a page only shows: it saves
+	// nothing, files no reports and is not counted as present.
+	Viewer string `json:"vw,omitempty"`
 	jwt.RegisteredClaims
 }
 
 // Profile is how the material page shows the member it belongs to.
 type Profile struct {
 	// Name is their server nickname or display name.
-	Name string `json:"nm,omitempty"`
+	Name string
 	// Username is their Discord username.
-	Username string `json:"un,omitempty"`
+	Username string
 	// Avatar is their avatar's URL on Discord's CDN.
-	Avatar string `json:"av,omitempty"`
-	// Viewer, when set, is the staff member opening the page as this member
-	// (/materials view-as). Such a page only shows: it saves nothing, files no
-	// reports and is not counted as present.
-	Viewer string `json:"vw,omitempty"`
+	Avatar string
+	// Viewer is the staff member viewing as them, from the link.
+	Viewer string
 }
 
 // Tokens issues and checks verification links.
@@ -99,12 +98,12 @@ func (t *Tokens) Issue(userID, guildID, reason, tokenID string, expires time.Tim
 }
 
 // IssueMaterials signs a link to the material page of one course channel.
-func (t *Tokens) IssueMaterials(userID, guildID, channelID, tokenID string, who Profile, expires time.Time) (string, error) {
+func (t *Tokens) IssueMaterials(userID, guildID, channelID, tokenID, viewer string, expires time.Time) (string, error) {
 	claims := Claims{
 		GuildID:   guildID,
 		Reason:    ReasonMaterials,
 		ChannelID: channelID,
-		Profile:   &who,
+		Viewer:    viewer,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    issuer,
 			Subject:   userID,

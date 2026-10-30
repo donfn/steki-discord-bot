@@ -28,3 +28,16 @@ func TestIdentityShowsHandleAndStripsBidi(t *testing.T) {
 		t.Fatalf("identity = %q", got)
 	}
 }
+
+func TestRateGatesClear(t *testing.T) {
+	var g rateGates
+	g.allow("a", 1, time.Hour)
+	g.allow("b", 1, time.Hour)
+	g.clear("a")
+	if !g.allow("a", 1, time.Hour) {
+		t.Fatal("cleared key still refused")
+	}
+	if g.allow("b", 1, time.Hour) {
+		t.Fatal("clear touched another key")
+	}
+}

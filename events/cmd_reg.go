@@ -157,12 +157,23 @@ func (h *Handler) cmdRegRestart(s *discordgo.Session, i *discordgo.InteractionCr
 		return
 	}
 
+	// A moderator's restart also lifts the email limits, which the member's own
+	// restart button must not do. The address is only known past the email step.
+	if err := h.st.ResetCodeSends(ctx, reg.ID); err != nil {
+		h.dbError(s, i, err)
+		return
+	}
+	h.gate.clear("mail-user:" + user.ID)
+	if reg.Email != nil {
+		h.gate.clear("mail-addr:" + *reg.Email)
+	}
+
 	if err := h.restartRegistration(s, *reg.ChannelID, user.ID, i.GuildID); err != nil {
 		h.reply(s, i, fmt.Sprintf("Η επανεκκίνηση απέτυχε: %v", err))
 		return
 	}
 	h.audit(user.ID, reg.ID, store.EventModAction, map[string]any{"action": "restart"}, actorID(i))
-	h.reply(s, i, fmt.Sprintf("🔄 Η εγγραφή του <@%s> επανεκκινήθηκε.", user.ID))
+	h.reply(s, i, fmt.Sprintf("🔄 Η εγγραφή του <@%s> επανεκκινήθηκε και το όριο των email μηδενίστηκε.", user.ID))
 }
 
 // cmdRegReregister sends a verified member back to the start: the database
