@@ -22,6 +22,7 @@ import (
 func (h *Handler) startMaintenance(s *discordgo.Session) {
 	h.goLoop("reaper", sweepEvery, func() { h.reapAbandoned(s) })
 	h.goLoop("reconciler", reconcileEvery, func() { h.reconcile(s) })
+	h.goLoop("ghost_sweep", ghostSweepEvery, func() { h.sweepGhosts(s) })
 }
 
 // reapAbandoned nudges and then removes members who stopped responding.
@@ -255,6 +256,7 @@ func (h *Handler) reconcile(s *discordgo.Session) {
 			byID[m.User.ID] = m
 		}
 	}
+	h.syncActivityRoster(ctx, members, listedAt)
 
 	var closed, recreated, deleted, duplicates, adopted int
 	budget := maxOnboardPerSweep

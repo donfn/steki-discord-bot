@@ -17,6 +17,7 @@ func (h *Handler) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 	if h.inHomeGuild(m.GuildID) {
 		h.track("discord_message_sent", messageProps(m.Message))
+		go h.safely("ghost_activity", func() { h.noteActivity(s, m.Message) })
 	}
 	if m.Author.Bot {
 		h.onBotMessage(s, m.Message)

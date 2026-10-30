@@ -91,3 +91,78 @@ func TestSyncKeepsRowsWrittenDuringTheListing(t *testing.T) {
 		t.Fatalf("rows = %+v, want the late row kept", rows)
 	}
 }
+
+func TestActivityEvents(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+	now := time.Now()
+	old := now.AddDate(0, -5, 0)
+	cutoff := now.AddDate(0, -3, 0)
+
+	// A silent old member is a candidate; a newcomer and a recent poster are not.
+	for id, joined := range map[string]time.Time{"silent": old, "new": now, "poster": old} {
+		if err := s.RecordJoin(ctx, id, joined); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.RecordMessage(ctx, "poster", now, old, false); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GhostCandidates(ctx, cutoff, 10)
+	if err != nil || len(got) != 1 || got[0] != "silent" {
+		t.Fatalf("candidates = %v, %v; want [silent]", got, err)
+	}
+
+	// Once flagged they are no longer a candidate; a message with the role still
+	// held keeps the flag until the caller clears it, one without clears it.
+	if err := s.SetGhost(ctx, "silent", true); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GhostCandidates(ctx, cutoff, 10); len(got) != 0 {
+		t.Fatalf("flagged member still a candidate: %v", got)
+	}
+	flag := func() bool {
+		rows, _ := s.MemberActivities(ctx)
+		for _, r := range rows {
+			if r.UserID == "silent" {
+				return r.Ghost
+			}
+		}
+		t.Fatal("silent missing")
+		return false
+	}
+	if err := s.RecordMessage(ctx, "silent", now, old, true); err != nil {
+		t.Fatal(err)
+	}
+	if !flag() {
+		t.Error("flag cleared while the role is still held")
+	}
+	if err := s.RecordMessage(ctx, "silent", now, old, false); err != nil {
+		t.Fatal(err)
+	}
+	if flag() {
+		t.Error("flag kept after a message without the role")
+	}
+
+	// A message from an unknown member adds them; a rejoin restarts the clock.
+	if err := s.RecordMessage(ctx, "stranger", now, now, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordJoin(ctx, "poster", now); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteMemberActivity(ctx, "new"); err != nil {
+		t.Fatal(err)
+	}
+	rows, _ := s.MemberActivities(ctx)
+	ids := map[string]MemberActivity{}
+	for _, r := range rows {
+		ids[r.UserID] = r
+	}
+	if _, ok := ids["stranger"]; !ok || ids["new"].UserID != "" {
+		t.Errorf("rows after events = %+v", ids)
+	}
+	if p := ids["poster"]; p.LastMessageAt == nil || p.JoinedAt.Before(now.Add(-time.Second)) {
+		t.Errorf("rejoin = %+v, want last message kept and a fresh join time", p)
+	}
+}

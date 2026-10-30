@@ -22,6 +22,8 @@ func (h *Handler) onMemberRemove(s *discordgo.Session, m *discordgo.GuildMemberR
 
 	h.track("discord_member_left", map[string]any{"guild_id": m.GuildID})
 
+	h.noteLeave(m.User.ID)
+
 	defer h.lockUser(m.User.ID)()
 
 	ctx, cancel := h.ctxTimeout(flowTimeout)

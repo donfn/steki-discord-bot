@@ -31,6 +31,7 @@ func (h *Handler) onMemberAdd(s *discordgo.Session, m *discordgo.GuildMemberAdd)
 			joinsPerWindow, int(joinWindow.Minutes()))
 	}
 	h.audit(m.User.ID, "", store.EventJoined, map[string]any{"username": m.User.Username}, "")
+	h.noteJoin(m.Member)
 
 	h.ensureRegisterChannel(s, m.GuildID, m.User)
 }
