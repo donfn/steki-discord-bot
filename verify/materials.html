@@ -403,7 +403,6 @@
   .bar i { display: block; height: 100%; width: 0; background: var(--color-brand); transition: width 240ms var(--ease-out); }
   .progress[data-done] .bar { display: none; }
   .progress[data-tone="error"] { color: var(--color-marker); }
-  .dot { flex: none; width: 10px; height: 10px; border: 2px solid var(--color-line); background: var(--color-brand); transform: rotate(45deg); }
 
   .tools { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: var(--space-sm); }
   .tools[hidden], .chips[hidden] { display: none; }
@@ -1446,8 +1445,8 @@
     const ready = files.filter((f) => f.state === 'ready').length;
     box.dataset.done = '';
     if (ready === files.length) {
-      $('progress-spin').replaceWith(el('span', 'dot'));
-      $('progress-text').textContent = 'Όλα τα αρχεία κατέβηκαν και είναι διαθέσιμα όσο η σελίδα μένει ανοιχτή.';
+      // Everything arrived: nothing left to say.
+      box.hidden = true;
       return;
     }
     $('progress-spin').hidden = true;
