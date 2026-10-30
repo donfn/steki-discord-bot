@@ -75,7 +75,7 @@ func (h *Handler) startMaterials(s *discordgo.Session) {
 	// Cards for flagged images left over from before the restart.
 	go h.safely("review_cards", func() { h.announceReviews(s) })
 	// The MCP announcements' button links, replaced like the stickies'.
-	h.goLoop("mcp_links", materialLinkRotate, func() { h.rotateMCPLinks(s) })
+	h.goLoop("mcp_links", mcpLinkRotate, func() { h.rotateMCPLinks(s) })
 }
 
 // isHomeGuild reports whether g is the Steki guild.

@@ -63,6 +63,8 @@ type Server struct {
 	lifter    Lifter
 	consent   Consenter
 	materials MaterialSource
+	// sessions holds the open material page sessions.
+	sessions *sessions
 	// mcpURL is the MCP endpoint the setup page tells members to add; empty
 	// leaves the page unmounted.
 	mcpURL string
@@ -72,7 +74,7 @@ type Server struct {
 // NewServer returns a Server. materials may be nil, which leaves the
 // material page unmounted.
 func NewServer(tokens *Tokens, lifter Lifter, consent Consenter, materials MaterialSource, logger *slog.Logger) *Server {
-	return &Server{tokens: tokens, lifter: lifter, consent: consent, materials: materials, log: logger}
+	return &Server{tokens: tokens, lifter: lifter, consent: consent, materials: materials, sessions: newSessions(), log: logger}
 }
 
 // Register mounts the routes on mux.
@@ -84,8 +86,9 @@ func (v *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /link/challenge", v.linkChallenge)
 	mux.HandleFunc("POST /link/accept", v.linkAccept)
 	if v.materials != nil {
-		mux.HandleFunc("GET /materials", v.materialsPage)
-		mux.HandleFunc("GET "+materialFilesPath+"{id}", v.materialFile)
+		mux.HandleFunc("GET "+entryPath, v.materialsPage)
+		mux.HandleFunc("GET "+pagePath, v.sessionPage)
+		mux.HandleFunc("GET "+filesPath+"{id}", v.materialFile)
 	}
 	if v.mcpURL != "" {
 		mux.HandleFunc("GET "+MCPGuidePath, v.mcpGuidePage)

@@ -7,7 +7,6 @@ import (
 	"io"
 	"mime"
 	"net/http"
-	"strings"
 	"time"
 
 	"steki-bot/analytics"
@@ -53,10 +52,9 @@ type MaterialBody struct {
 }
 
 const (
-	// materialFilesPath is where the page downloads its files. It must match
-	// shield.MaterialFilesPrefix, which exempts the downloads from the flood
-	// count, and the higher download budget in Harden.
-	materialFilesPath = "/materials/files/"
+	// entryPath is where the links on the stickies point. It only turns a
+	// valid link into a session; see session.go.
+	entryPath = "/materials"
 
 	// fileTimeout bounds one file download, far past the server-wide write
 	// timeout, which is sized for pages, not PDFs on a slow phone.
@@ -81,70 +79,144 @@ func (v *Server) materialClaims(raw string) (*Claims, bool) {
 	return c, true
 }
 
+// sessionID is the visitor's session cookie, or "" without one.
+func sessionID(r *http.Request) string {
+	if c, err := r.Cookie(sessionCookie); err == nil {
+		return c.Value
+	}
+	return ""
+}
+
+// isHTTPS reports whether the visitor reached the server over TLS, directly
+// or through the platform proxy.
+func isHTTPS(r *http.Request) bool {
+	return r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+}
+
+// materialsPage is the link's landing: a valid link opens a session and the
+// visitor is sent on to the page, so the link itself never stays in the
+// address bar, the history or a Referer. Anything else gets the same answer
+// as a page that has run out.
 func (v *Server) materialsPage(w http.ResponseWriter, r *http.Request) {
+	secure(w)
+	analytics.Tag(r.Context(), "page", "materials")
+
+	c, ok := v.materialClaims(r.URL.Query().Get("t"))
+	if !ok {
+		v.expired(w, r)
+		return
+	}
+	analytics.Tag(r.Context(), "channel_id", c.ChannelID)
+	id, ok := v.sessions.open(c.ChannelID, c.Subject, time.Now())
+	if !ok {
+		v.expired(w, r)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookie,
+		Value:    id,
+		Path:     pagePath,
+		MaxAge:   int(sessionTTL.Seconds()),
+		HttpOnly: true,
+		Secure:   isHTTPS(r),
+		// Lax, not Strict: the visit starts on another site (the chat), and a
+		// Strict cookie would be withheld from the redirect that follows.
+		SameSite: http.SameSiteLaxMode,
+	})
+	http.Redirect(w, r, pagePath, http.StatusSeeOther)
+}
+
+// sessionPage serves the page once per session. A second request, which is
+// what a refresh is, revokes the session and finds it expired.
+func (v *Server) sessionPage(w http.ResponseWriter, r *http.Request) {
 	secure(w)
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()
 
-	data := map[string]any{"State": stateInvalid}
-	raw := r.URL.Query().Get("t")
-	analytics.Tag(ctx, "page", "materials")
-	if c, ok := v.materialClaims(raw); ok {
-		analytics.Tag(ctx, "channel_id", c.ChannelID)
-		ch, err := v.materials.Channel(ctx, c.ChannelID)
-		switch {
-		case errors.Is(err, ErrNoMaterial):
-		case err != nil:
-			v.log.Error("verify: material list failed", "channel_id", c.ChannelID, "error", err)
-			data["State"] = stateError
-		default:
-			files := ch.Files
-			if files == nil {
-				files = []MaterialFile{}
-			}
-			var total int64
-			for _, f := range files {
-				total += f.Size
-			}
-			data = map[string]any{
-				"State":   stateReady,
-				"Token":   raw,
-				"Channel": ch.Name,
-				"Files":   files,
-				"Total":   total,
-				"Expires": c.ExpiresAt.Unix(),
-			}
-		}
+	id := sessionID(r)
+	channelID, _, ok := v.sessions.claimPage(id, time.Now())
+	if !ok {
+		v.expired(w, r)
+		return
 	}
+	analytics.Tag(ctx, "page", "materials", "channel_id", channelID)
+
+	ch, err := v.materials.Channel(ctx, channelID)
+	switch {
+	case errors.Is(err, ErrNoMaterial):
+		v.sessions.revoke(id)
+		v.expired(w, r)
+		return
+	case err != nil:
+		v.log.Error("verify: material list failed", "channel_id", channelID, "error", err)
+		// Nothing was shown, so the visitor may try again.
+		v.sessions.unclaimPage(id)
+		v.renderMaterials(w, http.StatusServiceUnavailable, map[string]any{"State": stateError})
+		return
+	}
+
+	files := ch.Files
+	if files == nil {
+		files = []MaterialFile{}
+	}
+	ids := make([]string, len(files))
+	var total int64
+	for i, f := range files {
+		ids[i] = f.ID
+		total += f.Size
+	}
+	v.sessions.setFiles(id, ids)
+	v.renderMaterials(w, http.StatusOK, map[string]any{
+		"State":   stateReady,
+		"Channel": ch.Name,
+		"Files":   files,
+		"Total":   total,
+	})
+}
+
+// expired answers a visit that has no (or no longer a) session. The page is
+// the same whatever went wrong and says nothing of what it was for.
+func (v *Server) expired(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name: sessionCookie, Path: pagePath, MaxAge: -1,
+		HttpOnly: true, Secure: isHTTPS(r), SameSite: http.SameSiteLaxMode,
+	})
+	v.renderMaterials(w, http.StatusGone, map[string]any{"State": stateInvalid})
+}
+
+// renderMaterials writes the page template under a fresh CSP nonce.
+func (v *Server) renderMaterials(w http.ResponseWriter, status int, data map[string]any) {
 	nonce := newNonce()
 	data["Nonce"] = nonce
 	w.Header().Set("Content-Security-Policy", fmt.Sprintf(materialCSP, nonce))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
 	if err := matTmpl.Execute(w, data); err != nil {
 		v.log.Warn("verify: render material page", "error", err)
 	}
 }
 
-// materialFile streams one file of the token's channel. The token travels in
-// the Authorization header, not the URL, so it stays out of access logs.
+// materialFile streams one file of the session's channel, if the session's
+// page listed it. Once the last of those files has gone out in full the
+// session is revoked.
 func (v *Server) materialFile(w http.ResponseWriter, r *http.Request) {
 	secure(w)
-	raw, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	c, valid := v.materialClaims(raw)
-	if !ok || !valid {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": stateInvalid})
-		return
-	}
+	sid := sessionID(r)
 	id := r.PathValue("id")
 	if !isSnowflake(id) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad_request"})
 		return
 	}
+	channelID, _, ok := v.sessions.authorize(sid, id, time.Now())
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": stateInvalid})
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), fileTimeout)
 	defer cancel()
-	analytics.Tag(ctx, "channel_id", c.ChannelID)
-	f, err := v.materials.Open(ctx, c.ChannelID, id)
+	analytics.Tag(ctx, "channel_id", channelID)
+	f, err := v.materials.Open(ctx, channelID, id)
 	switch {
 	// Gone rather than Not Found: 404s count towards the flood shield, and
 	// a file deleted while the page was open is not a scanner.
@@ -152,7 +224,7 @@ func (v *Server) materialFile(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusGone, map[string]string{"error": "gone"})
 		return
 	case err != nil:
-		v.log.Error("verify: open material", "channel_id", c.ChannelID, "file_id", id, "error", err)
+		v.log.Error("verify: open material", "channel_id", channelID, "file_id", id, "error", err)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": stateError})
 		return
 	}
@@ -170,8 +242,13 @@ func (v *Server) materialFile(w http.ResponseWriter, r *http.Request) {
 	h.Set("Content-Length", fmt.Sprint(f.Size))
 	h.Set("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": id}))
 	w.WriteHeader(http.StatusOK)
-	if _, err := io.Copy(w, f.Body); err != nil {
+	n, err := io.Copy(w, f.Body)
+	if err != nil || n != f.Size {
 		v.log.Debug("verify: material download interrupted", "file_id", id, "error", err)
+		return
+	}
+	if v.sessions.complete(sid, id) {
+		analytics.Tag(ctx, "outcome", "material_session_completed")
 	}
 }
 

@@ -14,7 +14,7 @@ import (
 
 // MaterialFilesPrefix is the path of the material page's file downloads,
 // which are exempt from the flood count when they succeed.
-const MaterialFilesPrefix = "/materials/files/"
+const MaterialFilesPrefix = "/s/f/"
 
 // MCPPath is the MCP endpoint, whose successful calls are exempt too.
 const MCPPath = "/mcp"

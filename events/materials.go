@@ -36,15 +36,19 @@ var courseCategoryIDs = []string{
 }
 
 const (
-	// materialLinkTTL is how long a material page link works. The page
-	// downloads every file as soon as it loads, so the link only has to
-	// outlive the downloads, not the reading.
-	materialLinkTTL = time.Hour
+	// materialLinkTTL is how long a material page link works. Following it
+	// opens a session that carries the downloads, so the link only has to
+	// outlive the click.
+	materialLinkTTL = 10 * time.Minute
 
 	// materialLinkRotate is how often every sticky gets a new link. It is half
-	// the TTL, so a link a member sees always has at least half an hour left,
+	// the TTL, so a link a member sees always has at least five minutes left,
 	// and one missed rotation does not break it.
-	materialLinkRotate = 30 * time.Minute
+	materialLinkRotate = 5 * time.Minute
+
+	// mcpLinkRotate is how often the MCP announcements get a new link. Those
+	// links live for verify.MCPGuideLinkTTL, so they rotate far less often.
+	mcpLinkRotate = 30 * time.Minute
 
 	// materialLinkSubject stands in for the member in a link's claims: the
 	// links are shared by everyone who can read the channel.

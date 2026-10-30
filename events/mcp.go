@@ -18,7 +18,7 @@ import (
 // The MCP server lets members read the course material from an AI assistant.
 // This file is the bot's side of it: who may read what (mcpLibrary), and the
 // announcement moderators post to explain the feature, whose button link to the
-// setup page is replaced every materialLinkRotate like the stickies'.
+// setup page is replaced every mcpLinkRotate like the stickies'.
 
 // mcpEnabled reports whether the MCP server is on: it needs the Discord login
 // and the material backup.
