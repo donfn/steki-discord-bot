@@ -67,7 +67,14 @@ func (h *Handler) startMaterials(s *discordgo.Session) {
 		defer h.wg.Done()
 		h.safely("materials_worker", func() { h.mat.Run(h.base) })
 	}()
-	go h.safely("stickies", func() { h.placeStickies(s) })
+	go h.safely("stickies", func() {
+		h.placeStickies(s)
+		// The links just placed are fresh; rotate from now on.
+		if h.base.Err() != nil {
+			return
+		}
+		h.goLoopAfter("sticky_links", materialLinkRotate, func() { h.rotateStickyLinks(s) })
+	})
 	h.goLoop("material_scan", rescanEvery, func() { h.scanMaterials(s) })
 }
 

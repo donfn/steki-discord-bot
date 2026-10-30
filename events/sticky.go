@@ -12,10 +12,13 @@ import (
 	"steki-bot/store"
 )
 
-// Every course channel keeps one bot message at its bottom, with the buttons
-// to the material page and to the upload form and the number of files members
-// have shared there. "Sticky" is done the only way Discord allows: when
-// others post, the bot sends a fresh copy and deletes the old one.
+// Every course channel (bar the statistics channels, where members post exam
+// results) keeps one bot card at its bottom, with the buttons to the material
+// page and to the upload form. The first carries the number of files members
+// have shared there and links straight to the page: the link is the same for
+// everyone and is replaced every materialLinkRotate, well before its token
+// expires. "Sticky" is done the only way Discord allows: when others post, the
+// bot sends a fresh copy and deletes the old one.
 //
 // Each copy is sent as a silent message (SUPPRESS_NOTIFICATIONS), so it never
 // raises a push or desktop notification. That is the whole reason the feature
@@ -116,21 +119,24 @@ func (h *Handler) runSticky(s *discordgo.Session, channelID string) {
 	})
 }
 
-// stickyContent is the sticky's text for a count of member files.
-func stickyContent(count int) string {
-	if count == 1 {
-		return "📚 **1 διαθέσιμο αρχείο από μέλη του server**"
-	}
-	return fmt.Sprintf("📚 **%d διαθέσιμα αρχεία από μέλη του server**", count)
-}
+// stickyColor is the brand yellow of the card's edge.
+const stickyColor = 0xFFC900
 
-func stickyComponents() []discordgo.MessageComponent {
-	return []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+// stickyCard is the sticky's card and buttons for a count of member files and
+// the current link to the material page.
+func stickyCard(count int, link string) ([]*discordgo.MessageEmbed, []discordgo.MessageComponent) {
+	embeds := []*discordgo.MessageEmbed{{
+		Title: "📚 Υλικό μαθήματος",
+		Description: "Σημειώσεις, θέματα και αρχεία που έχουν μοιραστεί μέλη του server, μαζεμένα σε μία σελίδα " +
+			"με προβολή μέσα στον browser.\n\nΜπορείς να προσθέσεις και εσύ υλικό με το κουμπί **Ανέβασμα υλικού**.",
+		Color: stickyColor,
+	}}
+	components := []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{
 		discordgo.Button{
-			Label:    "Προβολή υλικού",
-			Style:    discordgo.PrimaryButton,
-			CustomID: materialsButtonID,
-			Emoji:    &discordgo.ComponentEmoji{Name: "📚"},
+			Label: fmt.Sprintf("Προβολή υλικού μαθήματος (%d)", count),
+			Style: discordgo.LinkButton,
+			URL:   link,
+			Emoji: &discordgo.ComponentEmoji{Name: "📚"},
 		},
 		discordgo.Button{
 			Label:    "Ανέβασμα υλικού",
@@ -139,14 +145,16 @@ func stickyComponents() []discordgo.MessageComponent {
 			Emoji:    &discordgo.ComponentEmoji{Name: "📤"},
 		},
 	}}}
+	return embeds, components
 }
 
 // silentSend posts a sticky as a silent message and confirms Discord kept it
 // silent. Mentions are disabled too, though the text has none.
-func silentSend(ctx context.Context, s *discordgo.Session, channelID, content string) (*discordgo.Message, error) {
+func silentSend(ctx context.Context, s *discordgo.Session, channelID string, count int, link string) (*discordgo.Message, error) {
+	embeds, components := stickyCard(count, link)
 	return s.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
-		Content:         content,
-		Components:      stickyComponents(),
+		Embeds:          embeds,
+		Components:      components,
 		Flags:           discordgo.MessageFlagsSuppressNotifications,
 		AllowedMentions: &discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}},
 	}, discordgo.WithContext(ctx))
@@ -159,7 +167,7 @@ func isSilent(m *discordgo.Message) bool {
 
 // syncSticky brings a channel's sticky up to date. With repost it makes sure
 // the sticky is the newest message, sending a new copy if it is not; without,
-// it only edits the count.
+// it only edits the card in place, which also gives its button a new link.
 func (h *Handler) syncSticky(ctx context.Context, s *discordgo.Session, channelID string, repost bool) error {
 	unlock := h.sticky.locks.Lock(channelID)
 	defer unlock()
@@ -173,19 +181,24 @@ func (h *Handler) syncSticky(ctx context.Context, s *discordgo.Session, channelI
 	if !isCourseChannel(ch) {
 		return nil
 	}
+	old, err := h.st.Sticky(ctx, channelID)
+	if err != nil && err != store.ErrNotFound {
+		return err
+	}
+	if !hasSticky(ch) {
+		return h.removeSticky(ctx, s, channelID, old)
+	}
 
 	count, err := h.st.CountMemberMaterials(ctx, channelID)
 	if err != nil {
 		return err
 	}
-	content := stickyContent(count)
-	old, err := h.st.Sticky(ctx, channelID)
-	if err != nil && err != store.ErrNotFound {
+	link, err := h.materialLink(channelID)
+	if err != nil {
 		return err
 	}
 
 	if old != "" {
-		current := ""
 		if repost {
 			var last []*discordgo.Message
 			err := h.retry(ctx, "sticky.last", func() error {
@@ -197,18 +210,18 @@ func (h *Handler) syncSticky(ctx context.Context, s *discordgo.Session, channelI
 				return err
 			}
 			if len(last) == 1 && last[0].ID == old {
-				repost, current = false, last[0].Content
+				repost = false
 			}
 		}
 		if !repost {
-			if current == content {
-				return nil
-			}
+			embeds, components := stickyCard(count, link)
+			// An empty content clears the plain text older stickies carried.
 			_, err := s.ChannelMessageEditComplex(&discordgo.MessageEdit{
 				ID:         old,
 				Channel:    channelID,
-				Content:    &content,
-				Components: ptr(stickyComponents()),
+				Content:    ptr(""),
+				Embeds:     &embeds,
+				Components: &components,
 			}, discordgo.WithContext(ctx))
 			if err == nil {
 				return nil
@@ -220,7 +233,7 @@ func (h *Handler) syncSticky(ctx context.Context, s *discordgo.Session, channelI
 		}
 	}
 
-	msg, err := silentSend(ctx, s, channelID, content)
+	msg, err := silentSend(ctx, s, channelID, count, link)
 	if err != nil {
 		return err
 	}
@@ -232,12 +245,25 @@ func (h *Handler) syncSticky(ctx context.Context, s *discordgo.Session, channelI
 		return err
 	}
 	if old != "" {
-		if err := s.ChannelMessageDelete(channelID, old, discordgo.WithContext(ctx)); err != nil &&
-			!dc.IsMissingResource(err) && dc.APICode(err) != discordgo.ErrCodeUnknownMessage {
-			h.log.Warn("sticky: delete previous copy", "channel_id", channelID, "message_id", old, "error", err)
-		}
+		h.deleteStickyMessage(ctx, s, channelID, old)
 	}
 	return nil
+}
+
+// removeSticky takes down the sticky of a channel that should not have one.
+func (h *Handler) removeSticky(ctx context.Context, s *discordgo.Session, channelID, messageID string) error {
+	if messageID == "" {
+		return nil
+	}
+	h.deleteStickyMessage(ctx, s, channelID, messageID)
+	return h.st.DeleteSticky(ctx, channelID)
+}
+
+func (h *Handler) deleteStickyMessage(ctx context.Context, s *discordgo.Session, channelID, messageID string) {
+	if err := s.ChannelMessageDelete(channelID, messageID, discordgo.WithContext(ctx)); err != nil &&
+		!dc.IsMissingResource(err) && dc.APICode(err) != discordgo.ErrCodeUnknownMessage {
+		h.log.Warn("sticky: delete message", "channel_id", channelID, "message_id", messageID, "error", err)
+	}
 }
 
 // disableStickies is the safety stop for a sticky that went out without the
@@ -257,7 +283,7 @@ func (h *Handler) disableStickies(s *discordgo.Session, channelID, messageID str
 		h.log.Error("sticky: delete non-silent copy", "channel_id", channelID, "error", err)
 	}
 	h.log.Error("sticky: silent sending does not work; stickies are off until restart", "channel_id", channelID)
-	h.alertMods(s, "⚠️ Το Discord δεν κράτησε σιωπηλό το μήνυμα «Προβολή υλικού» στο <#%s>, οπότε το διέγραψα "+
+	h.alertMods(s, "⚠️ Το Discord δεν κράτησε σιωπηλό το μήνυμα «Υλικό μαθήματος» στο <#%s>, οπότε το διέγραψα "+
 		"και σταμάτησα τα sticky μηνύματα μέχρι την επόμενη επανεκκίνηση, για να μην ενοχλούνται τα μέλη.", channelID)
 }
 
@@ -282,6 +308,9 @@ func (h *Handler) placeStickies(s *discordgo.Session) {
 		}
 		ctx, cancel := h.ctxTimeout(flowTimeout)
 		err := h.syncSticky(ctx, s, ch.ID, true)
+		if err == nil {
+			err = h.sweepStickies(ctx, s, ch.ID)
+		}
 		cancel()
 		if err != nil {
 			h.log.Warn("sticky: place", "channel_id", ch.ID, "name", ch.Name, "error", err)
@@ -291,6 +320,85 @@ func (h *Handler) placeStickies(s *discordgo.Session) {
 		time.Sleep(time.Second)
 	}
 	h.log.Info("sticky: course channels checked", "channels", placed)
+}
+
+// legacyMaterialsButtonID was the custom ID of the first design's
+// "Προβολή υλικού" button, which sat on every old sticky.
+const legacyMaterialsButtonID = "materials:open"
+
+// sweepStickies deletes every sticky copy the bot left in a channel other than
+// the one it tracks: old-design messages whose replacement or deletion failed,
+// and all of them in channels that no longer have a sticky. It looks at the
+// latest 100 messages.
+func (h *Handler) sweepStickies(ctx context.Context, s *discordgo.Session, channelID string) error {
+	keep, err := h.st.Sticky(ctx, channelID)
+	if err != nil && err != store.ErrNotFound {
+		return err
+	}
+	var msgs []*discordgo.Message
+	if err := h.retry(ctx, "sticky.sweep", func() error {
+		var err error
+		msgs, err = s.ChannelMessages(channelID, 100, "", "", "", discordgo.WithContext(ctx))
+		return err
+	}); err != nil {
+		return err
+	}
+	for _, m := range msgs {
+		if m.ID == keep || m.Author == nil || s.State.User == nil || m.Author.ID != s.State.User.ID || !isStickyMessage(m) {
+			continue
+		}
+		h.deleteStickyMessage(ctx, s, channelID, m.ID)
+		h.log.Info("sticky: removed leftover copy", "channel_id", channelID, "message_id", m.ID)
+	}
+	return nil
+}
+
+// isStickyMessage reports whether m carries a sticky's buttons, old or new.
+func isStickyMessage(m *discordgo.Message) bool {
+	for _, c := range m.Components {
+		row, ok := c.(*discordgo.ActionsRow)
+		if !ok {
+			continue
+		}
+		for _, b := range row.Components {
+			if btn, ok := b.(*discordgo.Button); ok && (btn.CustomID == legacyMaterialsButtonID || btn.CustomID == uploadButtonID) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// rotateStickyLinks gives every sticky a new link, in place and silently,
+// before the one it shows expires.
+func (h *Handler) rotateStickyLinks(s *discordgo.Session) {
+	guildID := h.guildID()
+	if guildID == "" || !h.stickyEnabled() {
+		return
+	}
+	ctx, cancel := h.ctx()
+	channels, err := dc.GuildChannels(ctx, s, h.log, guildID)
+	cancel()
+	if err != nil {
+		h.log.Error("sticky: list channels for link rotation", "error", err)
+		return
+	}
+	rotated := 0
+	for _, ch := range channels {
+		if !hasSticky(ch) || !h.stickyEnabled() || h.base.Err() != nil {
+			continue
+		}
+		ctx, cancel := h.ctxTimeout(flowTimeout)
+		err := h.syncSticky(ctx, s, ch.ID, false)
+		cancel()
+		if err != nil {
+			h.log.Warn("sticky: rotate link", "channel_id", ch.ID, "name", ch.Name, "error", err)
+			continue
+		}
+		rotated++
+		time.Sleep(time.Second)
+	}
+	h.log.Info("sticky: links rotated", "channels", rotated)
 }
 
 func ptr[T any](v T) *T { return &v }

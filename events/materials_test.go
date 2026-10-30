@@ -44,18 +44,44 @@ func TestExamTitle(t *testing.T) {
 	}
 }
 
-func TestStickyContent(t *testing.T) {
-	if got := stickyContent(1); got != "📚 **1 διαθέσιμο αρχείο από μέλη του server**" {
-		t.Errorf("singular: %q", got)
+func TestStickyCard(t *testing.T) {
+	embeds, comps := stickyCard(12, "https://x/materials?t=abc")
+	if len(embeds) != 1 || embeds[0].Title == "" || embeds[0].Color != stickyColor {
+		t.Errorf("card: %+v", embeds)
 	}
-	if got := stickyContent(12); got != "📚 **12 διαθέσιμα αρχεία από μέλη του server**" {
-		t.Errorf("plural: %q", got)
-	}
-	row := stickyComponents()[0].(discordgo.ActionsRow)
-	if len(row.Components) != 2 ||
-		row.Components[0].(discordgo.Button).Label != "Προβολή υλικού" ||
-		row.Components[1].(discordgo.Button).Label != "Ανέβασμα υλικού" {
+	row := comps[0].(discordgo.ActionsRow)
+	view, upload := row.Components[0].(discordgo.Button), row.Components[1].(discordgo.Button)
+	if len(row.Components) != 2 || view.Label != "Προβολή υλικού μαθήματος (12)" ||
+		view.Style != discordgo.LinkButton || view.URL != "https://x/materials?t=abc" || view.CustomID != "" ||
+		upload.Label != "Ανέβασμα υλικού" || upload.CustomID != uploadButtonID {
 		t.Errorf("sticky buttons: %+v", row.Components)
+	}
+}
+
+func TestHasSticky(t *testing.T) {
+	ch := func(name string) *discordgo.Channel {
+		return &discordgo.Channel{Name: name, Type: discordgo.ChannelTypeGuildText, ParentID: "938731151705649152"}
+	}
+	if !hasSticky(ch("αλγόριθμοι")) {
+		t.Error("course channel has no sticky")
+	}
+	if hasSticky(ch("στατιστικά-εξάμηνο-1")) || hasSticky(ch("Στατιστικά-εξάμηνο-2")) {
+		t.Error("statistics channel has a sticky")
+	}
+	if hasSticky(&discordgo.Channel{Name: "general", Type: discordgo.ChannelTypeGuildText, ParentID: "1"}) {
+		t.Error("non-course channel has a sticky")
+	}
+}
+
+func TestConvertibleImage(t *testing.T) {
+	for name, want := range map[string]bool{"a.PNG": true, "a.webp": true, "IMG_1.HEIC": true, "a.heif": true,
+		"a.jpg": false, "a.gif": false, "a.pdf": false} {
+		if got := convertibleImage(&discordgo.MessageAttachment{Filename: name}); got != want {
+			t.Errorf("%s: %v", name, got)
+		}
+	}
+	if !convertibleImage(&discordgo.MessageAttachment{Filename: "blob", ContentType: "image/webp"}) {
+		t.Error("declared type ignored")
 	}
 }
 

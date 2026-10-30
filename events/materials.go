@@ -22,8 +22,8 @@ import (
 // history scan that walks every channel and thread back to its first message
 // (resumably, across restarts). The materials.Worker then copies each file
 // into the bucket and screens it. Course channels additionally get a sticky
-// "Προβολή υλικού" message (sticky.go) leading to the material page, which
-// lists the screened files of that channel and its threads.
+// card (sticky.go) linking to the material page, which lists the screened
+// files of that channel and its threads.
 
 // courseCategoryIDs are the categories whose text channels are course
 // channels and get the material page and sticky message.
@@ -34,12 +34,23 @@ var courseCategoryIDs = []string{
 }
 
 const (
-	materialsButtonID = "materials:open"
-
 	// materialLinkTTL is how long a material page link works. The page
 	// downloads every file as soon as it loads, so the link only has to
 	// outlive the downloads, not the reading.
-	materialLinkTTL = 15 * time.Minute
+	materialLinkTTL = time.Hour
+
+	// materialLinkRotate is how often every sticky gets a new link. It is half
+	// the TTL, so a link a member sees always has at least half an hour left,
+	// and one missed rotation does not break it.
+	materialLinkRotate = 30 * time.Minute
+
+	// materialLinkSubject stands in for the member in a link's claims: the
+	// links are shared by everyone who can read the channel.
+	materialLinkSubject = "shared"
+
+	// noStickyPrefix marks the channels where members post exam results, which
+	// get no sticky.
+	noStickyPrefix = "στατιστικά-"
 
 	// scanPagePause spaces out history requests, leaving the rate limit for
 	// the bot's real work.
@@ -58,6 +69,31 @@ const (
 func isCourseChannel(ch *discordgo.Channel) bool {
 	return ch != nil && ch.Type == discordgo.ChannelTypeGuildText &&
 		slices.Contains(courseCategoryIDs, ch.ParentID)
+}
+
+// hasSticky reports whether ch keeps a sticky message: course channels do,
+// except the statistics channels, where members post their exam results.
+func hasSticky(ch *discordgo.Channel) bool {
+	return isCourseChannel(ch) && !strings.HasPrefix(strings.ToLower(ch.Name), noStickyPrefix)
+}
+
+// materialLink returns the link to a course channel's material page. It is
+// the same for every member and is replaced by the rotation before it expires.
+func (h *Handler) materialLink(channelID string) (string, error) {
+	guildID := h.guildID()
+	if guildID == "" {
+		return "", errors.New("materials: guild not known yet")
+	}
+	tokenID, err := newTokenID()
+	if err != nil {
+		return "", err
+	}
+	token, err := h.tokens.IssueMaterials(materialLinkSubject, guildID, channelID, tokenID,
+		time.Now().Add(materialLinkTTL))
+	if err != nil {
+		return "", err
+	}
+	return h.cfg.PublicURL + "/materials?t=" + token, nil
 }
 
 // materialType returns the content type of an attachment that counts as
@@ -158,7 +194,7 @@ func (h *Handler) onMaterialMessage(s *discordgo.Session, ch *discordgo.Channel,
 	if h.recordMaterials(ctx, m, home, m.GuildID) > 0 {
 		h.mat.Wake()
 	}
-	if isCourseChannel(ch) {
+	if hasSticky(ch) {
 		h.bumpSticky(s, ch.ID)
 	}
 }
@@ -428,55 +464,6 @@ func newerID(a, b string) bool {
 	x, errA := strconv.ParseUint(a, 10, 64)
 	y, errB := strconv.ParseUint(b, 10, 64)
 	return errA == nil && errB == nil && x > y
-}
-
-// onMaterialsButton answers "Προβολή υλικού" with a personal link to the
-// channel's material page. The sticky itself cannot carry the link: a link
-// button's URL is the same for everyone, and the page is only for members.
-func (h *Handler) onMaterialsButton(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	if h.mat == nil || !h.inHomeGuild(i.GuildID) || i.Member == nil || i.Member.User == nil {
-		return
-	}
-	if !h.matLive.Load() {
-		h.respondNow(s, i, "Το υλικό δεν είναι διαθέσιμο αυτή τη στιγμή. Δοκίμασε ξανά σε λίγο.")
-		return
-	}
-	ctx, cancel := h.ctx()
-	ch, err := h.channel(ctx, s, i.ChannelID)
-	cancel()
-	if err != nil || !isCourseChannel(ch) {
-		h.respondNow(s, i, "Το υλικό είναι διαθέσιμο μόνο στα κανάλια των μαθημάτων.")
-		return
-	}
-	tokenID, err := newTokenID()
-	var token string
-	if err == nil {
-		token, err = h.tokens.IssueMaterials(i.Member.User.ID, i.GuildID, ch.ID, tokenID,
-			time.Now().Add(materialLinkTTL))
-	}
-	if err != nil {
-		h.log.Error("materials: issue link", "error", err)
-		h.respondNow(s, i, "Κάτι πήγε στραβά. Δοκίμασε ξανά σε λίγο.")
-		return
-	}
-	err = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content: "📚 Το υλικό του <#" + ch.ID + "> σε μία σελίδα, με προβολή των PDF και των εικόνων μέσα στον browser.\n" +
-				"-# Ο σύνδεσμος είναι προσωπικός και ανοίγει μέσα σε 15 λεπτά. Μόλις φορτώσει η σελίδα, τα αρχεία μένουν διαθέσιμα όσο είναι ανοιχτή.",
-			Flags: discordgo.MessageFlagsEphemeral,
-			Components: []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{
-				discordgo.Button{
-					Label: "Άνοιγμα υλικού",
-					Style: discordgo.LinkButton,
-					URL:   h.cfg.PublicURL + "/materials?t=" + token,
-				},
-			}}},
-		},
-	})
-	if err != nil {
-		h.log.Error("materials: answer button", "error", err)
-	}
 }
 
 // MaterialSource returns the verify.MaterialSource that serves the material

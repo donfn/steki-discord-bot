@@ -340,7 +340,13 @@
     display: block; font-size: 0.75rem; font-weight: 700; color: var(--muted);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .zoom { display: flex; gap: 0.1rem; }
+  .zoom { display: flex; align-items: center; gap: 0.1rem; }
+  .zoom-level {
+    min-width: 3.4rem; height: 44px; padding: 0 0.25rem; border: 0; border-radius: 12px; background: transparent;
+    color: var(--text); font: 700 0.8125rem Manrope, system-ui, sans-serif; font-variant-numeric: tabular-nums; cursor: pointer;
+  }
+  .zoom-level:hover { background: var(--hairline); }
+  .zoom-level:focus-visible { outline: 3px solid var(--brand); outline-offset: 1px; }
   .zoom[hidden] { display: none; }
   @media (max-width: 640px) { .zoom, .nav-file { display: none; } }
 
@@ -372,8 +378,10 @@
     font-weight: 700;
     z-index: 1;
   }
-  .stage img.photo { display: block; margin: 0 auto; max-width: 100%; height: auto; border-radius: 8px; cursor: zoom-in; }
-  .stage img.photo.full { max-width: none; cursor: zoom-out; }
+  /* Photos are sized in script (fit to the stage, times the zoom); margin: auto
+     centres them while they are smaller than the stage and scrolls once larger. */
+  .stage.photo { display: flex; }
+  .stage img.photo { display: block; flex: none; margin: auto; max-width: none; border-radius: 8px; }
   .stage iframe { display: block; width: 100%; height: calc(100% - 4px); min-height: 70vh; border: 0; border-radius: 8px; background: #fff; }
   .stage .loading {
     display: grid; place-items: center; align-content: center; gap: 0.75rem;
@@ -433,7 +441,7 @@
     <p id="empty-text">Όταν κάποιος ανεβάσει PDF ή εικόνες στο κανάλι, θα εμφανιστούν εδώ. Μπορείς να ξεκινήσεις εσύ, με το κουμπί «Ανέβασμα υλικού».</p>
   </div>
 
-  <p class="footnote">Τα αρχεία τα ανέβασαν μέλη του στεκιού. Η σελίδα είναι προσωπική: μην μοιράζεσαι τον σύνδεσμό της.</p>
+  <p class="footnote">Τα αρχεία τα ανέβασαν μέλη του στεκιού. Ο σύνδεσμος ανανεώνεται αυτόματα στο Discord και ισχύει για μία ώρα.</p>
 </main>
 
 <div class="scrim" id="scrim" hidden></div>
@@ -447,6 +455,7 @@
       <button class="icon-btn" type="button" id="zoom-out" aria-label="Σμίκρυνση">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 12h12"/></svg>
       </button>
+      <button class="zoom-level" type="button" id="zoom-level" aria-label="Προσαρμογή στην οθόνη">100%</button>
       <button class="icon-btn" type="button" id="zoom-in" aria-label="Μεγέθυνση">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 6v12M6 12h12"/></svg>
       </button>
@@ -590,7 +599,7 @@
     $('progress-spin').hidden = true;
     box.dataset.tone = 'error';
     $('progress-text').textContent = expired
-      ? 'Ο σύνδεσμος έληξε πριν κατέβουν όλα (' + ready + ' από ' + files.length + '). Πάτα ξανά «Προβολή υλικού» στο Discord για τα υπόλοιπα.'
+      ? 'Ο σύνδεσμος έληξε πριν κατέβουν όλα (' + ready + ' από ' + files.length + '). Πάτα ξανά «Προβολή υλικού μαθήματος» στο Discord για τα υπόλοιπα.'
       : 'Κατέβηκαν ' + ready + ' από ' + files.length + ' αρχεία. Κάποια δεν ήταν διαθέσιμα.';
   }
 
@@ -669,6 +678,7 @@
   let generation = 0;
   let doc = null;
   let zoom = 1;
+  let photo = null;
   let observer = null;
   let lastFocus = null;
 
@@ -686,6 +696,8 @@
     observer = null;
     doc?.destroy();
     doc = null;
+    photo = null;
+    stage.classList.remove('photo');
   }
 
   async function openViewer(f, replace) {
@@ -708,7 +720,8 @@
     const at = vis.indexOf(f);
     $('prev').setAttribute('aria-disabled', String(at <= 0));
     $('next').setAttribute('aria-disabled', String(at < 0 || at >= vis.length - 1));
-    $('zoom').hidden = kindOf(f) !== 'pdf';
+    $('zoom').hidden = false;
+    showZoom();
     const dl = $('viewer-dl');
     dl.setAttribute('aria-disabled', 'true');
     dl.removeAttribute('href');
@@ -723,7 +736,7 @@
     if (gen !== generation) return;
     if (f.state !== 'ready') {
       stage.replaceChildren(loading(expired
-        ? 'Ο σύνδεσμος έληξε πριν κατέβει αυτό το αρχείο. Πάτα ξανά «Προβολή υλικού» στο Discord.'
+        ? 'Ο σύνδεσμος έληξε πριν κατέβει αυτό το αρχείο. Πάτα ξανά «Προβολή υλικού μαθήματος» στο Discord.'
         : 'Το αρχείο δεν είναι διαθέσιμο.', true));
       return;
     }
@@ -735,8 +748,11 @@
       img.className = 'photo';
       img.alt = f.caption || f.name;
       img.src = f.url;
-      img.addEventListener('click', () => img.classList.toggle('full'));
+      photo = img;
+      stage.classList.add('photo');
       stage.replaceChildren(img);
+      if (!img.complete) await img.decode().catch(() => {});
+      if (gen === generation) fitPhoto();
       return;
     }
 
@@ -813,12 +829,29 @@
     }
   }
 
+  // The photo's size at zoom 1: as large as fits the stage both ways.
+  function fitPhoto() {
+    if (!photo?.naturalWidth) return;
+    const cs = getComputedStyle(stage);
+    const w = stage.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const h = stage.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+    const fit = Math.max(0.01, Math.min(w / photo.naturalWidth, h / photo.naturalHeight));
+    photo.style.width = Math.floor(photo.naturalWidth * fit * zoom) + 'px';
+    photo.style.height = Math.floor(photo.naturalHeight * fit * zoom) + 'px';
+  }
+
+  function showZoom() { $('zoom-level').textContent = Math.round(zoom * 100) + '%'; }
+
+  // Photos zoom in steps of 10% of the fitted size; PDFs keep their coarser steps.
+  const zoomStep = () => (photo ? 0.1 : 0.25);
+
   function setZoom(next) {
-    if (!doc) return;
-    const z = Math.min(3, Math.max(0.5, next));
-    if (z === zoom) return;
+    const z = Math.round(Math.min(photo ? 5 : 3, Math.max(photo ? 0.1 : 0.5, next)) * 100) / 100;
+    if (z === zoom || (!doc && !photo)) return;
     const keep = stage.scrollTop / Math.max(1, stage.scrollHeight);
     zoom = z;
+    showZoom();
+    if (photo) { fitPhoto(); stage.scrollTop = keep * stage.scrollHeight; return; }
     layoutPages(generation).then(() => { stage.scrollTop = keep * stage.scrollHeight; });
   }
 
@@ -843,8 +876,9 @@
 
   $('close').addEventListener('click', () => closeViewer());
   $('scrim').addEventListener('click', () => closeViewer());
-  $('zoom-in').addEventListener('click', () => setZoom(zoom + 0.25));
-  $('zoom-out').addEventListener('click', () => setZoom(zoom - 0.25));
+  $('zoom-in').addEventListener('click', () => setZoom(zoom + zoomStep()));
+  $('zoom-level').addEventListener('click', () => setZoom(1));
+  $('zoom-out').addEventListener('click', () => setZoom(zoom - zoomStep()));
   $('prev').addEventListener('click', () => step(-1));
   $('next').addEventListener('click', () => step(1));
   window.addEventListener('popstate', () => closeViewer(true));
@@ -853,13 +887,13 @@
     if (e.key === 'Escape') { e.preventDefault(); closeViewer(); }
     else if (e.key === 'ArrowLeft') step(-1);
     else if (e.key === 'ArrowRight') step(1);
-    else if ((e.key === '+' || e.key === '=') && (e.ctrlKey || e.metaKey)) { e.preventDefault(); setZoom(zoom + 0.25); }
-    else if (e.key === '-' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); setZoom(zoom - 0.25); }
+    else if ((e.key === '+' || e.key === '=') && (e.ctrlKey || e.metaKey)) { e.preventDefault(); setZoom(zoom + zoomStep()); }
+    else if (e.key === '-' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); setZoom(zoom - zoomStep()); }
   });
   let resizeTimer;
   window.addEventListener('resize', () => {
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => { if (doc) layoutPages(generation); }, 250);
+    resizeTimer = setTimeout(() => { if (doc) layoutPages(generation); else fitPhoto(); }, 250);
   });
 </script>
 {{else}}
@@ -873,10 +907,10 @@
   </div>
   {{if eq .State "error"}}
   <h1>Κάτι πήγε στραβά</h1>
-  <p>Δεν μπορέσαμε να φορτώσουμε το υλικό αυτή τη στιγμή. Ανανέωσε τη σελίδα σε λίγο ή πάτα ξανά «Προβολή υλικού» στο Discord.</p>
+  <p>Δεν μπορέσαμε να φορτώσουμε το υλικό αυτή τη στιγμή. Ανανέωσε τη σελίδα σε λίγο ή πάτα ξανά «Προβολή υλικού μαθήματος» στο Discord.</p>
   {{else}}
   <h1>Ο σύνδεσμος δεν ισχύει πια</h1>
-  <p>Οι σύνδεσμοι για το υλικό ισχύουν για λίγα λεπτά. Γύρνα στο κανάλι του μαθήματος στο Discord και πάτα ξανά <strong>Προβολή υλικού</strong> για καινούριο.</p>
+  <p>Οι σύνδεσμοι για το υλικό ισχύουν για μία ώρα. Γύρνα στο κανάλι του μαθήματος στο Discord και πάτα <strong>Προβολή υλικού μαθήματος</strong> για καινούριο.</p>
   <a class="cta" href="https://discord.com/channels/@me">Άνοιγμα του Discord</a>
   {{end}}
 </main>

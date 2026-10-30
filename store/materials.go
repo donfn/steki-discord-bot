@@ -318,6 +318,12 @@ func (s *Store) Sticky(ctx context.Context, channelID string) (string, error) {
 	return id, noRows(err)
 }
 
+// DeleteSticky forgets the sticky of a channel that no longer has one.
+func (s *Store) DeleteSticky(ctx context.Context, channelID string) error {
+	_, err := s.db.ExecContext(ctx, `delete from stickies where channel_id = ?1`, channelID)
+	return err
+}
+
 // SetSticky records the message now kept at the bottom of a channel.
 func (s *Store) SetSticky(ctx context.Context, channelID, messageID string) error {
 	_, err := s.db.ExecContext(ctx, `

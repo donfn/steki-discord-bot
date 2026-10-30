@@ -4,19 +4,27 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"path"
 	"strings"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
+
+	"steki-bot/materials"
 )
 
 // "Ανέβασμα υλικού" opens a form with a title and a file picker. The bot
 // posts the files to the channel under the title, credits the member, pins
 // the message and records the files as theirs, so the sticky counts them as
 // shared by a member even though the bot sent them.
+//
+// Besides PDFs and JPEGs the form takes PNG, WebP and HEIC images, which are
+// converted to JPEG before they are posted, so the channel, the backup and the
+// material page only ever hold PDFs and JPEGs.
 //
 // The form uses Discord's Label and File Upload components (types 18 and
 // 19), which discordgo v0.29 cannot decode: the typed modal submit for it
@@ -140,13 +148,13 @@ func (h *Handler) openUploadForm(s *discordgo.Session, i *discordgo.InteractionC
 			Title:    "Ανέβασμα υλικού",
 			Components: []discordgo.MessageComponent{
 				label("Τίτλος", "Θα εμφανίζεται πάνω από το αρχείο στο κανάλι.", title),
-				label("Αρχεία", "PDF ή JPG, έως 10 αρχεία.", map[string]any{
+				label("Αρχεία", "PDF ή εικόνες (JPG, PNG, WebP, HEIC), έως 10 αρχεία.", map[string]any{
 					"type":       fileUploadComponent,
 					"custom_id":  uploadFileID,
 					"min_values": 1,
 					"max_values": uploadMaxFiles,
 					"required":   true,
-					"file_types": []string{".pdf", ".jpg", ".jpeg"},
+					"file_types": []string{".pdf", ".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"},
 				}),
 			},
 		},
@@ -288,6 +296,7 @@ func (h *Handler) onUploadSubmit(s *discordgo.Session, u *uploadSubmit) {
 		// The credit is shown, not pinged: the uploader knows.
 		AllowedMentions: &discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}},
 	}
+	var posted int64
 	for _, a := range files {
 		body, err := download(ctx, a.URL, int64(a.Size))
 		if err != nil {
@@ -295,11 +304,28 @@ func (h *Handler) onUploadSubmit(s *discordgo.Session, u *uploadSubmit) {
 			answer("Δεν μπόρεσα να παραλάβω τα αρχεία. Δοκίμασε ξανά σε λίγο.")
 			return
 		}
-		send.Files = append(send.Files, &discordgo.File{
-			Name:        a.Filename,
-			ContentType: materialType(a),
-			Reader:      bytes.NewReader(body),
-		})
+		name, ctype := a.Filename, materialType(a)
+		if ctype == "" {
+			jpg, err := materials.ToJPEG(ctx, body)
+			if err != nil {
+				log.Warn("upload: convert image", "filename", a.Filename, "error", err)
+				if errors.Is(err, materials.ErrUnsupportedImage) {
+					answer(fmt.Sprintf("Δεν μπόρεσα να διαβάσω το «%s». Δοκίμασε να το αποθηκεύσεις ξανά ως JPG.",
+						truncateRunes(a.Filename, 60)))
+				} else {
+					answer("Δεν μπόρεσα να μετατρέψω την εικόνα σε JPG. Δοκίμασε ξανά σε λίγο.")
+				}
+				return
+			}
+			body, name, ctype = jpg, strings.TrimSuffix(a.Filename, path.Ext(a.Filename))+".jpg", materials.TypeJPEG
+		}
+		posted += int64(len(body))
+		if posted > limit {
+			answer(fmt.Sprintf("Τα αρχεία είναι πολύ μεγάλα μετά τη μετατροπή των εικόνων σε JPG (όριο %s). "+
+				"Ανέβασέ τα σε μικρότερες ομάδες.", formatBytes(limit)))
+			return
+		}
+		send.Files = append(send.Files, &discordgo.File{Name: name, ContentType: ctype, Reader: bytes.NewReader(body)})
 	}
 
 	msg, err := s.ChannelMessageSendComplex(ch.ID, send, discordgo.WithContext(ctx))
@@ -339,6 +365,21 @@ func (h *Handler) onUploadSubmit(s *discordgo.Session, u *uploadSubmit) {
 	} else {
 		answer("✅ Το υλικό ανέβηκε στο κανάλι. Ευχαριστούμε! " + link)
 	}
+}
+
+// convertibleImage reports whether an attachment is a PNG, WebP or HEIC image
+// the upload converts to JPEG, judged by name or declared type. The converter
+// checks the content itself.
+func convertibleImage(a *discordgo.MessageAttachment) bool {
+	switch strings.ToLower(path.Ext(a.Filename)) {
+	case ".png", ".webp", ".heic", ".heif":
+		return true
+	}
+	switch strings.ToLower(a.ContentType) {
+	case "image/png", "image/webp", "image/heic", "image/heif":
+		return true
+	}
+	return false
 }
 
 // timedOut reports whether a member is currently timed out.

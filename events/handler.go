@@ -204,6 +204,27 @@ func (h *Handler) goLoop(name string, every time.Duration, fn func()) {
 	}()
 }
 
+// goLoopAfter is goLoop for work whose first run is already done: fn first
+// runs after one interval.
+func (h *Handler) goLoopAfter(name string, every time.Duration, fn func()) {
+	h.wg.Add(1)
+	go func() {
+		defer h.wg.Done()
+
+		ticker := time.NewTicker(every)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-h.base.Done():
+				return
+			case <-ticker.C:
+				h.safely(name, fn)
+			}
+		}
+	}()
+}
+
 // safely runs fn, turning a panic into a log line rather than a dead process.
 func (h *Handler) safely(name string, fn func()) {
 	defer func() {
