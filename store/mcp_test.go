@@ -6,28 +6,6 @@ import (
 	"time"
 )
 
-func TestMCPAnnouncements(t *testing.T) {
-	s := openTestStore(t)
-	ctx := context.Background()
-
-	for _, a := range [][2]string{{"c1", "m1"}, {"c2", "m2"}, {"c1", "m1"}} { // the last is a repeat
-		if err := s.AddMCPAnnouncement(ctx, a[0], a[1]); err != nil {
-			t.Fatal(err)
-		}
-		time.Sleep(2 * time.Millisecond)
-	}
-	got, err := s.MCPAnnouncements(ctx)
-	if err != nil || len(got) != 2 || got[0].MessageID != "m1" || got[1].ChannelID != "c2" {
-		t.Fatalf("announcements = %+v, %v", got, err)
-	}
-	if err := s.DeleteMCPAnnouncement(ctx, "m1"); err != nil {
-		t.Fatal(err)
-	}
-	if got, _ := s.MCPAnnouncements(ctx); len(got) != 1 || got[0].MessageID != "m2" {
-		t.Errorf("after delete = %+v", got)
-	}
-}
-
 func TestMaterialReviewFlow(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()

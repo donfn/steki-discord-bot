@@ -89,7 +89,7 @@ func (v *Server) reportFile(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "reason"})
 		return
 	}
-	channelID, subject, ok := v.sessions.authorizeReport(sessionID(r), in.File, time.Now())
+	channelID, subject, ok := v.sessions.authorizeOnPage(sessionID(r), in.File, time.Now())
 	if !ok {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": stateInvalid})
 		return

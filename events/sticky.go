@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -16,10 +15,10 @@ import (
 // Every course channel (bar the statistics channels, where members post exam
 // results) keeps one bot card at its bottom, with the buttons to the material
 // page and to the upload form. The first carries the number of files members
-// have shared there and links straight to the page: the link is the same for
-// everyone and is replaced every materialLinkRotate, well before its token
-// expires. "Sticky" is done the only way Discord allows: when others post, the
-// bot sends a fresh copy and deletes the old one.
+// have shared there; a click answers, to that member alone, with a personal
+// link to the page (links.go), so the card itself holds no link and never
+// needs refreshing for one. "Sticky" is done the only way Discord allows: when
+// others post, the bot sends a fresh copy and deletes the old one.
 //
 // Each copy is sent as a silent message (SUPPRESS_NOTIFICATIONS), so it never
 // raises a push or desktop notification. That is the whole reason the feature
@@ -34,13 +33,12 @@ import (
 
 const (
 	uploadButtonID = "materials:upload"
+	// viewButtonID asks for a personal link to the material page.
+	viewButtonID = "materials:view"
 
 	stickyQuiet   = 2 * time.Second
 	stickyMaxWait = 10 * time.Second
 	stickyEditLag = 15 * time.Second
-
-	// rotateWorkers is how many stickies a link rotation edits at once.
-	rotateWorkers = 4
 )
 
 // stickyQueue is the pending sticky work per channel.
@@ -131,16 +129,16 @@ const stickyColor = 0xFFC900
 // Discord lets carry buttons with no text or embed, and as silent.
 const stickyFlags = discordgo.MessageFlagsIsComponentsV2 | discordgo.MessageFlagsSuppressNotifications
 
-// stickyCard is the sticky's buttons for a count of member files and the
-// current link to the material page. It is only buttons: the card sits at the
-// bottom of a busy channel, so it takes as little room as it can.
-func stickyCard(count int, link string) []discordgo.MessageComponent {
+// stickyCard is the sticky's buttons for a count of member files. It is only
+// buttons: the card sits at the bottom of a busy channel, so it takes as
+// little room as it can.
+func stickyCard(count int) []discordgo.MessageComponent {
 	components := []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{
 		discordgo.Button{
-			Label: fmt.Sprintf("Προβολή υλικού μαθήματος (%d)", count),
-			Style: discordgo.LinkButton,
-			URL:   link,
-			Emoji: &discordgo.ComponentEmoji{Name: "📚"},
+			Label:    fmt.Sprintf("Προβολή υλικού μαθήματος (%d)", count),
+			Style:    discordgo.PrimaryButton,
+			CustomID: viewButtonID,
+			Emoji:    &discordgo.ComponentEmoji{Name: "📚"},
 		},
 		discordgo.Button{
 			Label:    "Ανέβασμα υλικού",
@@ -154,9 +152,9 @@ func stickyCard(count int, link string) []discordgo.MessageComponent {
 
 // silentSend posts a sticky as a silent message and confirms Discord kept it
 // silent. Mentions are disabled too, though the text has none.
-func silentSend(ctx context.Context, s *discordgo.Session, channelID string, count int, link string) (*discordgo.Message, error) {
+func silentSend(ctx context.Context, s *discordgo.Session, channelID string, count int) (*discordgo.Message, error) {
 	return s.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
-		Components:      stickyCard(count, link),
+		Components:      stickyCard(count),
 		Flags:           stickyFlags,
 		AllowedMentions: &discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}},
 	}, discordgo.WithContext(ctx))
@@ -169,7 +167,7 @@ func isSilent(m *discordgo.Message) bool {
 
 // syncSticky brings a channel's sticky up to date. With repost it makes sure
 // the sticky is the newest message, sending a new copy if it is not; without,
-// it only edits the card in place, which also gives its button a new link.
+// it only edits the card in place.
 func (h *Handler) syncSticky(ctx context.Context, s *discordgo.Session, channelID string, repost bool) error {
 	unlock := h.sticky.locks.Lock(channelID)
 	defer unlock()
@@ -195,10 +193,6 @@ func (h *Handler) syncSticky(ctx context.Context, s *discordgo.Session, channelI
 	if err != nil {
 		return err
 	}
-	link, err := h.materialLink(channelID)
-	if err != nil {
-		return err
-	}
 
 	if old != "" {
 		if repost {
@@ -216,7 +210,7 @@ func (h *Handler) syncSticky(ctx context.Context, s *discordgo.Session, channelI
 			}
 		}
 		if !repost {
-			components := stickyCard(count, link)
+			components := stickyCard(count)
 			// Empty content and embeds clear what older stickies carried.
 			_, err := s.ChannelMessageEditComplex(&discordgo.MessageEdit{
 				ID:         old,
@@ -238,7 +232,7 @@ func (h *Handler) syncSticky(ctx context.Context, s *discordgo.Session, channelI
 		}
 	}
 
-	msg, err := silentSend(ctx, s, channelID, count, link)
+	msg, err := silentSend(ctx, s, channelID, count)
 	if err != nil {
 		return err
 	}
@@ -366,57 +360,13 @@ func isStickyMessage(m *discordgo.Message) bool {
 			continue
 		}
 		for _, b := range row.Components {
-			if btn, ok := b.(*discordgo.Button); ok && (btn.CustomID == legacyMaterialsButtonID || btn.CustomID == uploadButtonID) {
+			if btn, ok := b.(*discordgo.Button); ok && (btn.CustomID == legacyMaterialsButtonID ||
+				btn.CustomID == viewButtonID || btn.CustomID == uploadButtonID) {
 				return true
 			}
 		}
 	}
 	return false
-}
-
-// rotateStickyLinks gives every sticky a new link, in place and silently,
-// before the one it shows expires.
-func (h *Handler) rotateStickyLinks(s *discordgo.Session) {
-	guildID := h.guildID()
-	if guildID == "" || !h.stickyEnabled() {
-		return
-	}
-	started := time.Now()
-	ctx, cancel := h.ctx()
-	channels, err := dc.GuildChannels(ctx, s, h.log, guildID)
-	cancel()
-	if err != nil {
-		h.log.Error("sticky: list channels for link rotation", "error", err)
-		return
-	}
-	// The whole pass has to fit well inside materialLinkRotate, or the links
-	// at the end of one pass would outlive the ones the next pass replaces. A
-	// few edits run at once: each channel has its own rate limit bucket for
-	// edits, and the lot stays far below the global limit.
-	var rotated atomic.Int64
-	sem := make(chan struct{}, rotateWorkers)
-	var wg sync.WaitGroup
-	for _, ch := range channels {
-		if !hasSticky(ch) || !h.stickyEnabled() || h.base.Err() != nil {
-			continue
-		}
-		sem <- struct{}{}
-		wg.Add(1)
-		go func() {
-			defer func() { <-sem; wg.Done() }()
-			h.safely("sticky_rotate", func() {
-				ctx, cancel := h.ctxTimeout(flowTimeout)
-				defer cancel()
-				if err := h.syncSticky(ctx, s, ch.ID, false); err != nil {
-					h.log.Warn("sticky: rotate link", "channel_id", ch.ID, "name", ch.Name, "error", err)
-					return
-				}
-				rotated.Add(1)
-			})
-		}()
-	}
-	wg.Wait()
-	h.log.Info("sticky: links rotated", "channels", rotated.Load(), "took", time.Since(started).Round(time.Millisecond))
 }
 
 func ptr[T any](v T) *T { return &v }

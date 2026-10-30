@@ -57,6 +57,8 @@ type Handler struct {
 	// Register when the content check has an API key.
 	judge  materials.ReportJudge
 	sticky stickyQueue
+	// links are the personal links handed out and not yet followed.
+	links personalLinks
 	// matLive is set once the bucket answered and the worker runs; the
 	// stickies and both buttons wait for it.
 	matLive atomic.Bool
@@ -216,27 +218,6 @@ func (h *Handler) goLoop(name string, every time.Duration, fn func()) {
 			case <-h.base.Done():
 				return
 			case <-ticker.C:
-			}
-		}
-	}()
-}
-
-// goLoopAfter is goLoop for work whose first run is already done: fn first
-// runs after one interval.
-func (h *Handler) goLoopAfter(name string, every time.Duration, fn func()) {
-	h.wg.Add(1)
-	go func() {
-		defer h.wg.Done()
-
-		ticker := time.NewTicker(every)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-h.base.Done():
-				return
-			case <-ticker.C:
-				h.safely(name, fn)
 			}
 		}
 	}()

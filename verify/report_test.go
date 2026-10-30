@@ -140,13 +140,13 @@ func TestReportsStopWhenTheSessionRunsOut(t *testing.T) {
 	id, _ := s.open("100", "u1", now)
 	s.claimPage(id, now)
 	s.setFiles(id, []string{"11"})
-	if _, _, ok := s.authorizeReport(id, "11", now); !ok {
+	if _, _, ok := s.authorizeOnPage(id, "11", now); !ok {
 		t.Fatal("a live session cannot report")
 	}
-	if _, _, ok := s.authorizeReport(id, "12", now); ok {
+	if _, _, ok := s.authorizeOnPage(id, "12", now); ok {
 		t.Error("reported a file the page did not list")
 	}
-	if _, _, ok := s.authorizeReport(id, "11", now.Add(sessionTTL+time.Second)); ok {
+	if _, _, ok := s.authorizeOnPage(id, "11", now.Add(studyTTL+time.Second)); ok {
 		t.Error("an expired session reported")
 	}
 }

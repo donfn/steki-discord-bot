@@ -858,7 +858,7 @@
     </div>
   </div>
 
-  <p class="private-note" id="private-note">✓ μελετημένα, σημειώσεις, δικοί σου τίτλοι και ό,τι γράφεις πάνω στα αρχεία αποθηκεύονται τοπικά, σε αυτόν τον browser. Τα βλέπεις μόνο εσύ και δεν μεταφέρονται σε άλλη συσκευή.</p>
+  <p class="private-note" id="private-note">✓ μελετημένα, σημειώσεις, δικοί σου τίτλοι και ό,τι γράφεις πάνω στα αρχεία αποθηκεύονται στον λογαριασμό σου. Τα βλέπεις μόνο εσύ και τα βρίσκεις κάθε φορά που επιστρέφεις, από όποια συσκευή κι αν μπεις.</p>
 
   <ul class="files" id="files" data-view="grid"></ul>
 
@@ -873,7 +873,7 @@
   <footer class="study-foot" id="study-foot">
     <h2>Προσωπικός χώρος μελέτης για το μάθημα {{.Course}}</h2>
     <p>Ένα εργαλείο του Steki για να διαβάζεις πιο οργανωμένα στην εξεταστική. Τσέκαρε ό,τι έχεις διαβάσει, δώσε στα αρχεία δικούς σου τίτλους, κράτα σημειώσεις δίπλα σε κάθε αρχείο και γράψε ή υπογράμμισε πάνω στις σελίδες.</p>
-    <p>Όλα αποθηκεύονται μόνο σε αυτόν τον browser. Δεν στέλνονται στο Steki ούτε πουθενά αλλού και τα βλέπεις μόνο εσύ. Αν καθαρίσεις τα δεδομένα του browser ή ανοίξεις τη σελίδα σε άλλη συσκευή, δεν θα τα βρεις εκεί.</p>
+    <p>Όλα αποθηκεύονται στον λογαριασμό σου στο Discord και τα βλέπεις μόνο εσύ. Την επόμενη φορά που θα ανοίξεις τη σελίδα, από αυτή ή από άλλη συσκευή, θα τα βρεις όπως τα άφησες.</p>
   </footer>
 
   <p class="footnote">Τα αρχεία τα ανέβασαν μέλη του Steki και κατεβαίνουν όλα μόλις ανοίξει η σελίδα. Αν την ανανεώσεις, θα χρειαστείς νέο σύνδεσμο από το Discord.</p>
@@ -918,7 +918,7 @@
     <span class="ink-sep" aria-hidden="true"></span>
     <button class="icon-btn" type="button" id="ink-undo" aria-label="Αναίρεση" title="Αναίρεση"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
     <button class="icon-btn" type="button" id="ink-clear" aria-label="Σβήσιμο όλων" title="Σβήσιμο όλων"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button>
-    <span class="ink-hint" id="ink-hint">Αποθηκεύονται τοπικά, σε αυτόν τον browser. Τα βλέπεις μόνο εσύ.</span>
+    <span class="ink-hint" id="ink-hint">Αποθηκεύονται στον λογαριασμό σου. Τα βλέπεις μόνο εσύ.</span>
   </div>
   <div class="viewer-body">
     <div class="stage" id="stage"></div>
@@ -935,7 +935,7 @@
         <button class="icon-btn" type="button" id="pad-close" aria-label="Κλείσιμο σημειώσεων"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
       </div>
       <div class="pad-text md" id="pad-text" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Σημειώσεις" spellcheck="true" data-placeholder="Γράψε τις σημειώσεις σου εδώ…"></div>
-      <p class="pad-foot">Αποθηκεύονται τοπικά, σε αυτόν τον browser. Τα βλέπεις μόνο εσύ.</p>
+      <p class="pad-foot">Αποθηκεύονται στον λογαριασμό σου. Τα βλέπεις μόνο εσύ.</p>
     </aside>
   </div>
 </section>
@@ -969,7 +969,7 @@
 <dialog class="report notes-form" id="notes" aria-labelledby="notes-title">
   <form id="notes-form" method="dialog">
     <h2 id="notes-title">Δικός σου τίτλος</h2>
-    <p>Ο τίτλος αποθηκεύεται <strong>τοπικά, σε αυτόν τον browser</strong>. Τον βλέπεις μόνο εσύ· δεν στέλνεται πουθενά.</p>
+    <p>Ο τίτλος αποθηκεύεται <strong>στον λογαριασμό σου</strong>. Τον βλέπεις μόνο εσύ, από όποια συσκευή κι αν μπεις.</p>
     <p class="report-file" id="notes-file"></p>
     <label for="notes-name">Τίτλος</label>
     <input id="notes-name" maxlength="120" autocomplete="off">
@@ -1004,7 +1004,7 @@
   </form>
 </dialog>
 
-<script type="application/json" id="data">{"files":{{.Files}},"total":{{.Total}}}</script>
+<script type="application/json" id="data">{"files":{{.Files}},"total":{{.Total}},"notes":{{.Notes}}}</script>
 <script nonce="{{.Nonce}}" type="module">
   const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/';
   const PDFJS_LIB = PDFJS + 'legacy/build/pdf.min.mjs';
@@ -1023,17 +1023,90 @@
   const CHECK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
   const PEN_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>';
 
-  // What the member marks for themselves: studied, their own title, notes.
-  // It stays in this browser only, keyed by file id: { d: 1, t: '', n: '' }.
-  const STUDY_KEY = 'study';
-  let study = {};
-  try { study = JSON.parse(localStorage.getItem(STUDY_KEY) || '{}') || {}; } catch { study = {}; }
+  // ── Saving ──────────────────────────────────────────────────────────────
+  // What the member keeps for themselves is saved to their account, per file
+  // and kind, and comes back with the page on any device. There is no syncing:
+  // each save replaces what was stored, and the latest one stays. Changes are
+  // gathered for a moment and sent together.
+  const saved = JSON.parse(document.getElementById('data').textContent).notes || {};
+  const pendingSaves = new Map();
+  let saveTimer = 0;
+  let saveWarned = false;
+  function persist(id, kind, value) {
+    pendingSaves.set(id + ':' + kind, { file: id, kind, data: value && Object.keys(value).length ? value : null });
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(flushSaves, 800);
+  }
+  async function flushSaves(leaving) {
+    clearTimeout(saveTimer);
+    const batch = [...pendingSaves.entries()];
+    pendingSaves.clear();
+    for (const [key, item] of batch) {
+      const body = JSON.stringify(item);
+      try {
+        const res = await fetch('/s', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body,
+          // A page being closed can still send what is small enough.
+          keepalive: leaving === true && body.length < 60000,
+        });
+        if (res.status === 401) {
+          saveFailed('Η σελίδα έληξε και οι τελευταίες αλλαγές δεν αποθηκεύτηκαν. Άνοιξέ τη ξανά από το Discord.');
+          return;
+        }
+        if (!res.ok) throw new Error(String(res.status));
+      } catch {
+        // Try again shortly, unless a newer change has taken its place.
+        if (!pendingSaves.has(key)) pendingSaves.set(key, item);
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(flushSaves, 5000);
+        saveFailed('Δεν μπόρεσα να αποθηκεύσω τις αλλαγές. Θα ξαναδοκιμάσω σε λίγο.');
+      }
+    }
+  }
+  function saveFailed(text) {
+    if (saveWarned) return;
+    saveWarned = true;
+    toast(text);
+    setTimeout(() => { saveWarned = false; }, 30000);
+  }
+  addEventListener('pagehide', () => flushSaves(true));
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushSaves(true); });
+
+  // What was kept in this browser before saving moved to the account is
+  // carried over once, for the files the account has nothing of that kind.
+  function carryOver(key, kind) {
+    let local = null;
+    try { local = JSON.parse(localStorage.getItem(key) || 'null'); } catch {}
+    if (!local || typeof local !== 'object') return;
+    for (const f of JSON.parse(document.getElementById('data').textContent).files) {
+      const v = local[f.id];
+      if (!v) continue;
+      if (!saved[f.id]?.[kind]) {
+        (saved[f.id] ||= {})[kind] = v;
+        persist(f.id, kind, v);
+      }
+      delete local[f.id];
+    }
+    try {
+      if (Object.keys(local).length) localStorage.setItem(key, JSON.stringify(local));
+      else localStorage.removeItem(key);
+    } catch {}
+  }
+  carryOver('study', 'study');
+  carryOver('ink', 'ink');
+
+  // What the member marks for themselves: studied, their own title, notes,
+  // keyed by file id: { d: 1, t: '', n: '' }.
+  const study = {};
+  for (const [id, v] of Object.entries(saved)) if (v.study) study[id] = v.study;
   const mine = (f) => study[f.id] || {};
   function saveMine(f, patch) {
     const next = { ...mine(f), ...patch };
     for (const k of Object.keys(next)) if (!next[k]) delete next[k];
     if (Object.keys(next).length) study[f.id] = next; else delete study[f.id];
-    try { localStorage.setItem(STUDY_KEY, JSON.stringify(study)); } catch {}
+    persist(f.id, 'study', study[f.id]);
   }
   const titleOf = (f) => mine(f).t || f.caption || f.name;
   // The notes as one line of text, for the list and its search.
@@ -1758,11 +1831,10 @@
   $('viewer-copy').addEventListener('click', () => { if (current) copyFile(current, $('viewer-copy')); });
 
   // ── Ink: pen and highlighter on top of the file ─────────────────────────
-  // Strokes stay in this browser only, per file and page, in coordinates
-  // relative to the page so they survive zoom: { t, c, w, p: [x, y, …] }.
-  const INK_KEY = 'ink';
-  let ink = {};
-  try { ink = JSON.parse(localStorage.getItem(INK_KEY) || '{}') || {}; } catch { ink = {}; }
+  // Strokes are saved to the member's account, per file and page, in
+  // coordinates relative to the page so they survive zoom: { t, c, w, p: [x, y, …] }.
+  const ink = {};
+  for (const [id, v] of Object.entries(saved)) if (v.ink) ink[id] = v.ink;
   const COLORS = { pen: ['#1B1A17', '#E5383B', '#2F6FDB'], hl: ['#FFD60A', '#5BE37D', '#FF7AB6', '#4DC9FF'] };
   const inkState = { on: false, tool: 'pen', color: { pen: COLORS.pen[0], hl: COLORS.hl[0] } };
   let inkUndo = [];
@@ -1770,16 +1842,13 @@
 
   const strokesOf = (f, page) => ((ink[f.id] ||= {})[page] ||= []);
   function saveInk() {
-    const m = current && ink[current.id];
+    if (!current) return;
+    const m = ink[current.id];
     if (m) {
       for (const k of Object.keys(m)) if (!m[k].length) delete m[k];
       if (!Object.keys(m).length) delete ink[current.id];
     }
-    try {
-      localStorage.setItem(INK_KEY, JSON.stringify(ink));
-    } catch {
-      $('ink-hint').textContent = 'Ο χώρος του browser γέμισε· τα τελευταία δεν αποθηκεύτηκαν.';
-    }
+    persist(current.id, 'ink', ink[current.id]);
   }
   function inkLayer(host, page) {
     const c = document.createElement('canvas');

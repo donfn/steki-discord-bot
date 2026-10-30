@@ -7,28 +7,33 @@ import (
 	"time"
 )
 
-// A material link is shared with the whole channel and rotates every few
-// minutes, so it only gets a visitor in the door. Following it opens a session
-// of its own: the browser keeps an unguessable cookie, the link leaves the
-// address bar, and everything after that is authorised by the session.
+// A material link is personal, works for seconds and opens once, so it only
+// gets the member in the door. Following it opens a session of its own: the
+// browser keeps an unguessable cookie, the link leaves the address bar, and
+// everything after that is authorised by the session, as that member.
 //
 // A session is built to be used once. The page can be fetched a single time,
 // so a refresh finds nothing; only the files that were on that page can be
-// downloaded; and once every one of them has been sent in full the session is
-// closed: no more downloads. A closed session can still file reports about
-// the files that were on its page, since the page stays open and reading is
-// when problems show up, until sessionTTL cuts it off. Sessions live in
-// memory, so a restart revokes them all, which costs a visitor one more click.
+// downloaded, within sessionTTL; and once every one of them has been sent in
+// full the session is closed: no more downloads. The page stays open while the
+// member studies, so it can still save their notes and file reports about the
+// files that were on it until studyTTL cuts it off. Sessions live in memory,
+// so a restart revokes them all, which costs a member one more click.
 const (
 	// sessionCookie is the cookie's name. It says nothing about what it guards.
 	sessionCookie = "s"
 
-	// sessionTTL is the longest a session lives, from the moment it is opened.
+	// sessionTTL is how long after it was opened a session may fetch its page
+	// and files.
 	sessionTTL = 15 * time.Minute
+
+	// studyTTL is the longest a session lives, from the moment it is opened:
+	// how long an open page can save notes and file reports.
+	studyTTL = 12 * time.Hour
 
 	// maxSessions caps the sessions held at once, so opening them cannot be
 	// used to exhaust memory.
-	maxSessions = 5000
+	maxSessions = 20000
 
 	// pagePath and filesPath are the session's page and its downloads. They
 	// must match the edge rule and shield.MaterialFilesPrefix.
@@ -74,7 +79,7 @@ func (s *sessions) open(channelID, subject string, now time.Time) (string, bool)
 	defer s.mu.Unlock()
 	if len(s.m) >= maxSessions {
 		for k, v := range s.m {
-			if now.Sub(v.opened) > sessionTTL {
+			if now.Sub(v.opened) > studyTTL {
 				delete(s.m, k)
 			}
 		}
@@ -93,7 +98,7 @@ func (s *sessions) live(id string, now time.Time) *session {
 	if sess == nil {
 		return nil
 	}
-	if now.Sub(sess.opened) > sessionTTL {
+	if now.Sub(sess.opened) > studyTTL {
 		delete(s.m, id)
 		return nil
 	}
@@ -106,7 +111,7 @@ func (s *sessions) claimPage(id string, now time.Time) (channelID, subject strin
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	sess := s.live(id, now)
-	if sess == nil {
+	if sess == nil || now.Sub(sess.opened) > sessionTTL {
 		return "", "", false
 	}
 	if sess.served {
@@ -160,15 +165,16 @@ func (s *sessions) authorize(id, fileID string, now time.Time) (channelID, subje
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	sess := s.live(id, now)
-	if sess == nil || sess.closed || !sess.served || !sess.want[fileID] {
+	if sess == nil || sess.closed || !sess.served || !sess.want[fileID] || now.Sub(sess.opened) > sessionTTL {
 		return "", "", false
 	}
 	return sess.channelID, sess.subject, true
 }
 
-// authorizeReport checks that a session may report a file: it has shown its
-// page and that page listed the file. It works after the downloads are over.
-func (s *sessions) authorizeReport(id, fileID string, now time.Time) (channelID, subject string, ok bool) {
+// authorizeOnPage checks that a session may report a file or save notes on
+// it: it has shown its page and that page listed the file. It works after the
+// downloads are over.
+func (s *sessions) authorizeOnPage(id, fileID string, now time.Time) (channelID, subject string, ok bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	sess := s.live(id, now)

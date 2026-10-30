@@ -17,8 +17,8 @@ import (
 
 // The MCP server lets members read the course material from an AI assistant.
 // This file is the bot's side of it: who may read what (mcpLibrary), and the
-// announcement moderators post to explain the feature, whose button link to the
-// setup page is replaced every mcpLinkRotate like the stickies'.
+// announcement moderators post to explain the feature, whose button hands each
+// member a personal link to the setup page, like the stickies' (links.go).
 
 // mcpEnabled reports whether the MCP server is on: it needs the Discord login
 // and the material backup.
@@ -206,26 +206,28 @@ func (r *mcpReader) Open(ctx context.Context, channelID, fileID string) (*mcp.Do
 
 // ── The announcement ────────────────────────────────────────────────────────
 
-// mcpGuideLink returns the link to the setup page. Like the material page's it
-// is the same for everyone and is replaced before it expires.
-func (h *Handler) mcpGuideLink() (string, error) {
+// mcpGuideButtonID asks for a personal link to the setup page.
+const mcpGuideButtonID = "mcp:guide"
+
+// mcpGuideLink returns one member's personal link to the setup page, and the
+// link's ID.
+func (h *Handler) mcpGuideLink(userID string) (link, tokenID string, err error) {
 	guildID := h.guildID()
 	if guildID == "" {
-		return "", errors.New("mcp: guild not known yet")
+		return "", "", errors.New("mcp: guild not known yet")
 	}
-	tokenID, err := newTokenID()
+	if tokenID, err = newTokenID(); err != nil {
+		return "", "", err
+	}
+	token, err := h.tokens.IssueGuide(userID, guildID, tokenID, time.Now().Add(personalLinkTTL))
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	token, err := h.tokens.IssueGuide(materialLinkSubject, guildID, tokenID, time.Now().Add(verify.MCPGuideLinkTTL))
-	if err != nil {
-		return "", err
-	}
-	return h.cfg.PublicURL + verify.MCPGuidePath + "?t=" + token, nil
+	return h.cfg.PublicURL + verify.MCPGuidePath + "?t=" + token, tokenID, nil
 }
 
 // mcpAnnouncementCard is the message explaining the feature and its button.
-func mcpAnnouncementCard(link string) ([]*discordgo.MessageEmbed, []discordgo.MessageComponent) {
+func mcpAnnouncementCard() ([]*discordgo.MessageEmbed, []discordgo.MessageComponent) {
 	embeds := []*discordgo.MessageEmbed{{
 		Title: "🤖 Το υλικό του Steki, στο AI σου",
 		Description: "Μπορείς πλέον να συνδέσεις το **Claude** ή το **ChatGPT** με το υλικό των μαθημάτων. " +
@@ -244,10 +246,10 @@ func mcpAnnouncementCard(link string) ([]*discordgo.MessageEmbed, []discordgo.Me
 	}}
 	components := []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{
 		discordgo.Button{
-			Label: "Οδηγίες σύνδεσης",
-			Style: discordgo.LinkButton,
-			URL:   link,
-			Emoji: &discordgo.ComponentEmoji{Name: "🔌"},
+			Label:    "Οδηγίες σύνδεσης",
+			Style:    discordgo.PrimaryButton,
+			CustomID: mcpGuideButtonID,
+			Emoji:    &discordgo.ComponentEmoji{Name: "🔌"},
 		},
 	}}}
 	return embeds, components
@@ -276,70 +278,13 @@ func (h *Handler) cmdMCPAnnounce(s *discordgo.Session, i *discordgo.InteractionC
 		h.reply(s, i, "Διάλεξε ένα κανάλι κειμένου αυτού του server.")
 		return
 	}
-	link, err := h.mcpGuideLink()
-	if err != nil {
-		h.reply(s, i, fmt.Sprintf("Δεν μπόρεσα να φτιάξω το link: %v", err))
-		return
-	}
-	embeds, components := mcpAnnouncementCard(link)
+	embeds, components := mcpAnnouncementCard()
 	msg, err := s.ChannelMessageSendComplex(ch.ID, &discordgo.MessageSend{Embeds: embeds, Components: components},
 		discordgo.WithContext(ctx))
 	if err != nil {
 		h.reply(s, i, fmt.Sprintf("Δεν μπόρεσα να στείλω το μήνυμα στο <#%s>: %v", ch.ID, err))
 		return
 	}
-	if err := h.st.AddMCPAnnouncement(ctx, ch.ID, msg.ID); err != nil {
-		// The message works; only its link will stop being refreshed.
-		h.log.Error("mcp: record announcement", "message_id", msg.ID, "error", err)
-	}
 	h.log.Info("mcp: announcement posted", "channel_id", ch.ID, "message_id", msg.ID, "user_id", actorID(i))
-	h.reply(s, i, fmt.Sprintf("✅ Το μήνυμα στάλθηκε στο <#%s>. Ο σύνδεσμος του κουμπιού ανανεώνεται αυτόματα κάθε 30 λεπτά.", ch.ID))
-}
-
-// rotateMCPLinks gives every announcement a new link, in place and silently,
-// before the one it shows expires.
-func (h *Handler) rotateMCPLinks(s *discordgo.Session) {
-	if !h.mcpEnabled() {
-		return
-	}
-	ctx, cancel := h.ctx()
-	anns, err := h.st.MCPAnnouncements(ctx)
-	cancel()
-	if err != nil {
-		h.log.Error("mcp: list announcements", "error", err)
-		return
-	}
-	if len(anns) == 0 {
-		return
-	}
-	link, err := h.mcpGuideLink()
-	if err != nil {
-		h.log.Error("mcp: issue guide link", "error", err)
-		return
-	}
-	_, components := mcpAnnouncementCard(link)
-	rotated := 0
-	for _, a := range anns {
-		if h.base.Err() != nil {
-			return
-		}
-		ctx, cancel := h.ctxTimeout(flowTimeout)
-		_, err := s.ChannelMessageEditComplex(&discordgo.MessageEdit{
-			ID: a.MessageID, Channel: a.ChannelID, Components: &components,
-		}, discordgo.WithContext(ctx))
-		switch {
-		case err == nil:
-			rotated++
-		case dc.IsMissingResource(err) || dc.APICode(err) == discordgo.ErrCodeUnknownMessage:
-			// A moderator deleted it: there is nothing left to keep fresh.
-			if derr := h.st.DeleteMCPAnnouncement(ctx, a.MessageID); derr != nil {
-				h.log.Warn("mcp: forget announcement", "message_id", a.MessageID, "error", derr)
-			}
-		default:
-			h.log.Warn("mcp: rotate announcement link", "message_id", a.MessageID, "error", err)
-		}
-		cancel()
-		time.Sleep(time.Second)
-	}
-	h.log.Info("mcp: announcement links rotated", "messages", rotated)
+	h.reply(s, i, fmt.Sprintf("✅ Το μήνυμα στάλθηκε στο <#%s>. Το κουμπί δίνει σε κάθε μέλος δικό του σύνδεσμο.", ch.ID))
 }

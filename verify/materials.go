@@ -96,16 +96,16 @@ func isHTTPS(r *http.Request) bool {
 	return r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 }
 
-// materialsPage is the link's landing: a valid link opens a session and the
-// visitor is sent on to the page, so the link itself never stays in the
-// address bar, the history or a Referer. Anything else gets the same answer
-// as a page that has run out.
+// materialsPage is the link's landing: a valid link, followed for the first
+// time, opens a session and the visitor is sent on to the page, so the link
+// itself never stays in the address bar, the history or a Referer. Anything
+// else gets the same answer as a page that has run out.
 func (v *Server) materialsPage(w http.ResponseWriter, r *http.Request) {
 	secure(w)
 	analytics.Tag(r.Context(), "page", "materials")
 
 	c, ok := v.materialClaims(r.URL.Query().Get("t"))
-	if !ok {
+	if !ok || !v.spendLink(c) {
 		v.expired(w, r)
 		return
 	}
@@ -119,7 +119,7 @@ func (v *Server) materialsPage(w http.ResponseWriter, r *http.Request) {
 		Name:     sessionCookie,
 		Value:    id,
 		Path:     pagePath,
-		MaxAge:   int(sessionTTL.Seconds()),
+		MaxAge:   int(studyTTL.Seconds()),
 		HttpOnly: true,
 		Secure:   isHTTPS(r),
 		// Lax, not Strict: the visit starts on another site (the chat), and a
@@ -137,7 +137,7 @@ func (v *Server) sessionPage(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	id := sessionID(r)
-	channelID, _, ok := v.sessions.claimPage(id, time.Now())
+	channelID, subject, ok := v.sessions.claimPage(id, time.Now())
 	if !ok {
 		v.expired(w, r)
 		return
@@ -169,12 +169,14 @@ func (v *Server) sessionPage(w http.ResponseWriter, r *http.Request) {
 		total += f.Size
 	}
 	v.sessions.setFiles(id, ids)
+	notes := v.notesFor(ctx, subject, ids)
 	v.renderMaterials(w, http.StatusOK, map[string]any{
 		"State":   stateReady,
 		"Channel": ch.Name,
 		"Course":  courseName(ch.Name),
 		"Files":   files,
 		"Total":   total,
+		"Notes":   notes,
 	})
 }
 
