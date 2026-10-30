@@ -2,7 +2,6 @@ package events
 
 import (
 	"context"
-	"fmt"
 	"slices"
 	"time"
 
@@ -14,21 +13,29 @@ import (
 
 // The ghost role marks members who have not sent a message for three months.
 // The member_activity table indexes every member of the guild with the time of
-// their last message and whether they hold the role. A member with a message
-// inside the window never has the role; one without has it. The clock of a
-// member who has not posted yet starts at their join time, so a newcomer is
-// not a ghost.
+// their last message and whether they hold the role. Nothing reads channel
+// history: a message arriving on the gateway stamps its author and takes the
+// role away, joins and leaves add and remove rows, the member list the
+// reconciler already fetches keeps the roster whole, and a sweep over the
+// table gives the role to whoever has passed three months of silence. The
+// clock of a member who has not posted yet starts at their join time, so a
+// newcomer is not a ghost.
 
 const (
 	// ghostAfterMonths is how long a member may stay silent before they are a
 	// ghost.
 	ghostAfterMonths = 3
 
-	// ghostScanTimeout bounds one history scan.
-	ghostScanTimeout = 3 * time.Hour
+	// ghostSweepEvery is how often the index is checked for members who have
+	// gone quiet. Silence is measured in months, so hourly is generous.
+	ghostSweepEvery = time.Hour
 
-	// ghostMaxConsecutiveFailures stops a role pass that is failing every call,
-	// as it does when the role sits above the bot's own.
+	// maxGhostsPerSweep bounds how many roles one sweep hands out, so a backlog
+	// drains over a few ticks instead of in one burst.
+	maxGhostsPerSweep = 50
+
+	// ghostMaxConsecutiveFailures stops a sweep that is failing every call, as
+	// it does when the role sits above the bot's own.
 	ghostMaxConsecutiveFailures = 5
 )
 
@@ -66,149 +73,110 @@ func joinedAt(m *discordgo.Member, now time.Time) time.Time {
 	return m.JoinedAt
 }
 
-// ghostReport counts what a reconciliation did, or would do on a dry run.
-type ghostReport struct {
-	members, ghosts, added, removed, failed int
-}
-
-// scanLastMessages reads every channel and thread the bot can see back to the
-// cutoff and returns each author's latest message in that time, with how many
-// channels it read.
-func (h *Handler) scanLastMessages(ctx context.Context, s *discordgo.Session, guildID string, cutoff time.Time) (map[string]time.Time, int, error) {
-	channels, err := dc.GuildChannels(ctx, s, h.log, guildID)
-	if err != nil {
-		return nil, 0, err
+// noteActivity stamps the author of a gateway message in the index and, if
+// they hold the ghost role, takes it away. The Member that comes with a guild
+// message carries the author's roles and join time.
+func (h *Handler) noteActivity(s *discordgo.Session, m *discordgo.Message) {
+	if !countsAsActivity(m) {
+		return
 	}
-	var targets []*discordgo.Channel
-	for _, ch := range channels {
-		switch ch.Type {
-		case discordgo.ChannelTypeGuildText, discordgo.ChannelTypeGuildNews,
-			discordgo.ChannelTypeGuildVoice, discordgo.ChannelTypeGuildStageVoice:
-			targets = append(targets, ch)
-		}
-	}
-	targets = append(targets, h.materialThreads(s, guildID, channels)...)
-
-	seen := map[string]time.Time{}
-	for _, ch := range targets {
-		if err := ctx.Err(); err != nil {
-			return nil, 0, err
-		}
-		err := h.channelActivity(ctx, s, ch.ID, cutoff, seen)
-		switch {
-		case dc.RESTCode(err) == 403 || dc.APICode(err) == discordgo.ErrCodeMissingAccess:
-			h.log.Debug("ghosts: channel not readable; skipped", "channel_id", ch.ID, "name", ch.Name)
-		case err != nil:
-			h.log.Warn("ghosts: scan channel", "channel_id", ch.ID, "name", ch.Name, "error", err)
-		}
-	}
-	return seen, len(targets), nil
-}
-
-// channelActivity pages back through one channel until the cutoff, noting each
-// author's latest message in seen.
-func (h *Handler) channelActivity(ctx context.Context, s *discordgo.Session, channelID string, cutoff time.Time, seen map[string]time.Time) error {
-	before := ""
-	for {
-		var msgs []*discordgo.Message
-		err := h.retry(ctx, "ghosts.history", func() error {
-			var err error
-			msgs, err = s.ChannelMessages(channelID, 100, before, "", "", discordgo.WithContext(ctx))
-			return err
-		})
-		time.Sleep(scanPagePause)
-		if err != nil {
-			return err
-		}
-		for _, m := range msgs {
-			if m.Timestamp.Before(cutoff) {
-				return nil
-			}
-			if countsAsActivity(m) && m.Timestamp.After(seen[m.Author.ID]) {
-				seen[m.Author.ID] = m.Timestamp
-			}
-		}
-		if len(msgs) < 100 {
-			return nil
-		}
-		before = msgs[len(msgs)-1].ID
-	}
-}
-
-// reconcileGhosts brings the index and the role in line with a member list and
-// the messages a scan found. With dryRun it updates the index but leaves every
-// role alone and reports what it would change.
-func (h *Handler) reconcileGhosts(ctx context.Context, s *discordgo.Session, guildID string,
-	members []*discordgo.Member, listedAt time.Time, seen map[string]time.Time, dryRun bool) (ghostReport, error) {
-
 	now := time.Now()
-	byID := make(map[string]*discordgo.Member, len(members))
+	joined := now
+	hasRole := false
+	if m.Member != nil {
+		joined = joinedAt(m.Member, now)
+		hasRole = slices.Contains(m.Member.Roles, ghostRoleID)
+	}
+
+	ctx, cancel := h.ctxTimeout(flowTimeout)
+	defer cancel()
+	if err := h.st.RecordMessage(ctx, m.Author.ID, now, joined, hasRole); err != nil {
+		h.log.Error("ghosts: record message", "user_id", m.Author.ID, "error", err)
+		return
+	}
+	if !hasRole {
+		return
+	}
+	if err := h.setGhostRole(ctx, s, m.GuildID, m.Author.ID, false); err != nil {
+		h.log.Warn("ghosts: remove role", "user_id", m.Author.ID, "error", err)
+		return
+	}
+	if err := h.st.SetGhost(ctx, m.Author.ID, false); err != nil {
+		h.log.Error("ghosts: record role", "user_id", m.Author.ID, "error", err)
+	}
+}
+
+// noteJoin adds a member to the index when they join.
+func (h *Handler) noteJoin(m *discordgo.Member) {
+	ctx, cancel := h.ctx()
+	defer cancel()
+	if err := h.st.RecordJoin(ctx, m.User.ID, joinedAt(m, time.Now())); err != nil {
+		h.log.Error("ghosts: record join", "user_id", m.User.ID, "error", err)
+	}
+}
+
+// noteLeave drops a member who left from the index.
+func (h *Handler) noteLeave(userID string) {
+	ctx, cancel := h.ctx()
+	defer cancel()
+	if err := h.st.DeleteMemberActivity(ctx, userID); err != nil {
+		h.log.Error("ghosts: forget member", "user_id", userID, "error", err)
+	}
+}
+
+// syncActivityRoster makes the index list exactly the members of a full member
+// list, adding any join the gateway missed and dropping any leave it missed.
+// It leaves every last message as it is.
+func (h *Handler) syncActivityRoster(ctx context.Context, members []*discordgo.Member, listedAt time.Time) {
+	now := time.Now()
 	entries := make([]store.ActivityEntry, 0, len(members))
 	for _, m := range members {
 		if m.User == nil || m.User.Bot {
 			continue
 		}
-		byID[m.User.ID] = m
-		e := store.ActivityEntry{UserID: m.User.ID, JoinedAt: joinedAt(m, now)}
-		if at, ok := seen[m.User.ID]; ok {
-			e.LastMessageAt = &at
-		}
-		entries = append(entries, e)
+		entries = append(entries, store.ActivityEntry{UserID: m.User.ID, JoinedAt: joinedAt(m, now)})
 	}
 	if err := h.st.SyncMemberActivity(ctx, listedAt, entries); err != nil {
-		return ghostReport{}, fmt.Errorf("sync activity index: %w", err)
+		h.log.Error("ghosts: sync roster", "error", err)
 	}
-	rows, err := h.st.MemberActivities(ctx)
-	if err != nil {
-		return ghostReport{}, fmt.Errorf("read activity index: %w", err)
-	}
+}
 
-	cutoff := ghostCutoff(now)
-	rep := ghostReport{members: len(rows)}
+// sweepGhosts gives the role to members who have been silent for three months.
+func (h *Handler) sweepGhosts(s *discordgo.Session) {
+	guildID := h.guildID()
+	if guildID == "" {
+		return
+	}
+	ctx, cancel := h.ctxTimeout(reapTimeout)
+	defer cancel()
+
+	ids, err := h.st.GhostCandidates(ctx, ghostCutoff(time.Now()), maxGhostsPerSweep)
+	if err != nil {
+		h.log.Error("ghosts: list candidates", "error", err)
+		return
+	}
 	streak := 0
-	for _, row := range rows {
-		member := byID[row.UserID]
-		if member == nil {
+	for _, id := range ids {
+		err := h.setGhostRole(ctx, s, guildID, id, true)
+		switch {
+		case dc.IsMissingResource(err):
+			// Gone from the guild without the gateway telling us.
+			h.noteLeave(id)
 			continue
-		}
-		want := isGhost(row.JoinedAt, row.LastMessageAt, cutoff)
-		has := slices.Contains(member.Roles, ghostRoleID)
-		if want {
-			rep.ghosts++
-		}
-		if want == has {
-			if !dryRun && row.Ghost != want {
-				_ = h.st.SetGhost(ctx, row.UserID, want)
-			}
-			continue
-		}
-		if dryRun {
-			if want {
-				rep.added++
-			} else {
-				rep.removed++
-			}
-			continue
-		}
-		if err := h.setGhostRole(ctx, s, guildID, row.UserID, want); err != nil {
-			h.log.Warn("ghosts: change role", "user_id", row.UserID, "ghost", want, "error", err)
-			rep.failed++
+		case err != nil:
+			h.log.Warn("ghosts: add role", "user_id", id, "error", err)
 			if streak++; streak >= ghostMaxConsecutiveFailures {
-				return rep, fmt.Errorf("stopped after %d failed role changes in a row: %w", streak, err)
+				h.alertModsOnce(s, "ghost-role", "⚠️ Δεν μπορώ να δώσω τον ρόλο Ghost (%d αποτυχίες στη σειρά): ```%v```", streak, err)
+				return
 			}
 			continue
 		}
 		streak = 0
-		if want {
-			rep.added++
-		} else {
-			rep.removed++
+		if err := h.st.SetGhost(ctx, id, true); err != nil {
+			h.log.Error("ghosts: record role", "user_id", id, "error", err)
 		}
-		if err := h.st.SetGhost(ctx, row.UserID, want); err != nil {
-			h.log.Error("ghosts: record role", "user_id", row.UserID, "error", err)
-		}
+		h.log.Info("ghosts: role added", "user_id", id)
 	}
-	return rep, nil
 }
 
 // setGhostRole gives a member the ghost role or takes it away.
@@ -220,72 +188,5 @@ func (h *Handler) setGhostRole(ctx context.Context, s *discordgo.Session, guildI
 		}
 		return s.GuildMemberRoleRemove(guildID, userID, ghostRoleID,
 			discordgo.WithAuditLogReason("ghost: active again"), discordgo.WithContext(ctx))
-	})
-}
-
-// runGhostScan is the whole pass: read the last three months of messages, fetch
-// the member list, update the index and change the roles.
-func (h *Handler) runGhostScan(s *discordgo.Session, dryRun bool) {
-	guildID := h.guildID()
-	if guildID == "" {
-		return
-	}
-	ctx, cancel := h.ctxTimeout(ghostScanTimeout)
-	defer cancel()
-
-	started := time.Now()
-	seen, channels, err := h.scanLastMessages(ctx, s, guildID, ghostCutoff(started))
-	if err != nil {
-		h.log.Error("ghosts: scan failed", "error", err)
-		h.alertMods(s, "⚠️ Ο έλεγχος δραστηριότητας απέτυχε: ```%v```", err)
-		return
-	}
-	listedAt := time.Now()
-	members, err := h.allMembers(ctx, s, guildID)
-	if err != nil {
-		h.log.Error("ghosts: list members failed", "error", err)
-		h.alertMods(s, "⚠️ Ο έλεγχος δραστηριότητας απέτυχε: ```%v```", err)
-		return
-	}
-	rep, err := h.reconcileGhosts(ctx, s, guildID, members, listedAt, seen, dryRun)
-	h.log.Info("ghosts: scan finished", "channels", channels, "members", rep.members, "ghosts", rep.ghosts,
-		"added", rep.added, "removed", rep.removed, "failed", rep.failed, "dry_run", dryRun,
-		"took", time.Since(started).Round(time.Second))
-
-	verb := "προστέθηκε σε %d, αφαιρέθηκε από %d"
-	if dryRun {
-		verb = "θα προστεθεί σε %d, θα αφαιρεθεί από %d (δοκιμαστικά, δεν άλλαξε κανένας ρόλος)"
-	}
-	msg := fmt.Sprintf("✅ Ο έλεγχος δραστηριότητας τελείωσε: διαβάστηκαν %d κανάλια και νήματα, καταγράφηκαν %d μέλη. "+
-		"Ανενεργά (Ghost): %d· "+verb+".", channels, rep.members, rep.ghosts, rep.added, rep.removed)
-	if rep.failed > 0 {
-		msg += fmt.Sprintf(" Αποτυχίες: %d.", rep.failed)
-	}
-	if err != nil {
-		msg += fmt.Sprintf("\n⚠️ Διακόπηκε: ```%v```", err)
-	}
-	h.alertMods(s, "%s", msg)
-}
-
-// cmdGhostsScan starts the scan. It is how the index is first filled.
-func (h *Handler) cmdGhostsScan(s *discordgo.Session, i *discordgo.InteractionCreate, sub *discordgo.ApplicationCommandInteractionDataOption) {
-	dryRun := false
-	if o := findOpt(sub.Options, "dry_run"); o != nil {
-		dryRun = o.BoolValue()
-	}
-	if !h.ghostScanning.CompareAndSwap(false, true) {
-		h.reply(s, i, "Ο έλεγχος τρέχει ήδη. Θα γράψω το αποτέλεσμα στο κανάλι των logs όταν τελειώσει.")
-		return
-	}
-	h.log.Info("ghosts: scan requested", "user_id", actorID(i), "dry_run", dryRun)
-	note := ""
-	if dryRun {
-		note = " Δοκιμαστικά: θα ενημερώσω τη λίστα αλλά δεν θα αλλάξω κανέναν ρόλο."
-	}
-	h.reply(s, i, fmt.Sprintf("🔎 Ξεκίνησε ο έλεγχος των μηνυμάτων των τελευταίων %d μηνών. "+
-		"Μπορεί να κρατήσει πολλή ώρα· θα γράψω το αποτέλεσμα στο κανάλι των logs.%s", ghostAfterMonths, note))
-	go h.safely("ghosts_scan", func() {
-		defer h.ghostScanning.Store(false)
-		h.runGhostScan(s, dryRun)
 	})
 }

@@ -59,8 +59,6 @@ type Handler struct {
 	matLive atomic.Bool
 	// scanning is set while /materials scan runs, so two cannot overlap.
 	scanning atomic.Bool
-	// ghostScanning is set while /ghosts scan runs, so two cannot overlap.
-	ghostScanning atomic.Bool
 	// materialsOnce starts the backup, the scan and the stickies on the first
 	// GUILD_CREATE of the Steki guild.
 	materialsOnce sync.Once
