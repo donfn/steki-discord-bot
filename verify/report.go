@@ -67,6 +67,31 @@ func cleanReason(s string) string {
 	return strings.TrimSpace(s)
 }
 
+// reportRequest is a report as the page sends it. Channel is only sent by
+// the Activity; a link session knows its channel.
+type reportRequest struct {
+	Channel string `json:"channel"`
+	File    string `json:"file"`
+	Reason  string `json:"reason"`
+}
+
+// readReport decodes a report and checks its fields. It writes the error
+// response itself when they fail.
+func readReport(w http.ResponseWriter, r *http.Request) (*reportRequest, bool) {
+	var in reportRequest
+	r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || !isSnowflake(in.File) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad_request"})
+		return nil, false
+	}
+	in.Reason = cleanReason(in.Reason)
+	if n := utf8.RuneCountInString(in.Reason); n < reasonMin || n > reasonMax {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "reason"})
+		return nil, false
+	}
+	return &in, true
+}
+
 // reportFile checks one report about a file of the session's page.
 func (v *Server) reportFile(w http.ResponseWriter, r *http.Request) {
 	secure(w)
@@ -75,18 +100,8 @@ func (v *Server) reportFile(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "gone"})
 		return
 	}
-	var in struct {
-		File   string `json:"file"`
-		Reason string `json:"reason"`
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || !isSnowflake(in.File) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad_request"})
-		return
-	}
-	reason := cleanReason(in.Reason)
-	if n := utf8.RuneCountInString(reason); n < reasonMin || n > reasonMax {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "reason"})
+	in, ok := readReport(w, r)
+	if !ok {
 		return
 	}
 	channelID, subject, ok := v.sessions.authorizeReport(sessionID(r), in.File, time.Now())
@@ -97,12 +112,17 @@ func (v *Server) reportFile(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), reportTimeout)
 	defer cancel()
+	v.runReport(ctx, w, rep, subject, channelID, in.File, in.Reason)
+}
+
+// runReport hands an authorised report to the Reporter and answers the page.
+func (v *Server) runReport(ctx context.Context, w http.ResponseWriter, rep Reporter, subject, channelID, fileID, reason string) {
 	if err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(reportTimeout + 5*time.Second)); err != nil {
 		v.log.Debug("verify: extend write deadline", "error", err)
 	}
 	analytics.Tag(ctx, "channel_id", channelID)
 
-	res, err := rep.Report(ctx, subject, channelID, in.File, reason)
+	res, err := rep.Report(ctx, subject, channelID, fileID, reason)
 	var limit *ReportLimitError
 	switch {
 	case errors.Is(err, ErrNoMaterial):
@@ -114,7 +134,7 @@ func (v *Server) reportFile(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, ErrReportUnavailable):
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "unavailable"})
 	case err != nil:
-		v.log.Error("verify: report failed", "user_id", subject, "file_id", in.File, "error", err)
+		v.log.Error("verify: report failed", "user_id", subject, "file_id", fileID, "error", err)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": stateError})
 	default:
 		// The member is only told the file is under review: the check's

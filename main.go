@@ -161,6 +161,25 @@ func run() error {
 	default:
 		logger.Info("mcp server is off: DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET are not set")
 	}
+	// The Activity signs members in with the same Discord application.
+	if access := h.ActivityAccess(sess); access != nil {
+		err := pages.EnableActivity(verify.ActivityOptions{
+			ClientID:     cfg.DiscordClientID,
+			ClientSecret: cfg.DiscordClientSecret,
+			PublicKey:    cfg.DiscordPublicKey,
+			Access:       access,
+		})
+		if err != nil {
+			return err // config.Load has checked the key already
+		}
+		if cfg.DiscordPublicKey == "" {
+			logger.Warn("DISCORD_PUBLIC_KEY not set; the activity does not check Discord's proxy signatures")
+		}
+		logger.Info("discord activity enabled", "url_mapping_target", cfg.PublicURL+verify.ActivityPath+"/",
+			"sticky_button", cfg.ActivityButton, "proxy_auth", cfg.DiscordPublicKey != "")
+	} else {
+		logger.Info("discord activity is off: it needs DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET and the material bucket")
+	}
 	srv := startHTTPServer(cfg.Port, st, pages, mcpServer, newShield(cfg, sess, logger), an, logger)
 
 	logger.Info("bot is running")

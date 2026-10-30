@@ -1,4 +1,5 @@
 <!doctype html>
+{{- $act := eq .State "activity"}}
 <html lang="el">
 <head>
 <meta charset="utf-8">
@@ -6,6 +7,32 @@
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#FFC900" id="theme-color">
+{{if $act}}
+<script nonce="{{.Nonce}}">
+  // Inside Discord the Activity sits at the root of its proxy; opened
+  // directly it is /activity. Either way the page's relative URLs resolve in
+  // the Activity's folder.
+  // The assets are added here, after the base: written in the markup, the
+  // browser's preload scanner would fetch them from the wrong folder first.
+  (() => {
+    if (!location.pathname.endsWith('/')) {
+      const b = document.createElement('base');
+      b.href = location.pathname + '/';
+      document.head.append(b);
+    }
+    const link = (attrs) => document.head.append(Object.assign(document.createElement('link'), attrs));
+    link({ rel: 'icon', href: 'static/logo.png' });
+    link({ rel: 'stylesheet', href: 'static/fonts-5.3.0/fonts.css' });
+    link({
+      rel: 'modulepreload', href: 'static/pdfjs-4.10.38/legacy/build/pdf.min.mjs',
+      integrity: 'sha384-z/XbAtvhBXJoK+yvYimnFuTCF6/2wTCDSIFD09/HtIfwFtvDKOMdAe5Z3wOChkmW',
+    });
+    document.addEventListener('DOMContentLoaded', () => {
+      for (const img of document.querySelectorAll('img[data-logo]')) img.src = 'static/logo.png';
+    });
+  })();
+</script>
+{{end}}
 <script nonce="{{.Nonce}}">
   // The theme is set before the first paint: the saved choice, else light.
   (() => {
@@ -16,6 +43,9 @@
     if (t === 'dark') document.getElementById('theme-color').content = '#0E0E0F';
   })();
 </script>
+{{if $act}}
+<title>στέκι · Χώρος μελέτης</title>
+{{else}}
 <title>στέκι{{if .Channel}} · Υλικό · #{{.Channel}}{{end}}</title>
 <link rel="icon" href="/verify/logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -24,6 +54,7 @@
 {{if eq .State "ready"}}
 <link rel="modulepreload" nonce="{{.Nonce}}" href="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy/build/pdf.min.mjs"
   integrity="sha384-z/XbAtvhBXJoK+yvYimnFuTCF6/2wTCDSIFD09/HtIfwFtvDKOMdAe5Z3wOChkmW" crossorigin="anonymous">
+{{end}}
 {{end}}
 <style>
   /* Hallmark · genre: playful · macrostructure: Notice Board · nav: none · footer: none
@@ -231,6 +262,28 @@
     color: var(--color-muted);
   }
   .status[data-tone="error"] { color: var(--color-marker); font-weight: 700; }
+
+  /* The Activity's study space: the course index, and the way back to it. */
+  .back { display: inline-flex; align-items: center; gap: 0.35rem; height: 38px; margin-bottom: var(--space-sm); }
+  .back[hidden] { display: none; }
+  .back svg { width: 18px; height: 18px; }
+  .courses-search { display: flex; margin-bottom: var(--space-sm); }
+  .cat { margin: var(--space-md) 0 0.4rem; font: 800 var(--text-lg)/1.1 var(--font-display); }
+  .cat[hidden] { display: none; }
+  .courses { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr)); gap: 0.6rem; }
+  .courses[hidden] { display: none; }
+  .course {
+    display: flex; flex-direction: column; gap: 0.3rem; width: 100%; height: 100%;
+    padding: 0.8rem 0.9rem; border: var(--border); border-radius: var(--radius-ctl);
+    background: var(--color-sheet); color: var(--color-ink); font: inherit; text-align: left; cursor: pointer;
+    transition: transform var(--dur-short) var(--ease-out), box-shadow var(--dur-short) var(--ease-out);
+  }
+  .course:hover { background: var(--color-tile); transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--color-shadow); }
+  .course:focus-visible { outline: 3px solid var(--color-marker); outline-offset: 2px; }
+  .course b { font: 700 1rem/1.25 var(--font-body); overflow-wrap: anywhere; }
+  .course b::before { content: "#"; color: var(--color-marker); }
+  .course small { font: 500 0.75rem/1.4 var(--font-mono); color: var(--color-muted); }
+  @media (prefers-reduced-motion: reduce) { .course { transition: none; } }
 
   .footnote {
     margin: var(--space-md) 0 0;
@@ -830,10 +883,31 @@
     });
   })();
 </script>
-{{if eq .State "ready"}}
-<main class="sheet" aria-labelledby="heading">
-  <div class="logo-wrap"><img class="logo" src="/verify/logo.png" alt="" width="56" height="56"></div>
-  <h1 id="heading"><span class="hash">#</span>{{.Channel}}</h1>
+{{if or (eq .State "ready") $act}}
+{{if $act}}
+<main class="sheet" id="index" aria-labelledby="index-heading" hidden>
+  <div class="logo-wrap"><img class="logo" data-logo alt="" width="56" height="56"></div>
+  <h1 id="index-heading">Χώρος μελέτης</h1>
+  <p class="sub" id="index-summary"></p>
+  <div class="courses-search">
+    <label class="search-wrap">
+      <span class="sr-only">Αναζήτηση μαθήματος</span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input class="search" id="course-search" type="search" placeholder="Αναζήτηση μαθήματος" autocomplete="off" enterkeyhint="search">
+    </label>
+  </div>
+  <div id="course-list"></div>
+  <div class="empty" id="index-empty" hidden>
+    <h2>Δεν βρέθηκε μάθημα</h2>
+    <p>Δοκίμασε άλλη αναζήτηση.</p>
+  </div>
+  <p class="footnote">Εδώ βρίσκεις το υλικό όλων των μαθημάτων που βλέπεις στο Steki. Οι σημειώσεις και τα σημάδια σου αποθηκεύονται μόνο σε αυτή τη συσκευή.</p>
+</main>
+{{end}}
+<main class="sheet" id="course" aria-labelledby="heading"{{if $act}} hidden{{end}}>
+  {{if $act}}<button class="chip back" type="button" id="back" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>Χώρος μελέτης</button>{{end}}
+  <div class="logo-wrap"><img class="logo" {{if $act}}data-logo{{else}}src="/verify/logo.png"{{end}} alt="" width="56" height="56"></div>
+  <h1 id="heading"><span class="hash">#</span><span id="channel-name">{{.Channel}}</span></h1>
   <p class="sub" id="summary"></p>
 
   <div class="progress" id="progress" role="status" aria-live="polite">
@@ -871,12 +945,12 @@
   </div>
 
   <footer class="study-foot" id="study-foot">
-    <h2>Προσωπικός χώρος μελέτης για το μάθημα {{.Course}}</h2>
+    <h2>Προσωπικός χώρος μελέτης για το μάθημα <span id="course-name">{{.Course}}</span></h2>
     <p>Ένα εργαλείο του Steki για να διαβάζεις πιο οργανωμένα στην εξεταστική. Τσέκαρε ό,τι έχεις διαβάσει, δώσε στα αρχεία δικούς σου τίτλους, κράτα σημειώσεις δίπλα σε κάθε αρχείο και γράψε ή υπογράμμισε πάνω στις σελίδες.</p>
     <p>Όλα αποθηκεύονται μόνο σε αυτόν τον browser. Δεν στέλνονται στο Steki ούτε πουθενά αλλού και τα βλέπεις μόνο εσύ. Αν καθαρίσεις τα δεδομένα του browser ή ανοίξεις τη σελίδα σε άλλη συσκευή, δεν θα τα βρεις εκεί.</p>
   </footer>
 
-  <p class="footnote">Τα αρχεία τα ανέβασαν μέλη του Steki και κατεβαίνουν όλα μόλις ανοίξει η σελίδα. Αν την ανανεώσεις, θα χρειαστείς νέο σύνδεσμο από το Discord.</p>
+  <p class="footnote">Τα αρχεία τα ανέβασαν μέλη του Steki και κατεβαίνουν όλα μόλις ανοίξει η σελίδα.{{if not $act}} Αν την ανανεώσεις, θα χρειαστείς νέο σύνδεσμο από το Discord.{{end}}</p>
 </main>
 
 <div class="scrim" id="scrim" hidden></div>
@@ -940,7 +1014,9 @@
   </div>
 </section>
 
-<div class="music" id="music">
+{{- /* Discord lets an Activity load nothing but its own origin, so the
+     YouTube player cannot run there. */}}
+<div class="music" id="music"{{if $act}} hidden{{end}}>
   <div class="music-menu" id="music-menu" role="dialog" aria-label="Ηχοτοπία για διάβασμα" hidden>
     <div class="music-list">
       <p class="music-head">Ηχοτοπία για διάβασμα</p>
@@ -1004,9 +1080,12 @@
   </form>
 </dialog>
 
-<script type="application/json" id="data">{"files":{{.Files}},"total":{{.Total}}}</script>
+{{if not $act}}<script type="application/json" id="data">{"files":{{.Files}},"total":{{.Total}}}</script>{{end}}
 <script nonce="{{.Nonce}}" type="module">
-  const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/';
+  // In Discord the page is the study space Activity, and everything comes from
+  // this origin; on the web it is one channel's page and pdf.js is the CDN's.
+  const ACTIVITY = {{if $act}}{ clientId: {{.ClientID}} }{{else}}null{{end}};
+  const PDFJS = ACTIVITY ? new URL('static/pdfjs-4.10.38/', document.baseURI).href : 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/';
   const PDFJS_LIB = PDFJS + 'legacy/build/pdf.min.mjs';
   const PDFJS_WORKER = PDFJS + 'legacy/build/pdf.worker.min.mjs';
   const PDFJS_WORKER_SRI = 'sha384-vbNBYP03jHFPlgtK4qSXtazEmGfmpTWlSsfq9OiU20MroW/Q9TbaEXiM7PpeWg+6';
@@ -1041,7 +1120,204 @@
     .parseFromString('<body>' + (html || '').replace(/<\/(p|div|li|h3)>|<br>/g, ' $&'), 'text/html')
     .body.textContent.replace(/\s+/g, ' ').trim();
 
-  const data = JSON.parse(document.getElementById('data').textContent);
+  // ── Discord Activity: the study space ──────────────────────────────────
+  // Inside Discord the page signs in through the Embedded App SDK: Discord
+  // hands over a one-time code, the server trades it for a short-lived token,
+  // and every request carries that token. Launched from a course channel's
+  // sticky the study space opens on that channel's page; launched anywhere
+  // else, or from the back button, on the index of every course the member
+  // can see. The token and which of the two shows are kept for this launch in
+  // sessionStorage, so moving between them is a reload without a new sign-in.
+  const act = { sdk: null, token: '', channel: '', signing: null };
+  const ACT_KEY = 'act:' + (new URLSearchParams(location.search).get('instance_id') || '');
+  function actLoad() {
+    try { return JSON.parse(sessionStorage.getItem(ACT_KEY) || 'null') || {}; } catch { return {}; }
+  }
+  function actSave(patch) {
+    try { sessionStorage.setItem(ACT_KEY, JSON.stringify({ ...actLoad(), ...patch })); } catch {}
+  }
+  function discord() {
+    act.sdk ??= import('./static/sdk-2.5.0.mjs').then(async ({ DiscordSDK }) => {
+      const sdk = new DiscordSDK(ACTIVITY.clientId);
+      await sdk.ready();
+      return sdk;
+    });
+    act.sdk.catch(() => { act.sdk = null; });
+    return act.sdk;
+  }
+  async function signIn() {
+    const sdk = await discord();
+    let code;
+    try {
+      ({ code } = await sdk.commands.authorize({
+        client_id: ACTIVITY.clientId, response_type: 'code', state: '', prompt: 'none', scope: ['identify'],
+      }));
+    } catch {
+      throw Object.assign(new Error('consent'), { consent: true });
+    }
+    const res = await fetch('./token', {
+      method: 'POST',
+      cache: 'no-store',
+      credentials: 'omit',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    if (!res.ok) throw new Error('token HTTP ' + res.status);
+    act.token = (await res.json()).token;
+    actSave({ token: act.token });
+  }
+  function signInOnce() {
+    act.signing ??= signIn().finally(() => { act.signing = null; });
+    return act.signing;
+  }
+  // api fetches with the token, signing in again once if it has run out.
+  async function api(url, opts = {}) {
+    const go = () => fetch(url, {
+      ...opts,
+      cache: 'no-store',
+      credentials: 'omit',
+      headers: { ...opts.headers, Authorization: 'Bearer ' + act.token },
+    });
+    if (!act.token) await signInOnce();
+    let res = await go();
+    if (res.status === 401) {
+      await signInOnce();
+      res = await go();
+    }
+    return res;
+  }
+  function actGo(view) {
+    actSave({ view });
+    location.reload();
+  }
+  const never = () => new Promise(() => {});
+
+  // actFail puts a message in place of the page.
+  function actFail(title, text) {
+    for (const m of document.querySelectorAll('main.sheet')) m.hidden = true;
+    const main = document.createElement('main');
+    main.className = 'sheet narrow';
+    main.setAttribute('aria-live', 'polite');
+    main.innerHTML = '<div class="badge muted" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 7v6M12 17h.01"/></svg></div>';
+    const h = document.createElement('h1');
+    h.textContent = title;
+    const p = document.createElement('p');
+    p.textContent = text;
+    main.append(h, p);
+    document.getElementById('course').before(main);
+  }
+  const failForbidden = () => actFail('Δεν έχεις πρόσβαση',
+    'Ο χώρος μελέτης είναι για τα μέλη που έχουν ολοκληρώσει την εγγραφή τους στο Steki.');
+  const failError = () => actFail('Κάτι πήγε στραβά', 'Ο χώρος μελέτης δεν φόρτωσε. Κλείσε την εφαρμογή και δοκίμασε ξανά σε λίγο.');
+
+  // The index: every course the member can see, under its category, with a
+  // search that ignores accents and case.
+  const fold = (t) => t.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/-/g, ' ');
+  const shortDate = new Intl.DateTimeFormat('el-GR', { day: 'numeric', month: 'short', year: 'numeric' });
+  async function actIndex() {
+    const res = await api('./courses');
+    const body = await res.json().catch(() => ({}));
+    if (res.status === 403) return failForbidden();
+    if (!res.ok) return failError();
+    const courses = body.courses || [];
+    const list = document.getElementById('course-list');
+    const groups = [];
+    for (const c of courses) {
+      let g = groups[groups.length - 1];
+      if (!g || g.name !== (c.category || '')) {
+        g = { name: c.category || '', head: document.createElement('h2'), ul: document.createElement('ul'), items: [] };
+        g.head.className = 'cat';
+        g.head.textContent = g.name || 'Μαθήματα';
+        g.ul.className = 'courses';
+        list.append(g.head, g.ul);
+        groups.push(g);
+      }
+      const li = document.createElement('li');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'course';
+      const name = document.createElement('b');
+      name.textContent = c.name;
+      const meta = document.createElement('small');
+      meta.textContent = c.files
+        ? c.files + (c.files === 1 ? ' αρχείο' : ' αρχεία') + (c.latest ? ' · νεότερο ' + shortDate.format(new Date(c.latest)) : '')
+        : 'Χωρίς υλικό ακόμα';
+      btn.append(name, meta);
+      btn.addEventListener('click', () => actGo(c.id));
+      li.append(btn);
+      g.ul.append(li);
+      g.items.push({ li, key: fold(c.name + ' ' + (c.category || '')) });
+    }
+    document.getElementById('index-summary').textContent =
+      courses.length + (courses.length === 1 ? ' μάθημα' : ' μαθήματα') + ' · '
+      + courses.reduce((n, c) => n + c.files, 0) + ' αρχεία';
+    const search = document.getElementById('course-search');
+    search.addEventListener('input', () => {
+      const q = fold(search.value.trim());
+      let any = false;
+      for (const g of groups) {
+        let shown = 0;
+        for (const it of g.items) {
+          it.li.hidden = !!q && !it.key.includes(q);
+          if (!it.li.hidden) shown++;
+        }
+        g.head.hidden = g.ul.hidden = !shown;
+        any ||= shown > 0;
+      }
+      document.getElementById('index-empty').hidden = any || !courses.length;
+    });
+    document.getElementById('index').hidden = false;
+  }
+
+  // actStart shows the launch's course page and returns its files, or shows
+  // the index and never returns: the rest of this script is the course page.
+  async function actStart() {
+    try {
+      const saved = actLoad();
+      act.token = saved.token || '';
+      let view = saved.view;
+      if (!view) {
+        view = (await discord()).channelId || 'index';
+        actSave({ view });
+      }
+      if (view !== 'index') {
+        const res = await api('./data?channel=' + encodeURIComponent(view));
+        const body = await res.json().catch(() => ({}));
+        if (res.ok) {
+          act.channel = view;
+          document.getElementById('channel-name').textContent = body.channel;
+          document.getElementById('course-name').textContent = body.course;
+          document.title = 'στέκι · Υλικό · #' + body.channel;
+          const back = document.getElementById('back');
+          back.hidden = false;
+          back.addEventListener('click', () => actGo('index'));
+          document.getElementById('course').hidden = false;
+          return body;
+        }
+        if (res.status === 403 && body.error === 'forbidden') {
+          failForbidden();
+          return never();
+        }
+        if (res.status !== 400 && res.status !== 403) {
+          failError();
+          return never();
+        }
+        // Not a course page this member can read (the launch was elsewhere,
+        // or the channel went): the index it is.
+        actSave({ view: 'index' });
+      }
+      await actIndex();
+    } catch (e) {
+      if (e.consent) {
+        actFail('Δεν έγινε σύνδεση', 'Για να δεις το υλικό, επίτρεψε στο Steki να δει ποιος είσαι στο Discord. Κλείσε την εφαρμογή και άνοιξέ τη ξανά.');
+      } else {
+        failError();
+      }
+    }
+    return never();
+  }
+
+  const data = ACTIVITY ? await actStart() : JSON.parse(document.getElementById('data').textContent);
   const $ = (id) => document.getElementById(id);
 
   const dateFmt = new Intl.DateTimeFormat('el-GR', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -1278,7 +1554,9 @@
     $('progress-spin').hidden = true;
     box.dataset.tone = 'error';
     $('progress-text').textContent = expired
-      ? 'Ο σύνδεσμος έληξε πριν κατέβουν όλα (' + ready + ' από ' + files.length + '). Πάτα ξανά «Προβολή υλικού μαθήματος» στο Discord για τα υπόλοιπα.'
+      ? (ACTIVITY
+        ? 'Η σύνδεση έληξε πριν κατέβουν όλα (' + ready + ' από ' + files.length + '). Κλείσε και άνοιξε ξανά την εφαρμογή για τα υπόλοιπα.'
+        : 'Ο σύνδεσμος έληξε πριν κατέβουν όλα (' + ready + ' από ' + files.length + '). Πάτα ξανά «Προβολή υλικού μαθήματος» στο Discord για τα υπόλοιπα.')
       : 'Κατέβηκαν ' + ready + ' από ' + files.length + ' αρχεία. Τα υπόλοιπα δεν είναι διαθέσιμα.';
   }
 
@@ -1308,13 +1586,16 @@
   function fetchFile(f) {
     f.wait ??= (async () => {
       f.state = 'loading';
-      if (expired) { settle(f, 'failed', 'ο σύνδεσμος έληξε'); return; }
+      if (expired) { settle(f, 'failed', ACTIVITY ? 'η σύνδεση έληξε' : 'ο σύνδεσμος έληξε'); return; }
       try {
-        const res = await fetch('/s/f/' + f.id, {
-          cache: 'no-store',
-          credentials: 'same-origin',
-        });
-        if (res.status === 401) { expired = true; settle(f, 'failed', 'ο σύνδεσμος έληξε'); return; }
+        const res = ACTIVITY
+          ? await api('./f/' + f.id + '?channel=' + act.channel)
+          : await fetch('/s/f/' + f.id, {
+            cache: 'no-store',
+            credentials: 'same-origin',
+          });
+        if (res.status === 401) { expired = true; settle(f, 'failed', ACTIVITY ? 'η σύνδεση έληξε' : 'ο σύνδεσμος έληξε'); return; }
+        if (res.status === 403) { settle(f, 'failed', 'δεν έχεις πρόσβαση'); return; }
         if (res.status === 410) { settle(f, 'failed', 'διαγράφηκε'); return; }
         if (!res.ok) throw new Error('HTTP ' + res.status);
         f.blob = new Blob([await res.blob()], { type: f.type });
@@ -2144,19 +2425,28 @@
     const f = reporting.f;
     reportBusy(true);
     try {
-      const res = await fetch('/s/report', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ file: f.id, reason }),
-      });
+      const res = ACTIVITY
+        ? await api('./report', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channel: act.channel, file: f.id, reason }),
+        })
+        : await fetch('/s/report', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ file: f.id, reason }),
+        });
       const body = await res.json().catch(() => ({}));
       if (res.ok) {
         removeFile(f);
         reportDone('Ευχαριστούμε', 'Το αρχείο εξετάζεται από τους διαχειριστές και δεν θα το βλέπεις σε αυτή τη σελίδα. ' + leftText(body.left));
         return;
       }
-      if (res.status === 401) reportMsg('Η σελίδα έληξε. Άνοιξε νέο σύνδεσμο από το Discord για να στείλεις αναφορά.', 'error');
+      if (res.status === 401) {
+        reportMsg(ACTIVITY ? 'Η σύνδεση έληξε. Κλείσε και άνοιξε ξανά την εφαρμογή για να στείλεις αναφορά.'
+          : 'Η σελίδα έληξε. Άνοιξε νέο σύνδεσμο από το Discord για να στείλεις αναφορά.', 'error');
+      } else if (res.status === 403) reportMsg('Δεν έχεις πια πρόσβαση σε αυτό το μάθημα.', 'error');
       else if (res.status === 409) reportMsg('Έχεις ήδη αναφέρει αυτό το αρχείο.', 'error');
       else if (res.status === 410) { removeFile(f); reportDone('Το αρχείο αφαιρέθηκε', 'Το αρχείο έχει ήδη αφαιρεθεί από τη σελίδα.'); }
       else if (res.status === 429) {

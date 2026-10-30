@@ -89,6 +89,8 @@ func (h *Handler) onComponent(s *discordgo.Session, i *discordgo.InteractionCrea
 	switch i.MessageComponentData().CustomID {
 	case uploadButtonID:
 		h.openUploadForm(s, i)
+	case activityButtonID:
+		h.launchActivity(s, i)
 	case emailButtonID:
 		if h.ownRegistration(s, i) == nil {
 			return

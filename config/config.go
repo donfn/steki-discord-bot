@@ -7,6 +7,8 @@
 package config
 
 import (
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -64,6 +66,17 @@ type Config struct {
 	DiscordClientID     string
 	DiscordClientSecret string
 
+	// ActivityButton puts the button that opens the material page as a
+	// Discord Activity on the course stickies. The Activity's routes are
+	// served whenever the MCP login is configured, but the button waits for
+	// this (DISCORD_ACTIVITY=on), since the launch fails until Activities are
+	// enabled and the URL mapping is set in the Developer Portal.
+	ActivityButton bool
+	// DiscordPublicKey is the application's public key (hex). With it the
+	// Activity only answers requests signed by Discord's proxy, which needs
+	// proxy authentication turned on for the application.
+	DiscordPublicKey string
+
 	// GoogleAIToken is a Google AI Studio API key. With it, uploaded images
 	// are checked by a Gemini model and the ones that are not course material
 	// or show people wait for an admin. GoogleAIModel overrides the model.
@@ -119,6 +132,8 @@ func Load() (*Config, error) {
 
 		DiscordClientID:     strings.TrimSpace(os.Getenv("DISCORD_CLIENT_ID")),
 		DiscordClientSecret: strings.TrimSpace(os.Getenv("DISCORD_CLIENT_SECRET")),
+		ActivityButton:      isOn(os.Getenv("DISCORD_ACTIVITY")),
+		DiscordPublicKey:    strings.TrimSpace(os.Getenv("DISCORD_PUBLIC_KEY")),
 
 		GoogleAIToken: strings.TrimSpace(os.Getenv("GOOGLE_AI_TOKEN")),
 		GoogleAIModel: strings.TrimSpace(os.Getenv("GOOGLE_AI_MODEL")),
@@ -167,6 +182,9 @@ func Load() (*Config, error) {
 	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" ||
 		(u.Scheme != "https" && !(u.Scheme == "http" && (u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1"))) {
 		return nil, fmt.Errorf("PUBLIC_URL must be an https origin (got %q)", cfg.PublicURL)
+	}
+	if k, err := hex.DecodeString(cfg.DiscordPublicKey); err != nil || (len(k) != 0 && len(k) != 32) {
+		return nil, errors.New("DISCORD_PUBLIC_KEY must be the application's public key: 64 hex characters")
 	}
 
 	return cfg, nil
@@ -222,4 +240,13 @@ func parseLevel(s string) slog.Level {
 	default:
 		return slog.LevelInfo
 	}
+}
+
+// isOn reads a yes/no variable: on, true, yes and 1 mean yes.
+func isOn(s string) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "on", "true", "yes", "1":
+		return true
+	}
+	return false
 }

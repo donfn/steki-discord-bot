@@ -122,7 +122,9 @@ func TestMaterialsPageLists(t *testing.T) {
 			t.Errorf("page lacks %q", want)
 		}
 	}
-	if strings.Contains(body, "Bearer") || strings.Contains(body, `"token"`) {
+	// The page shares its script with the Activity, which sends tokens; what
+	// must not be in it is one.
+	if strings.Contains(body, "eyJ") || strings.Contains(body, `"token":`) {
 		t.Error("the page still carries a token")
 	}
 	// Names and captions are data inside a script block; none may close it.
