@@ -438,6 +438,22 @@ func TestActivityProxyAuthentication(t *testing.T) {
 		}
 	}
 
+	// The proxy sends POSTs unsigned: the login needs a valid code, and the
+	// report a valid token, but neither a signature. A bad one still fails.
+	if res, _ := e.do(t, http.MethodPost, "/activity/token", `{"code":"good"}`, nil); res.StatusCode != http.StatusOK {
+		t.Errorf("unsigned login: %d", res.StatusCode)
+	}
+	if res, _ := e.do(t, http.MethodPost, "/activity/token", `{"code":"forged"}`, nil); res.StatusCode != http.StatusUnauthorized {
+		t.Errorf("unsigned login with a forged code: %d", res.StatusCode)
+	}
+	if res, _ := e.do(t, http.MethodPost, "/activity/report", `{"channel":"100","file":"11","reason":"δεν είναι υλικό μαθήματος"}`, nil); res.StatusCode != http.StatusUnauthorized {
+		t.Errorf("unsigned report without a token: %d", res.StatusCode)
+	}
+	expiredSig := e.proxyHeaders("42", now-120, now-60)
+	if res, _ := e.do(t, http.MethodPost, "/activity/token", `{"code":"good"}`, expiredSig); res.StatusCode != http.StatusUnauthorized {
+		t.Errorf("login with an expired signature: %d", res.StatusCode)
+	}
+
 	signed := e.proxyHeaders("42", now, now+60)
 	if res, _ := e.do(t, http.MethodGet, "/activity", "", signed); res.StatusCode != http.StatusOK {
 		t.Fatalf("signed page: %d", res.StatusCode)

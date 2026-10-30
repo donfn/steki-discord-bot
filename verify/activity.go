@@ -185,12 +185,20 @@ type proxyPayload struct {
 	UserID    string      `json:"user_id"`
 }
 
-// viaDiscord refuses requests that did not come through Discord's proxy,
-// when the public key is set.
+// viaDiscord refuses GETs that did not come through Discord's proxy, and
+// requests with a bad signature, when the public key is set.
 func (v *Server) viaDiscord(next http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if key := v.activity.proxyKey; key != nil {
 			p, why := checkProxy(key, r.Header, time.Now())
+			// Discord's proxy signs GETs but sends no signature on POSTs.
+			// Those are the login, which needs a code Discord only issues
+			// inside the Activity, and reports, which need an Activity token;
+			// a POST that does carry the headers must pass.
+			if p == nil && r.Method == http.MethodPost && why == "missing headers" {
+				next(w, r)
+				return
+			}
 			if p == nil {
 				v.log.Warn("verify: activity request without a valid proxy signature", "path", r.URL.Path, "reason", why)
 				secure(w)
