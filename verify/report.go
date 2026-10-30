@@ -106,6 +106,18 @@ func (v *Server) reportFile(w http.ResponseWriter, r *http.Request) {
 		v.log.Debug("verify: extend write deadline", "error", err)
 	}
 	analytics.Tag(ctx, subject, "channel_id", channelID, "file_id", in.File)
+	// A page left open for hours must not keep a removed member's reports
+	// coming: their standing is checked now, not when the page loaded.
+	switch err := v.checkAccess(ctx, subject, channelID); {
+	case errors.Is(err, ErrNoAccess):
+		v.sessions.revoke(sid)
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": stateInvalid})
+		return
+	case err != nil:
+		v.log.Error("verify: access check", "user_id", subject, "channel_id", channelID, "error", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "unavailable"})
+		return
+	}
 
 	res, err := rep.Report(ctx, subject, channelID, in.File, reason)
 	var limit *ReportLimitError

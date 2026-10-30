@@ -15,6 +15,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"steki-bot/materials"
+	"steki-bot/moderation"
 )
 
 // "Ανέβασμα υλικού" opens a form with a title and a file picker. The bot
@@ -48,6 +49,10 @@ const (
 	uploadsPerHour = 10
 
 	uploadTimeout = 2 * time.Minute
+
+	// uploadTitleMax is the title field's length in the form. The form
+	// enforces it; the submit is checked all the same.
+	uploadTitleMax = 100
 )
 
 // greece is the time zone the exam periods follow. The container has no
@@ -117,6 +122,10 @@ func (h *Handler) openUploadForm(s *discordgo.Session, i *discordgo.InteractionC
 		h.respondNow(s, i, "Το ανέβασμα υλικού δεν είναι διαθέσιμο αυτή τη στιγμή. Δοκίμασε ξανά σε λίγο.")
 		return
 	}
+	if !mayUpload(i.Member) {
+		h.respondNow(s, i, "Το ανέβασμα υλικού είναι διαθέσιμο μόνο σε επιβεβαιωμένα μέλη.")
+		return
+	}
 	if timedOut(i.Member) {
 		h.respondNow(s, i, "⛔ Δεν μπορείς να ανεβάσεις υλικό όσο έχεις timeout.")
 		return
@@ -134,7 +143,7 @@ func (h *Handler) openUploadForm(s *discordgo.Session, i *discordgo.InteractionC
 		"custom_id":   uploadTitleID,
 		"style":       discordgo.TextInputShort,
 		"min_length":  1,
-		"max_length":  100,
+		"max_length":  uploadTitleMax,
 		"required":    true,
 		"placeholder": "π.χ. Σημειώσεις 3ου κεφαλαίου",
 	}
@@ -253,15 +262,27 @@ func (h *Handler) onUploadSubmit(s *discordgo.Session, u *uploadSubmit) {
 		answer("⛔ Δεν μπορείς να ανεβάσεις υλικό όσο έχεις timeout.")
 		return
 	}
+	// The form can only be opened from a course channel, but a submit is
+	// whatever the gateway delivers: the member's standing is checked again.
+	if !mayUpload(u.Member) {
+		answer("Το ανέβασμα υλικού είναι διαθέσιμο μόνο σε επιβεβαιωμένα μέλη.")
+		return
+	}
 	if !h.gate.allow("upload:"+userID, uploadsPerHour, time.Hour) {
 		answer("⏳ Έχεις ανεβάσει πολλά αρχεία την τελευταία ώρα. Δοκίμασε ξανά λίγο αργότερα.")
 		return
 	}
 
 	title, _ := u.field(uploadTitleID)
-	title = strings.Join(strings.Fields(title), " ")
+	title = truncateRunes(strings.Join(strings.Fields(title), " "), uploadTitleMax)
 	if title == "" {
 		answer("Γράψε έναν τίτλο για το υλικό.")
+		return
+	}
+	// The bot posts the title under its own name, and its own messages are
+	// never screened, so the title gets the screening a message would.
+	if reason := h.screenTitle(s, u, title); reason != "" {
+		answer(reason)
 		return
 	}
 	_, ids := u.field(uploadFileID)
@@ -436,4 +457,38 @@ func formatBytes(n int64) string {
 func escapeMarkdown(s string) string {
 	return strings.NewReplacer(`\`, `\\`, "*", `\*`, "_", `\_`, "~", `\~`, "`", "\\`",
 		"|", `\|`, ">", `\>`, "#", `\#`, "[", `\[`, "]", `\]`).Replace(s)
+}
+
+// mayUpload reports whether a member may share material: registration done,
+// or a moderator.
+func mayUpload(m *discordgo.Member) bool {
+	return hasAnyRole(m, verifiedRoleIDs) || hasAnyRole(m, []string{staffRoleID, modRoleID})
+}
+
+// screenTitle checks an upload's title the way the message handler checks a
+// message. It returns what to tell the member when the title may not be
+// posted, or "" when it may.
+func (h *Handler) screenTitle(s *discordgo.Session, u *uploadSubmit, title string) string {
+	userID := u.Member.User.ID
+	if matched, ok := h.linkChk.Flag(title); ok {
+		// The same signs of a hijacked account as a message with this link.
+		until := time.Now().Add(24 * time.Hour)
+		if err := s.GuildMemberTimeout(u.GuildID, userID, &until); err != nil {
+			h.log.Warn("upload: timeout after flagged title failed", "user_id", userID, "error", err)
+		}
+		h.alertMods(s, "Στο κανάλι <#%s>, ο χρήστης <@%s> έβαλε σε τίτλο υλικού σύνδεσμο με μη επιτρεπτή λέξη ή γνωστό domain απάτης (`%s`). Μπήκε σε timeout 24 ωρών.",
+			u.ChannelID, userID, matched)
+		return "Ο τίτλος περιέχει σύνδεσμο που δεν επιτρέπεται. Αν δεν τον έγραψες εσύ, άλλαξε αμέσως τον κωδικό σου και ενεργοποίησε το 2FA."
+	}
+	if moderation.ContainsURL(title) {
+		return "Ο τίτλος δεν μπορεί να περιέχει σύνδεσμο. Γράψε μόνο τι είναι το υλικό."
+	}
+	if !hasAnyRole(u.Member, []string{staffRoleID, modRoleID}) {
+		for _, m := range inviteRegex.FindAllStringSubmatch(title, -1) {
+			if !h.isHomeInvite(s, strings.ToLower(m[1]), m[2]) {
+				return "Ο τίτλος δεν μπορεί να περιέχει πρόσκληση σε άλλον server."
+			}
+		}
+	}
+	return ""
 }

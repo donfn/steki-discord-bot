@@ -26,6 +26,9 @@ const (
 	RegisterCategoryID = "890021609631531009"
 )
 
+// MinSecretLen is the shortest JWT_SECRET the bot starts with.
+const MinSecretLen = 32
+
 // Config holds everything the bot needs to run.
 type Config struct {
 	DiscordToken string
@@ -161,6 +164,13 @@ func Load() (*Config, error) {
 	}
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("missing required environment variables: %s", strings.Join(missing, ", "))
+	}
+
+	// Every link, session token and MCP access token is signed from this one
+	// secret, so a guessable one hands out every member's identity. 32 hex
+	// characters (openssl rand -hex 16) is the least that holds up.
+	if len(cfg.JWTSecret) < MinSecretLen {
+		return nil, fmt.Errorf("JWT_SECRET must be at least %d characters: generate one with `openssl rand -hex 32`", MinSecretLen)
 	}
 
 	u, err := url.Parse(cfg.PublicURL)

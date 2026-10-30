@@ -70,6 +70,10 @@ const (
 	// sends at most one every second or so.
 	socketFrames = 120
 
+	// maxItemsPerSave bounds the items in one batch: the page has a few files
+	// open at a time, and each item costs a database write.
+	maxItemsPerSave = 40
+
 	socketExpired = 4001
 )
 
@@ -248,15 +252,18 @@ func (s *pageSocket) run(ctx context.Context) {
 			return
 		}
 		_ = s.conn.SetReadDeadline(time.Now().Add(socketIdle))
-		if in.Op != "save" {
-			continue
-		}
+		// Every message counts, whatever it says: a page that sends frames
+		// the server ignores would otherwise cost it a 4 MB JSON decode each,
+		// for free.
 		if now := time.Now(); now.Sub(window) > time.Minute {
 			window, frames = now, 0
 		}
 		if frames++; frames > socketFrames {
-			s.close(websocket.ClosePolicyViolation, "too many saves")
+			s.close(websocket.ClosePolicyViolation, "too many messages")
 			return
+		}
+		if in.Op != "save" {
+			continue
 		}
 		if !s.save(ctx, in) {
 			return
@@ -374,6 +381,12 @@ func (s *pageSocket) save(ctx context.Context, in socketIn) bool {
 	s.filesMu.Lock()
 	files := s.files
 	s.filesMu.Unlock()
+	if len(in.Items) > maxItemsPerSave {
+		for _, it := range in.Items[maxItemsPerSave:] {
+			drops = append(drops, socketDrop{it.File, it.Kind, "too_large"})
+		}
+		in.Items = in.Items[:maxItemsPerSave]
+	}
 	for _, it := range in.Items {
 		if !isSnowflake(it.File) || !files[it.File] {
 			drops = append(drops, socketDrop{it.File, it.Kind, "gone"})
@@ -387,6 +400,10 @@ func (s *pageSocket) save(ctx context.Context, in socketIn) bool {
 		sctx, cancel := context.WithTimeout(ctx, requestTimeout)
 		err := s.nb.SaveNote(sctx, s.user, it.File, it.Kind, data)
 		cancel()
+		if errors.Is(err, ErrNoteQuota) {
+			drops = append(drops, socketDrop{it.File, it.Kind, "too_large"})
+			continue
+		}
 		if err != nil {
 			// The batch is sent again whole; saves replace, so the items
 			// already stored are only stored again.

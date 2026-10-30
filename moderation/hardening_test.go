@@ -110,3 +110,25 @@ func TestSplitMessageKeepsFencesBalanced(t *testing.T) {
 		}
 	}
 }
+
+// Text the bot posts for a member is checked with the same lists as a message.
+func TestFlagFindsBlacklistedAndPhishingLinks(t *testing.T) {
+	puny := "discord-gift.example"
+	l := NewLinkChecker([]string{"free-nitro"}, feedWith(t, puny), nil, nil)
+
+	for text, want := range map[string]string{
+		"Θέματα https://free-nitro.example/claim": "free-nitro",
+		"σημειώσεις www.free-nitro.org":           "free-nitro",
+		"κέρδισε στο https://" + puny + "/x":      puny,
+	} {
+		got, ok := l.Flag(text)
+		if !ok || got != want {
+			t.Errorf("Flag(%q) = %q, %v; want %q", text, got, ok, want)
+		}
+	}
+	for _, text := range []string{"Σημειώσεις 3ου κεφαλαίου", "Θέματα Ιαν-Φεβ 2025", "e.g. main.go", ""} {
+		if got, ok := l.Flag(text); ok {
+			t.Errorf("Flag(%q) flagged %q", text, got)
+		}
+	}
+}

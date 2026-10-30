@@ -385,15 +385,108 @@ func TestSessionCap(t *testing.T) {
 	s := newSessions()
 	now := time.Now()
 	for i := 0; i < maxSessions; i++ {
-		if _, ok := s.open("100", "u1", "g1", Profile{}, now); !ok {
+		if _, ok := s.open("100", fmt.Sprint("u", i), "g1", Profile{}, now); !ok {
 			t.Fatalf("refused session %d before the cap", i)
 		}
 	}
-	if _, ok := s.open("100", "u1", "g1", Profile{}, now); ok {
+	if _, ok := s.open("100", "late", "g1", Profile{}, now); ok {
 		t.Error("opened a session past the cap")
 	}
-	if _, ok := s.open("100", "u1", "g1", Profile{}, now.Add(studyTTL+time.Second)); !ok {
+	if _, ok := s.open("100", "late", "g1", Profile{}, now.Add(studyTTL+time.Second)); !ok {
 		t.Error("expired sessions were not cleared to make room")
+	}
+}
+
+func TestSessionsPerMemberAreCapped(t *testing.T) {
+	s := newSessions()
+	now := time.Now()
+	var ids []string
+	for i := 0; i < maxSessionsPerMember+3; i++ {
+		id, ok := s.open("100", "greedy", "g1", Profile{}, now.Add(time.Duration(i)*time.Second))
+		if !ok {
+			t.Fatalf("refused session %d", i)
+		}
+		ids = append(ids, id)
+	}
+	live := 0
+	for _, id := range ids {
+		if _, _, ok := s.claimPage(id, now.Add(time.Minute)); ok {
+			live++
+		}
+	}
+	if live != maxSessionsPerMember {
+		t.Errorf("%d sessions alive for one member, want %d", live, maxSessionsPerMember)
+	}
+	// The newest ones are the ones that survive, and others are not touched.
+	if _, _, ok := s.claimPage(ids[0], now.Add(time.Minute)); ok {
+		t.Error("the oldest session outlived the cap")
+	}
+	other, ok := s.open("100", "bystander", "g1", Profile{}, now)
+	if !ok {
+		t.Fatal("a bystander was refused")
+	}
+	for i := 0; i < 2*maxSessionsPerMember; i++ {
+		s.open("100", "greedy", "g1", Profile{}, now)
+	}
+	if _, _, ok := s.claimPage(other, now); !ok {
+		t.Error("one member's sessions ended another's")
+	}
+}
+
+func TestPageNeedsCurrentAccess(t *testing.T) {
+	e := newEnv(t)
+	e.fm.deny("u1")
+	_, res, body := e.open(t, "100")
+	if res.StatusCode != http.StatusGone || strings.Contains(body, "θέματα.pdf") {
+		t.Errorf("page for a member without access: status %d, listed files: %v", res.StatusCode, strings.Contains(body, "θέματα.pdf"))
+	}
+}
+
+func TestDownloadsStopWhenAccessIsLost(t *testing.T) {
+	e := newEnv(t)
+	c, _, _ := e.open(t, "100")
+	if res, _ := fetch(t, c, e.srv.URL+"/s/f/11"); res.StatusCode != http.StatusOK {
+		t.Fatalf("download with access: status %d", res.StatusCode)
+	}
+	e.fm.deny("u1")
+	if res, _ := fetch(t, c, e.srv.URL+"/s/f/11"); res.StatusCode != http.StatusUnauthorized {
+		t.Errorf("download after losing access: status %d, want 401", res.StatusCode)
+	}
+	// The session is gone for good, not only refused this once.
+	e.fm.mu.Lock()
+	delete(e.fm.denied, "u1")
+	e.fm.mu.Unlock()
+	if res, _ := fetch(t, c, e.srv.URL+"/s/f/11"); res.StatusCode != http.StatusUnauthorized {
+		t.Errorf("download after access came back: status %d, want 401", res.StatusCode)
+	}
+}
+
+func TestFilesCarryASandboxPolicy(t *testing.T) {
+	e := newEnv(t)
+	c, _, _ := e.open(t, "100")
+	res, _ := fetch(t, c, e.srv.URL+"/s/f/11")
+	if csp := res.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "sandbox") || !strings.Contains(csp, "default-src 'none'") {
+		t.Errorf("file Content-Security-Policy = %q", csp)
+	}
+	if res.Header.Get("X-Content-Type-Options") != "nosniff" {
+		t.Error("file is served without nosniff")
+	}
+}
+
+func TestGuardOnlyTakesRestrictionTokens(t *testing.T) {
+	v := &Server{tokens: NewTokens("secret")}
+	exp := time.Now().Add(time.Minute)
+	for _, reason := range []string{"", ReasonMedia, ReasonDuplicate, ReasonManual} {
+		tok, _ := v.tokens.Issue("u1", "g1", reason, "j1", exp)
+		if _, ok := v.guardClaims(tok); !ok {
+			t.Errorf("guard refused its own %q token", reason)
+		}
+	}
+	for _, reason := range []string{ReasonLink, ReasonMaterials, ReasonMCPGuide, ReasonSocket, "admin", "future-kind"} {
+		tok, _ := v.tokens.Issue("u1", "g1", reason, "j1", exp)
+		if _, ok := v.guardClaims(tok); ok {
+			t.Errorf("guard accepted a %q token", reason)
+		}
 	}
 }
 

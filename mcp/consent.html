@@ -325,7 +325,7 @@
     <a class="btn" href="{{.ApproveURL}}">Ναι, επιτρέπω</a>
     <a class="btn ghost" href="{{.DenyURL}}">Ακύρωση</a>
   </div>
-  <p class="fine">Μετά την επιλογή σου θα επιστρέψεις στο <strong>{{.RedirectHost}}</strong>. Αν δεν ξεκίνησες εσύ τη σύνδεση, πάτα Ακύρωση.</p>
+  <p class="fine">Μετά την επιλογή σου θα επιστρέψεις στο <strong>{{.RedirectHost}}</strong>. Το όνομα της εφαρμογής το δηλώνει η ίδια και δεν επαληθεύεται: αν η διεύθυνση δεν είναι αυτή που περιμένεις, ή αν δεν ξεκίνησες εσύ τη σύνδεση, πάτα Ακύρωση.</p>
 {{else if eq .State "denied"}}
   <h1>Δεν έχεις <span class="mark">πρόσβαση</span></h1>
   <p>{{if .UserName}}Ο λογαριασμός <strong>{{.UserName}}</strong>{{else}}Ο λογαριασμός σου{{end}} δεν μπορεί να συνδέσει εφαρμογές. Η σύνδεση με AI είναι διαθέσιμη μόνο σε <strong>Verified</strong> μέλη και <strong>Verified Outsiders</strong> του Steki.</p>

@@ -96,6 +96,34 @@ func NewLinkChecker(blacklist []string, feed *PhishFeed, modlog *Log, logger *sl
 	return &LinkChecker{blacklist: blacklist, feed: feed, modlog: modlog, log: logger}
 }
 
+// find returns the first link in text that is blacklisted or points to a
+// known phishing domain.
+func (l *LinkChecker) find(text string) (kind hitKind, matched string, ok bool) {
+	links := append(urlRegex.FindAllString(text, -1), bareRegex.FindAllString(text, -1)...)
+	for _, link := range links {
+		lower := strings.ToLower(link)
+		for _, banned := range l.blacklist {
+			if strings.Contains(lower, banned) {
+				return blacklistHit, banned, true
+			}
+		}
+		if l.feed != nil {
+			if domain, ok := l.feed.Match(linkHost(link)); ok {
+				return phishingHit, domain, true
+			}
+		}
+	}
+	return 0, "", false
+}
+
+// Flag reports whether text carries a link Check would remove a message for,
+// and which one. It is for text the bot is about to post on a member's behalf,
+// which Check never sees because the bot's own messages are not screened.
+func (l *LinkChecker) Flag(text string) (matched string, ok bool) {
+	_, matched, ok = l.find(text)
+	return matched, ok
+}
+
 // Check reports whether the message was removed.
 func (l *LinkChecker) Check(s *discordgo.Session, m *discordgo.Message) bool {
 	if m.Author == nil || m.Author.Bot || m.GuildID == "" {
@@ -103,27 +131,12 @@ func (l *LinkChecker) Check(s *discordgo.Session, m *discordgo.Message) bool {
 	}
 
 	text := Text(m)
-	links := append(urlRegex.FindAllString(text, -1), bareRegex.FindAllString(text, -1)...)
-	if len(links) == 0 {
+	kind, matched, ok := l.find(text)
+	if !ok {
 		return false
 	}
-
-	for _, link := range links {
-		lower := strings.ToLower(link)
-		for _, banned := range l.blacklist {
-			if strings.Contains(lower, banned) {
-				l.punish(s, m, text, blacklistHit, banned)
-				return true
-			}
-		}
-		if l.feed != nil {
-			if domain, ok := l.feed.Match(linkHost(link)); ok {
-				l.punish(s, m, text, phishingHit, domain)
-				return true
-			}
-		}
-	}
-	return false
+	l.punish(s, m, text, kind, matched)
+	return true
 }
 
 type hitKind int

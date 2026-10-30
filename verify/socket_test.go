@@ -189,12 +189,40 @@ func TestSocketChecksAccess(t *testing.T) {
 		t.Errorf("saved without access: %v", notes)
 	}
 
-	// And a member without access cannot open it at all.
-	_, _, body = e.open(t, "100")
-	tok, _ := pageData(t, body)
+	// And a member without access cannot open the page at all, so there is no
+	// socket token to present. A token minted earlier is refused too.
+	_, res, body := e.open(t, "100")
+	if res.StatusCode != http.StatusGone || strings.Contains(body, `id="data"`) {
+		t.Errorf("page without access: status %d, want 410 and no data", res.StatusCode)
+	}
+	tok, err := e.tk.IssueSocket("u1", "g1", "100", "sock-denied", time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
 	ws = e.dial(t, tok)
 	if m, code := ws.read(); code != socketExpired {
 		t.Errorf("socket without access: %v, close %d, want %d", m, code, socketExpired)
+	}
+}
+
+func TestSocketRateLimitsEveryMessage(t *testing.T) {
+	e := newEnv(t)
+	_, _, body := e.open(t, "100")
+	first, _ := pageData(t, body)
+	ws := e.dial(t, first)
+	if m, _ := ws.read(); m["op"] != "token" {
+		t.Fatalf("first message = %v", m)
+	}
+	// Messages that are not saves cost the server a decode all the same.
+	for i := 0; i <= socketFrames; i++ {
+		_ = ws.conn.WriteJSON(map[string]any{"op": "noise"})
+	}
+	_, code := ws.readAny()
+	for code == 0 {
+		_, code = ws.readAny()
+	}
+	if code != websocket.ClosePolicyViolation {
+		t.Errorf("close code %d after flooding with junk, want %d", code, websocket.ClosePolicyViolation)
 	}
 }
 

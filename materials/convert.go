@@ -110,6 +110,23 @@ func rasterToJPEG(data []byte) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
+// heifMemoryKiB caps the converter's address space. A HEIC file declares its
+// own dimensions, so a small upload can ask libheif for gigabytes, and the
+// bot shares its container with everything else.
+const heifMemoryKiB = 768 << 10
+
+// heifCommand builds the converter's command line. The file it reads comes
+// from a stranger, so the process gets what it needs and nothing else: no
+// environment (the bot's tokens and keys are in it), and a memory ceiling.
+func heifCommand(ctx context.Context, tool, in, out string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c",
+		fmt.Sprintf(`ulimit -v %d 2>/dev/null; exec "$0" "$@"`, heifMemoryKiB),
+		tool, "-q", fmt.Sprint(jpegQuality), in, out)
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "TMPDIR=" + filepath.Dir(in)}
+	cmd.Dir = filepath.Dir(in)
+	return cmd
+}
+
 func heicToJPEG(ctx context.Context, data []byte) ([]byte, error) {
 	var tool string
 	for _, name := range heifTools {
@@ -133,7 +150,8 @@ func heicToJPEG(ctx context.Context, data []byte) ([]byte, error) {
 
 	ctx, cancel := context.WithTimeout(ctx, heicTimeout)
 	defer cancel()
-	if msg, err := exec.CommandContext(ctx, tool, "-q", fmt.Sprint(jpegQuality), in, out).CombinedOutput(); err != nil {
+	cmd := heifCommand(ctx, tool, in, out)
+	if msg, err := cmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("%w: %s: %v", ErrUnsupportedImage, bytes.TrimSpace(msg), err)
 	}
 	// A file holding several images is written as out-1.jpg, out-2.jpg, ...;

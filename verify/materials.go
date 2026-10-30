@@ -149,6 +149,22 @@ func (v *Server) sessionPage(w http.ResponseWriter, r *http.Request) {
 	}
 	analytics.Tag(ctx, subject, "page", "materials", "channel_id", channelID)
 
+	// The link only got the visitor a session. Whether the member may still
+	// read the channel (still in the server, still registered, can still see
+	// it) is checked again here, not taken from a link that may be seconds old
+	// or was issued by a button anyone who can see the card can press.
+	switch err := v.checkAccess(ctx, subject, channelID); {
+	case errors.Is(err, ErrNoAccess):
+		v.sessions.revoke(id)
+		v.expired(w, r)
+		return
+	case err != nil:
+		v.log.Error("verify: access check", "user_id", subject, "channel_id", channelID, "error", err)
+		v.sessions.unclaimPage(id)
+		v.renderMaterials(w, http.StatusServiceUnavailable, map[string]any{"State": stateError})
+		return
+	}
+
 	ch, err := v.materials.Channel(ctx, channelID)
 	switch {
 	case errors.Is(err, ErrNoMaterial):
@@ -243,6 +259,19 @@ func (v *Server) materialFile(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), fileTimeout)
 	defer cancel()
 	analytics.Tag(ctx, subject, "channel_id", channelID, "file_id", id)
+	// A member who left, lost their role or can no longer see the channel
+	// stops downloading at once, not when the session runs out.
+	switch err := v.checkAccess(ctx, subject, channelID); {
+	case errors.Is(err, ErrNoAccess):
+		v.sessions.revoke(sid)
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": stateInvalid})
+		return
+	case err != nil:
+		v.log.Error("verify: access check", "user_id", subject, "channel_id", channelID, "error", err)
+		w.Header().Set("Retry-After", "5")
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": stateError})
+		return
+	}
 	f, err := v.materials.Open(ctx, channelID, id)
 	switch {
 	// Gone rather than Not Found: 404s count towards the flood shield, and
@@ -266,6 +295,9 @@ func (v *Server) materialFile(w http.ResponseWriter, r *http.Request) {
 		ctype = f.Type
 	}
 	h.Set("Content-Type", ctype)
+	// A file is somebody else's upload. Should one ever be opened as a page of
+	// its own, it runs nothing and loads nothing.
+	h.Set("Content-Security-Policy", "default-src 'none'; sandbox")
 	h.Set("Content-Length", fmt.Sprint(f.Size))
 	h.Set("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": id}))
 	w.WriteHeader(http.StatusOK)
@@ -277,6 +309,17 @@ func (v *Server) materialFile(w http.ResponseWriter, r *http.Request) {
 	if v.sessions.complete(sid, id) {
 		analytics.Tag(ctx, subject, "outcome", "material_session_completed")
 	}
+}
+
+// checkAccess asks the material source whether the member may still read the
+// channel. A source that cannot tell admits everyone its session already
+// admitted. It returns ErrNoAccess for a member who may not.
+func (v *Server) checkAccess(ctx context.Context, userID, channelID string) error {
+	ac, ok := v.materials.(AccessChecker)
+	if !ok {
+		return nil
+	}
+	return ac.CanRead(ctx, userID, channelID)
 }
 
 // avatarURL returns an avatar's URL if it is on Discord's CDN, the only
