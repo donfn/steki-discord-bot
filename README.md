@@ -121,6 +121,10 @@ is no database service. What keeps the process small:
   for 90,000 domains), and never held as a full list while refreshing.
 - **`/reg reconcile` keeps a trimmed copy of each member** rather than the
   whole decoded payload.
+- **Every in-memory table has a bound and a way out**: rate counters, replay
+  sets and sessions are swept or capped, locks are dropped when released, and
+  PostHog's queue holds at most 1,000 events while it cannot be reached (events
+  are dropped after that; `Capture` never blocks).
 
 ## Moving off Postgres
 

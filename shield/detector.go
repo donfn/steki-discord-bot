@@ -73,6 +73,13 @@ func (d *Detector) observe(status int, now time.Time) string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
+	// Nothing can fire while the protection runs, and counting would only grow
+	// the list of 404s for as long as a scanner keeps going. What came in is
+	// older than the window by the time the cooldown ends anyway.
+	if now.Before(d.quietUntil) {
+		return ""
+	}
+
 	sec := now.Unix()
 	slot := &d.secs[sec%rateSeconds]
 	if slot.at != sec {
@@ -84,16 +91,13 @@ func (d *Detector) observe(status int, now time.Time) string {
 		d.notFound = append(d.notFound, now)
 	}
 	// Drop 404s that left the window; the slice never holds more than
-	// maxNotFound+1 live entries because crossing the limit resets it.
+	// maxNotFound+1 live entries, because crossing the limit resets it and
+	// nothing is added during the cooldown.
 	cut := 0
 	for cut < len(d.notFound) && now.Sub(d.notFound[cut]) > notFoundWindow {
 		cut++
 	}
 	d.notFound = d.notFound[cut:]
-
-	if now.Before(d.quietUntil) {
-		return ""
-	}
 
 	total := 0
 	for _, s := range d.secs {
