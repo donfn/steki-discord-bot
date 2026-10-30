@@ -5,8 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex">
-<meta name="theme-color" content="#FFC900" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0E0E0F" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#FFC900" id="theme-color">
+<script nonce="{{.Nonce}}">
+  // The theme is set before the first paint: the saved choice, else light.
+  (() => {
+    let t;
+    try { t = localStorage.getItem('theme'); } catch {}
+    if (t !== 'dark') t = 'light';
+    document.documentElement.dataset.theme = t;
+    if (t === 'dark') document.getElementById('theme-color').content = '#0E0E0F';
+  })();
+</script>
 <title>στέκι{{if .Channel}} · Υλικό · #{{.Channel}}{{end}}</title>
 <link rel="icon" href="/verify/logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -70,23 +79,21 @@
     --dur-med: 420ms;
     color-scheme: light;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --color-paper: oklch(0.17 0.008 80);
-      --color-dot: oklch(0.95 0.02 92 / 0.09);
-      --color-sheet: oklch(0.225 0.01 80);
-      --color-tile: oklch(0.275 0.012 80);
-      --color-ink: oklch(0.95 0.02 92);
-      --color-muted: oklch(0.77 0.02 90);
-      --color-line: oklch(0.95 0.02 92 / 0.9);
-      --color-soft: oklch(0.95 0.02 92 / 0.18);
-      --color-shadow: var(--color-brand);
-      --color-marker: oklch(0.76 0.15 28);
-      --color-sky: oklch(0.78 0.11 250);
-      --color-stage: oklch(0.13 0.006 80);
-      --color-code: oklch(0.12 0.006 80);
-      color-scheme: dark;
-    }
+  :root[data-theme="dark"] {
+    --color-paper: oklch(0.17 0.008 80);
+    --color-dot: oklch(0.95 0.02 92 / 0.09);
+    --color-sheet: oklch(0.225 0.01 80);
+    --color-tile: oklch(0.275 0.012 80);
+    --color-ink: oklch(0.95 0.02 92);
+    --color-muted: oklch(0.77 0.02 90);
+    --color-line: oklch(0.95 0.02 92 / 0.9);
+    --color-soft: oklch(0.95 0.02 92 / 0.18);
+    --color-shadow: var(--color-brand);
+    --color-marker: oklch(0.76 0.15 28);
+    --color-sky: oklch(0.78 0.11 250);
+    --color-stage: oklch(0.13 0.006 80);
+    --color-code: oklch(0.12 0.006 80);
+    color-scheme: dark;
   }
 
   * { box-sizing: border-box; }
@@ -159,7 +166,7 @@
     -webkit-box-decoration-break: clone;
     box-decoration-break: clone;
   }
-  @media (prefers-color-scheme: dark) { .mark { color: var(--color-on-brand); background: linear-gradient(transparent 14%, var(--color-brand) 14% 94%, transparent 94%); } }
+  :root[data-theme="dark"] .mark { color: var(--color-on-brand); background: linear-gradient(transparent 14%, var(--color-brand) 14% 94%, transparent 94%); }
 
   p { margin: 0 0 var(--space-sm); color: var(--color-muted); text-wrap: pretty; }
   p strong, p b { color: var(--color-ink); font-weight: 700; }
@@ -429,6 +436,18 @@
   .icon-btn[aria-disabled="true"] { opacity: 0.35; pointer-events: none; }
   .icon-btn svg { width: 20px; height: 20px; }
 
+  .theme-toggle {
+    position: fixed;
+    top: max(12px, env(safe-area-inset-top));
+    right: max(12px, env(safe-area-inset-right));
+    z-index: 5;
+    background: var(--color-sheet);
+    border-color: var(--color-line);
+    box-shadow: var(--shadow-ctl);
+  }
+  .theme-toggle .moon, :root[data-theme="dark"] .theme-toggle .sun { display: block; }
+  .theme-toggle .sun, :root[data-theme="dark"] .theme-toggle .moon { display: none; }
+
   .empty { text-align: center; padding: 2.5rem 1rem 1.5rem; }
   .empty[hidden] { display: none; }
   .empty .badge { margin: 0 auto 1rem; }
@@ -620,6 +639,25 @@
 </style>
 </head>
 <body>
+<button class="icon-btn theme-toggle" id="theme-toggle" type="button" aria-label="Σκούρο θέμα" aria-pressed="false">
+  <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>
+  <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+</button>
+<script nonce="{{.Nonce}}">
+  (() => {
+    const btn = document.getElementById('theme-toggle');
+    const root = document.documentElement;
+    const sync = () => btn.setAttribute('aria-pressed', String(root.dataset.theme === 'dark'));
+    sync();
+    btn.addEventListener('click', () => {
+      const t = root.dataset.theme === 'dark' ? 'light' : 'dark';
+      root.dataset.theme = t;
+      document.getElementById('theme-color').content = t === 'dark' ? '#0E0E0F' : '#FFC900';
+      try { localStorage.setItem('theme', t); } catch {}
+      sync();
+    });
+  })();
+</script>
 {{if eq .State "ready"}}
 <main class="sheet" aria-labelledby="heading">
   <div class="logo-wrap"><img class="logo" src="/verify/logo.png" alt="" width="56" height="56"></div>
