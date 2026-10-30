@@ -138,6 +138,7 @@ func run() error {
 	pages := verify.NewServer(verify.NewTokens(cfg.JWTSecret), h.GuardLifter(sess), h.LinkConsenter(sess),
 		h.MaterialSource(sess), logger)
 	pages.SetLinkWatcher(h)
+	pages.SetProfiles(h.ProfileSource(sess))
 	logger.Info("verification pages enabled", "public_url", cfg.PublicURL)
 
 	var mcpServer *mcp.Server

@@ -190,6 +190,15 @@ func (s *Store) ResetToEmailStep(ctx context.Context, regID string) error {
 	return err
 }
 
+// ResetCodeSends zeroes the registration's email count. It is separate from
+// ResetToEmailStep because members can restart on their own, and that must not
+// lift the cap.
+func (s *Store) ResetCodeSends(ctx context.Context, regID string) error {
+	_, err := s.db.ExecContext(ctx, `
+		update registrations set code_sent_count = 0 where id = ?1`, regID)
+	return err
+}
+
 // CloseRegistration marks a registration terminal. Closing frees the partial
 // unique index so the member may later open a new one.
 func (s *Store) CloseRegistration(ctx context.Context, regID, outcome string) error {

@@ -55,7 +55,7 @@ var commandDefs = []*discordgo.ApplicationCommand{
 			},
 			{
 				Name:        "restart",
-				Description: "Επανεκκίνηση της εγγραφής ενός χρήστη",
+				Description: "Επανεκκίνηση της εγγραφής ενός χρήστη και μηδενισμός του ορίου email",
 				Type:        discordgo.ApplicationCommandOptionSubCommand,
 				Options: []*discordgo.ApplicationCommandOption{{
 					Name: "user", Description: "Ο χρήστης",

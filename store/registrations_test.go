@@ -58,6 +58,15 @@ func TestRegistrationLifecycle(t *testing.T) {
 	if got.Step != StepAwaitingEmail || got.Email != nil || got.Code != nil || got.FailedAttempts != 0 {
 		t.Fatalf("after reset = %+v", got)
 	}
+	if got.CodeSentCount != 1 {
+		t.Fatalf("restart changed the email count: %d", got.CodeSentCount)
+	}
+	if err := s.ResetCodeSends(ctx, reg.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = s.OpenRegistration(ctx, "u1"); got.CodeSentCount != 0 {
+		t.Fatalf("email count after reset = %d", got.CodeSentCount)
+	}
 
 	if err := s.MarkVerified(ctx, reg.ID, "u1", " TH1@edu.hmu.gr "); err != nil {
 		t.Fatal(err)
