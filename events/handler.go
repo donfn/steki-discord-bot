@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"runtime/debug"
 	"sync"
 	"sync/atomic"
@@ -23,6 +24,7 @@ import (
 	"steki-bot/materials"
 	"steki-bot/moderation"
 	"steki-bot/store"
+	"steki-bot/usernotes"
 	"steki-bot/verify"
 )
 
@@ -90,6 +92,8 @@ type Handler struct {
 	statusIndex   atomic.Int64
 	lastReconcile atomic.Int64 // Unix seconds of the last finished /reg reconcile; 0 before the first
 
+	// notes keeps members' page notes in their own databases in the bucket.
+	notes *usernotes.Manager
 	// compressing is set while /materials compress runs.
 	compressing atomic.Bool
 
@@ -154,6 +158,13 @@ func (h *Handler) Register(s *discordgo.Session) {
 			func(home string) { h.refreshSticky(s, home) },
 			func() { go h.safely("review_cards", func() { h.announceReviews(s) }) },
 			func(ctx context.Context) ([]string, error) { return h.courseChannelIDs(ctx, s) }, h.log)
+		notes, err := usernotes.New(h.bucket, legacyNotes{h.st}, filepath.Join(filepath.Dir(h.cfg.DatabasePath), "user-notes"), h.log)
+		if err != nil {
+			h.log.Error("material page notes off", "error", err)
+		} else {
+			h.notes = notes
+			go h.safely("user_notes", func() { notes.Run(h.base) })
+		}
 	}
 	s.AddHandler(guard(h, "ready", h.onReady))
 	s.AddHandler(guard(h, "guild_create", h.onGuildCreate))

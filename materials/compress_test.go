@@ -196,6 +196,23 @@ func TestBucketEndToEnd(t *testing.T) {
 		t.Errorf("missing: %v", err)
 	}
 
+	// The members' note databases go in as they are, and a missing one is no
+	// error.
+	var buf bytes.Buffer
+	if found, err := b.Fetch(ctx, "user-notes/none.sqlite", &buf); found || err != nil {
+		t.Fatalf("missing object: %v %v", found, err)
+	}
+	dbPath := t.TempDir() + "/n.db"
+	if err := os.WriteFile(dbPath, []byte("SQLite format 3\x00 data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.PutFile(ctx, "user-notes/1.sqlite", dbPath, "application/vnd.sqlite3"); err != nil {
+		t.Fatal(err)
+	}
+	if found, err := b.Fetch(ctx, "user-notes/1.sqlite", &buf); !found || err != nil || !strings.HasSuffix(buf.String(), " data") {
+		t.Fatalf("fetch: %v %v %q", found, err, buf.String())
+	}
+
 	// Empty and tiny files, and a tiny plain one shorter than the header.
 	for _, data := range [][]byte{{}, []byte("x")} {
 		if err := b.Store(ctx, "small", bytes.NewReader(data), int64(len(data)), TypePDF); err != nil {

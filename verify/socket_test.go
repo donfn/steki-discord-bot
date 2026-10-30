@@ -146,6 +146,34 @@ func TestSocketSavesAndReissues(t *testing.T) {
 	}
 }
 
+func TestSocketsHoldNotesUntilTheyClose(t *testing.T) {
+	e := newEnv(t)
+	_, _, body := e.open(t, "100")
+	first, _ := pageData(t, body)
+	holds := func() int {
+		e.fm.mu.Lock()
+		defer e.fm.mu.Unlock()
+		return e.fm.noteHolds
+	}
+	waitHolds := func(want int) {
+		t.Helper()
+		for end := time.Now().Add(5 * time.Second); holds() != want; time.Sleep(10 * time.Millisecond) {
+			if time.Now().After(end) {
+				t.Fatalf("holds = %d, want %d", holds(), want)
+			}
+		}
+	}
+	a := e.dial(t, first)
+	m, _ := a.read()
+	b := e.dial(t, m["t"].(string))
+	b.read()
+	waitHolds(2)
+	a.conn.Close()
+	waitHolds(1)
+	b.conn.Close()
+	waitHolds(0)
+}
+
 func TestSocketNeedsAuthFirst(t *testing.T) {
 	e := newEnv(t)
 	h := http.Header{"Origin": {e.srv.URL}}

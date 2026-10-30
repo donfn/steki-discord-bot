@@ -224,6 +224,41 @@ func (b *Bucket) Store(ctx context.Context, key string, r io.Reader, size int64,
 	return b.put(ctx, key, io.MultiReader(bytes.NewReader(hdr.bytes()), out), int64(headerSize)+zn, contentType)
 }
 
+// Fetch writes the object at key to w as stored, and reports whether it exists.
+func (b *Bucket) Fetch(ctx context.Context, key string, w io.Writer) (bool, error) {
+	obj, err := b.client.GetObject(ctx, b.name, key, minio.GetObjectOptions{})
+	if err != nil {
+		return false, err
+	}
+	defer obj.Close()
+	if _, err := obj.Stat(); err != nil {
+		if minio.ToErrorResponse(err).Code == "NoSuchKey" {
+			return false, nil
+		}
+		return false, err
+	}
+	if _, err := io.Copy(w, obj); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// PutFile uploads the file at path to key as it is.
+func (b *Bucket) PutFile(ctx context.Context, key, path, contentType string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	b.writes.Lock()
+	defer b.writes.Unlock()
+	return b.put(ctx, key, f, info.Size(), contentType)
+}
+
 // Open returns the file at key, decompressed as it is read, and its original
 // size. The caller closes it. Plain objects from before compression are read
 // as they are.

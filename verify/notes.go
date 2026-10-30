@@ -36,6 +36,13 @@ type Notebook interface {
 	SaveNote(ctx context.Context, userID, fileID, kind string, data json.RawMessage) error
 }
 
+// NoteSessions is implemented by a Notebook whose databases stay open only
+// while they are used: a socket holds the member's open, and it is put away
+// when the last one lets go.
+type NoteSessions interface {
+	OpenNotes(ctx context.Context, userID string) (release func(), err error)
+}
+
 // notesFor returns the member's saved state for the files on the page. A
 // failure leaves the page without it rather than without the page.
 func (v *Server) notesFor(ctx context.Context, userID string, fileIDs []string) map[string]map[string]json.RawMessage {

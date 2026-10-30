@@ -16,6 +16,7 @@ import (
 	"steki-bot/materials"
 	"steki-bot/mcp"
 	"steki-bot/store"
+	"steki-bot/usernotes"
 	"steki-bot/verify"
 )
 
@@ -557,29 +558,64 @@ func (src *materialSource) Open(ctx context.Context, channelID, fileID string) (
 	return &verify.MaterialBody{Body: body, Size: size, Type: m.ContentType}, nil
 }
 
+var errNotesOff = errors.New("events: material page notes are off")
+
 // Notes implements verify.Notebook.
 func (src *materialSource) Notes(ctx context.Context, userID string) (map[string]map[string]json.RawMessage, error) {
-	rows, err := src.h.st.StudyNotes(ctx, userID)
+	if src.h.notes == nil {
+		return nil, errNotesOff
+	}
+	rows, err := src.h.notes.Notes(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
 	out := make(map[string]map[string]json.RawMessage, len(rows))
 	for _, n := range rows {
-		if out[n.AttachmentID] == nil {
-			out[n.AttachmentID] = map[string]json.RawMessage{}
+		if out[n.File] == nil {
+			out[n.File] = map[string]json.RawMessage{}
 		}
-		out[n.AttachmentID][n.Kind] = json.RawMessage(n.Data)
+		out[n.File][n.Kind] = json.RawMessage(n.Data)
 	}
 	return out, nil
 }
 
 // SaveNote implements verify.Notebook.
 func (src *materialSource) SaveNote(ctx context.Context, userID, fileID, kind string, data json.RawMessage) error {
-	err := src.h.st.SetStudyNote(ctx, userID, fileID, kind, string(data))
-	if errors.Is(err, store.ErrStudyQuota) {
+	if src.h.notes == nil {
+		return errNotesOff
+	}
+	err := src.h.notes.Save(ctx, userID, fileID, kind, string(data))
+	if errors.Is(err, usernotes.ErrQuota) {
 		return verify.ErrNoteQuota
 	}
 	return err
+}
+
+// OpenNotes implements verify.NoteSessions.
+func (src *materialSource) OpenNotes(ctx context.Context, userID string) (func(), error) {
+	if src.h.notes == nil {
+		return nil, errNotesOff
+	}
+	return src.h.notes.Open(ctx, userID)
+}
+
+// legacyNotes hands usernotes the notes saved in the bot's own database.
+type legacyNotes struct{ st *store.Store }
+
+func (l legacyNotes) LegacyNotes(ctx context.Context, userID string) ([]usernotes.Note, error) {
+	rows, err := l.st.StudyNotes(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]usernotes.Note, 0, len(rows))
+	for _, n := range rows {
+		out = append(out, usernotes.Note{File: n.AttachmentID, Kind: n.Kind, Data: n.Data})
+	}
+	return out, nil
+}
+
+func (l legacyNotes) ClearLegacyNotes(ctx context.Context, userID string) error {
+	return l.st.ClearStudyNotes(ctx, userID)
 }
 
 // CanRead implements verify.AccessChecker with the MCP server's rule: a

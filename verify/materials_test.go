@@ -16,8 +16,10 @@ import (
 )
 
 type fakeMaterials struct {
-	channels map[string]*MaterialChannel
-	bodies   map[string]string // "channel/file" -> content
+	noteHolds int // sockets holding the notes open
+	noteOpens int
+	channels  map[string]*MaterialChannel
+	bodies    map[string]string // "channel/file" -> content
 
 	mu    sync.Mutex
 	notes map[string]map[string]map[string]json.RawMessage // user -> file -> kind -> data
@@ -47,6 +49,18 @@ func (f *fakeMaterials) Notes(_ context.Context, userID string) (map[string]map[
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.notes[userID], nil
+}
+
+func (f *fakeMaterials) OpenNotes(context.Context, string) (func(), error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.noteHolds++
+	f.noteOpens++
+	return func() {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.noteHolds--
+	}, nil
 }
 
 func (f *fakeMaterials) SaveNote(_ context.Context, userID, fileID, kind string, data json.RawMessage) error {

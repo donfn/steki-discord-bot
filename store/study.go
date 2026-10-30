@@ -41,6 +41,13 @@ func (s *Store) StudyNotes(ctx context.Context, userID string) ([]StudyNote, err
 	return out, rows.Err()
 }
 
+// ClearStudyNotes removes what a member saved, once it has moved to their own
+// database in the bucket.
+func (s *Store) ClearStudyNotes(ctx context.Context, userID string) error {
+	_, err := s.db.ExecContext(ctx, `delete from study_notes where user_id = ?1`, userID)
+	return err
+}
+
 // SetStudyNote saves a member's state of one kind for one file, replacing
 // what was there. Empty data deletes it.
 func (s *Store) SetStudyNote(ctx context.Context, userID, attachmentID, kind, data string) error {

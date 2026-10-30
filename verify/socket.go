@@ -233,6 +233,14 @@ func (s *pageSocket) run(ctx context.Context) {
 		s.closeFor(err)
 		return
 	}
+	if ns, ok := s.nb.(NoteSessions); ok {
+		release, err := ns.OpenNotes(ctx, s.user)
+		if err != nil {
+			s.closeFor(err)
+			return
+		}
+		defer release()
+	}
 
 	done := make(chan struct{})
 	defer close(done)
