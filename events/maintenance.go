@@ -248,14 +248,14 @@ var (
 // for it with /reg reconcile. Passes never overlap: errJobRunning is returned
 // for one asked while another runs. On an error the report still counts what
 // was done before it.
-func (h *Handler) reconcile(s *discordgo.Session) (rep reconcileReport, err error) {
+func (h *Handler) reconcile(s *discordgo.Session) (reconcileReport, error) {
 	guildID := h.guildID()
 	if guildID == "" {
-		return rep, errGuildUnknown
+		return reconcileReport{}, errGuildUnknown
 	}
 	end, ok := h.jobs.begin("reconcile")
 	if !ok {
-		return rep, errJobRunning
+		return reconcileReport{}, errJobRunning
 	}
 	defer end()
 
@@ -268,73 +268,108 @@ func (h *Handler) reconcile(s *discordgo.Session) (rep reconcileReport, err erro
 	listedAt := time.Now()
 	open, err := h.st.ListOpen(ctx)
 	if err != nil {
-		return rep, fmt.Errorf("list open registrations: %w", err)
+		return reconcileReport{}, fmt.Errorf("list open registrations: %w", err)
 	}
-
 	members, err := h.allMembers(ctx, s, guildID)
 	if err != nil {
-		return rep, fmt.Errorf("list members: %w", err)
+		return reconcileReport{}, fmt.Errorf("list members: %w", err)
 	}
-	byID := make(map[string]*discordgo.Member, len(members))
+
+	p := &reconcilePass{
+		h: h, s: s, ctx: ctx, guildID: guildID, listedAt: listedAt,
+		members: make(map[string]*discordgo.Member, len(members)),
+		openBy:  make(map[string]*store.Registration, len(open)),
+		budget:  maxOnboardPerSweep,
+	}
 	for _, m := range members {
 		if m.User != nil {
-			byID[m.User.ID] = m
+			p.members[m.User.ID] = m
 		}
 	}
-	rep.Members = len(byID)
+	p.rep.Members = len(p.members)
 	h.syncActivityRoster(ctx, members, listedAt)
 
-	budget := maxOnboardPerSweep
+	p.closeStale(open)
+	if err := p.sweepChannels(); err != nil {
+		return p.rep, err
+	}
+	p.onboardMissed()
+	h.sweepHelp(ctx, s)
 
-	// 1. Open rows whose member or channel no longer makes sense.
-	openByUser := make(map[string]*store.Registration, len(open))
+	h.lastReconcile.Store(time.Now().Unix())
+	rep := p.rep
+	h.log.Info("reconcile finished",
+		"members", rep.Members, "closed", rep.Closed, "recreated", rep.Recreated,
+		"orphan_channels_deleted", rep.Orphans, "duplicate_channels_deleted", rep.Duplicates,
+		"channels_adopted", rep.Adopted, "waiting", rep.Waiting)
+	return rep, nil
+}
 
+// reconcilePass is what the steps of one reconcile share: the guild as the
+// pass found it, and how many more channels it may make.
+type reconcilePass struct {
+	h        *Handler
+	s        *discordgo.Session
+	ctx      context.Context
+	guildID  string
+	listedAt time.Time
+	members  map[string]*discordgo.Member   // the guild's members, by ID
+	openBy   map[string]*store.Registration // open registrations, by member ID
+	budget   int
+	rep      reconcileReport
+}
+
+// makeChannel gives a member a register channel, or counts them as waiting when
+// the pass has made as many as it may. why is for the log.
+func (p *reconcilePass) makeChannel(user *discordgo.User, why string) {
+	if p.budget == 0 {
+		p.rep.Waiting++
+		return
+	}
+	p.budget--
+	p.h.log.Info("reconcile: making a register channel", "user_id", user.ID, "why", why)
+	if p.h.ensureRegisterChannel(p.s, p.guildID, user) {
+		p.rep.Recreated++
+	}
+}
+
+// closeStale goes through the open registrations. The ones whose member left or
+// already verified are closed; the ones whose channel is gone get a new one.
+func (p *reconcilePass) closeStale(open []*store.Registration) {
 	for _, reg := range open {
-		openByUser[reg.UserID] = reg
+		p.openBy[reg.UserID] = reg
 
-		member, present := byID[reg.UserID]
+		member, present := p.members[reg.UserID]
 		switch {
 		case !present:
-			h.closeLocked(ctx, s, reg, store.OutcomeLeft)
-			rep.Closed++
+			p.h.closeLocked(p.ctx, p.s, reg, store.OutcomeLeft)
+			p.rep.Closed++
 		case hasAnyRole(member, verifiedRoleIDs):
-			h.closeLocked(ctx, s, reg, store.OutcomeVerified)
-			rep.Closed++
+			p.h.closeLocked(p.ctx, p.s, reg, store.OutcomeVerified)
+			p.rep.Closed++
 		case reg.ChannelID == nil:
-			if budget == 0 {
-				rep.Waiting++
-				break
-			}
-			if h.ensureRegisterChannel(s, guildID, member.User) {
-				rep.Recreated++
-			}
-			budget--
+			p.makeChannel(member.User, "the registration has no channel")
 		default:
-			exists, err := h.channelExists(ctx, s, *reg.ChannelID)
-			if err != nil {
-				h.log.Warn("reconcile: cannot check channel", "channel_id", *reg.ChannelID, "error", err)
-				continue
+			exists, err := p.h.channelExists(p.ctx, p.s, *reg.ChannelID)
+			switch {
+			case err != nil:
+				p.h.log.Warn("reconcile: cannot check channel", "channel_id", *reg.ChannelID, "error", err)
+			case !exists:
+				// Still here, unverified, and without a channel: make one
+				// rather than leave them stranded.
+				p.makeChannel(member.User, "the register channel is gone")
 			}
-			if exists {
-				break
-			}
-			// Still here, unverified, and without a channel: recreate it
-			// rather than leave them stranded.
-			if budget == 0 {
-				rep.Waiting++
-				break
-			}
-			if h.ensureRegisterChannel(s, guildID, member.User) {
-				rep.Recreated++
-			}
-			budget--
 		}
 	}
+}
 
-	// 2. Register channels with no corresponding open row.
-	channels, err := dc.GuildChannels(ctx, s, h.log, guildID)
+// sweepChannels goes through the register channels in the guild. The one each
+// open registration points at stays; one nobody owns, or a second one for a
+// member, is deleted; one whose registration lost track of it is given back.
+func (p *reconcilePass) sweepChannels() error {
+	channels, err := dc.GuildChannels(p.ctx, p.s, p.h.log, p.guildID)
 	if err != nil {
-		return rep, fmt.Errorf("list channels: %w", err)
+		return fmt.Errorf("list channels: %w", err)
 	}
 	live := make(map[string]bool, len(channels))
 	for _, ch := range channels {
@@ -342,66 +377,52 @@ func (h *Handler) reconcile(s *discordgo.Session) (rep reconcileReport, err erro
 	}
 	for _, ch := range channels {
 		userID, ok := userIDFromChannelName(ch.Name)
-		if !ok || ch.Type != discordgo.ChannelTypeGuildText || createdAfter(ch.ID, listedAt) {
+		if !ok || ch.Type != discordgo.ChannelTypeGuildText || createdAfter(ch.ID, p.listedAt) {
 			// A channel newer than the row snapshot belongs to a join this
 			// pass cannot see yet; it is not an orphan.
 			continue
 		}
 
-		switch fate := registerChannelFate(ch.ID, openByUser[userID], byID[userID], live); fate {
+		switch fate := registerChannelFate(ch.ID, p.openBy[userID], p.members[userID], live); fate {
 		case fateKeep:
 		case fateDelete, fateDeleteDuplicate:
-			if err := h.deleteChannel(ctx, s, ch.ID); err != nil {
-				h.log.Warn("reconcile: delete register channel failed", "channel_id", ch.ID, "error", err)
+			if err := p.h.deleteChannel(p.ctx, p.s, ch.ID); err != nil {
+				p.h.log.Warn("reconcile: delete register channel failed", "channel_id", ch.ID, "error", err)
 				continue
 			}
 			if fate == fateDeleteDuplicate {
-				rep.Duplicates++
+				p.rep.Duplicates++
 			} else {
-				rep.Orphans++
+				p.rep.Orphans++
 			}
 		case fateAdopt:
-			unlock := h.lockUser(userID)
-			_, err := h.adoptChannel(ctx, guildID, userID, ch.ID)
+			unlock := p.h.lockUser(userID)
+			_, err := p.h.adoptChannel(p.ctx, p.guildID, userID, ch.ID)
 			unlock()
 			if err != nil {
-				h.log.Warn("reconcile: adopt channel failed", "channel_id", ch.ID, "error", err)
+				p.h.log.Warn("reconcile: adopt channel failed", "channel_id", ch.ID, "error", err)
 				continue
 			}
-			openByUser[userID] = &store.Registration{UserID: userID, ChannelID: &ch.ID}
-			rep.Adopted++
+			p.openBy[userID] = &store.Registration{UserID: userID, ChannelID: &ch.ID}
+			p.rep.Adopted++
 		}
 	}
+	return nil
+}
 
-	// 3. Recent joins with neither a row nor a channel: the joins dropped
-	//    while the gateway was disconnected.
+// onboardMissed gives a channel to each recent joiner who has no registration:
+// the joins the gateway dropped while the bot was away.
+func (p *reconcilePass) onboardMissed() {
 	cutoff := time.Now().Add(-missedJoinWindow)
-	for id, member := range byID {
+	for id, member := range p.members {
 		if member.User == nil || member.User.Bot || member.JoinedAt.Before(cutoff) {
 			continue
 		}
-		if _, has := openByUser[id]; has || hasAnyRole(member, protectedRoleIDs) {
+		if _, has := p.openBy[id]; has || hasAnyRole(member, protectedRoleIDs) {
 			continue
 		}
-		if budget == 0 {
-			rep.Waiting++
-			continue
-		}
-		h.log.Info("reconcile: onboarding member missed at join time", "user_id", id)
-		if h.ensureRegisterChannel(s, guildID, member.User) {
-			rep.Recreated++
-		}
-		budget--
+		p.makeChannel(member.User, "the member joined while the bot was away")
 	}
-
-	h.sweepHelp(ctx, s)
-
-	h.lastReconcile.Store(time.Now().Unix())
-	h.log.Info("reconcile finished",
-		"members", rep.Members, "closed", rep.Closed, "recreated", rep.Recreated,
-		"orphan_channels_deleted", rep.Orphans, "duplicate_channels_deleted", rep.Duplicates,
-		"channels_adopted", rep.Adopted, "waiting", rep.Waiting)
-	return rep, nil
 }
 
 // summary is the reply to the moderator who asked for the pass. err is why it
