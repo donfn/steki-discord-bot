@@ -39,12 +39,12 @@ const (
 	// materialLinkTTL is how long a material page link works. Following it
 	// opens a session that carries the downloads, so the link only has to
 	// outlive the click.
-	materialLinkTTL = 10 * time.Minute
+	materialLinkTTL = 2 * time.Minute
 
 	// materialLinkRotate is how often every sticky gets a new link. It is half
-	// the TTL, so a link a member sees always has at least five minutes left,
-	// and one missed rotation does not break it.
-	materialLinkRotate = 5 * time.Minute
+	// the TTL, so a link a member sees always has at least a minute left, and
+	// one late rotation does not break it.
+	materialLinkRotate = time.Minute
 
 	// mcpLinkRotate is how often the MCP announcements get a new link. Those
 	// links live for verify.MCPGuideLinkTTL, so they rotate far less often.
