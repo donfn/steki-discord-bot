@@ -55,7 +55,7 @@ func (h *Handler) onMessageUpdate(s *discordgo.Session, m *discordgo.MessageUpda
 	}
 
 	h.alertMods(s,
-		"Ο χρήστης <@%s> επεξεργάστηκε στο κανάλι <#%s> αυτό το μήνυμα:\n```%s```*και η νέα έκδοσή του είναι:*```%s```",
+		"Ο χρήστης <@%s> επεξεργάστηκε ένα μήνυμα στο <#%s>.\n*Πριν:*```%s```*Μετά:*```%s```",
 		m.Author.ID, m.ChannelID, quote(before.content), quote(m.Content))
 }
 
@@ -86,7 +86,7 @@ func (h *Handler) onMessageDelete(s *discordgo.Session, m *discordgo.MessageDele
 		return
 	}
 
-	h.alertMods(s, "Ο χρήστης <@%s> διέγραψε από το κανάλι <#%s> αυτό το μήνυμα:\n```%s```",
+	h.alertMods(s, "Ο χρήστης <@%s> διέγραψε αυτό το μήνυμα από το <#%s>:\n```%s```",
 		h.deletedBy(s, m.GuildID, m.ChannelID, gone.authorID), m.ChannelID, quote(gone.content))
 }
 

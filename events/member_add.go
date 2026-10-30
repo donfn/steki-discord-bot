@@ -27,7 +27,7 @@ func (h *Handler) onMemberAdd(s *discordgo.Session, m *discordgo.GuildMemberAdd)
 		h.log.Error("record member join failed", "user_id", m.User.ID, "error", err)
 	}
 	if !h.gate.allow("joins", joinsPerWindow, joinWindow) {
-		h.alertModsOnce(s, "raid", "🚨 Ασυνήθιστα πολλές εισόδους (>%d σε %d λεπτά). Πιθανή επίθεση raid· ελέγξτε τον server.",
+		h.alertModsOnce(s, "raid", "🚨 Ασυνήθιστα πολλές είσοδοι (πάνω από %d σε %d λεπτά). Ίσως πρόκειται για raid· ελέγξτε τον server.",
 			joinsPerWindow, int(joinWindow.Minutes()))
 	}
 	h.audit(m.User.ID, "", store.EventJoined, map[string]any{"username": m.User.Username}, "")
@@ -99,7 +99,7 @@ func registerChannelData(guildID, userID string) discordgo.GuildChannelCreateDat
 	return discordgo.GuildChannelCreateData{
 		Name:  registerChannelName(userID),
 		Type:  discordgo.ChannelTypeGuildText,
-		Topic: "Ολοκλήρωσε την εγγραφή σου για να μπορέσεις να δείς όλα τα κανάλια στο Steki!",
+		Topic: "Ολοκλήρωσε την εγγραφή σου για να δεις όλα τα κανάλια του Steki.",
 		PermissionOverwrites: []*discordgo.PermissionOverwrite{
 			{
 				ID:   guildID, // @everyone
@@ -149,15 +149,15 @@ func (h *Handler) reportChannelFailure(s *discordgo.Session, user *discordgo.Use
 	detail := fmt.Sprintf("```%v```", err)
 	if errors.Is(err, dc.ErrGuildChannelLimit) {
 		h.alertMods(s,
-			"🚨 <@&%s> Ο σέρβερ έφτασε το όριο καναλιών του Discord. "+
+			"🚨 <@&%s> Ο server έφτασε το όριο καναλιών του Discord. "+
 				"Ο χρήστης **%s** (<@%s>) **δεν** πήρε κανάλι εγγραφής.\n"+
-				"Χρειάζεται να διαγραφούν κανάλια χειροκίνητα.\n%s",
+				"Διαγράψτε μερικά κανάλια χειροκίνητα.\n%s",
 			staffRoleID, user.Username, user.ID, detail)
 		return
 	}
 	h.alertMods(s,
 		"🚨 <@&%s> Απέτυχε η δημιουργία καναλιού εγγραφής για τον **%s** (<@%s>).\n"+
-			"Ο χρήστης **δεν** μπορεί να γραφτεί μέχρι να λυθεί.\n%s",
+			"Ο χρήστης **δεν** μπορεί να γραφτεί μέχρι να λυθεί το πρόβλημα.\n%s",
 		staffRoleID, user.Username, user.ID, detail)
 }
 

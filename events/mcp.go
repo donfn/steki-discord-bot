@@ -236,8 +236,8 @@ func mcpAnnouncementCard(link string) ([]*discordgo.MessageEmbed, []discordgo.Me
 			{Name: "Τι μπορεί να κάνει", Value: "• Να βρίσκει τα κανάλια των μαθημάτων\n" +
 				"• Να δείχνει το υλικό κάθε καναλιού με περιγραφές και ημερομηνίες\n" +
 				"• Να κατεβάζει και να διαβάζει PDF και φωτογραφίες"},
-			{Name: "Ασφάλεια", Value: "• Συνδέεσαι με το Discord σου, μία φορά\n" +
-				"• Μόνο ανάγνωση, μόνο στα κανάλια που βλέπεις κι εσύ\n" +
+			{Name: "Ασφάλεια", Value: "• Συνδέεσαι μία φορά με τον λογαριασμό σου στο Discord\n" +
+				"• Μπορεί μόνο να διαβάζει, και μόνο από τα κανάλια που βλέπεις κι εσύ\n" +
 				"• Η σύνδεση ισχύει 30 ημέρες"},
 		},
 		Footer: &discordgo.MessageEmbedFooter{Text: "Πάτα το κουμπί για οδηγίες βήμα προς βήμα"},
@@ -256,7 +256,7 @@ func mcpAnnouncementCard(link string) ([]*discordgo.MessageEmbed, []discordgo.Me
 // cmdMCPAnnounce posts the announcement in a channel.
 func (h *Handler) cmdMCPAnnounce(s *discordgo.Session, i *discordgo.InteractionCreate, sub *discordgo.ApplicationCommandInteractionDataOption) {
 	if !h.mcpEnabled() {
-		h.reply(s, i, "Ο MCP server είναι ανενεργός: χρειάζονται τα `DISCORD_CLIENT_ID` και `DISCORD_CLIENT_SECRET` και το bucket υλικού.")
+		h.reply(s, i, "Ο MCP server είναι απενεργοποιημένος: χρειάζονται τα `DISCORD_CLIENT_ID` και `DISCORD_CLIENT_SECRET` και το bucket υλικού.")
 		return
 	}
 	opt := findOpt(sub.Options, "channel")
@@ -293,7 +293,7 @@ func (h *Handler) cmdMCPAnnounce(s *discordgo.Session, i *discordgo.InteractionC
 		h.log.Error("mcp: record announcement", "message_id", msg.ID, "error", err)
 	}
 	h.log.Info("mcp: announcement posted", "channel_id", ch.ID, "message_id", msg.ID, "user_id", actorID(i))
-	h.reply(s, i, fmt.Sprintf("✅ Το μήνυμα στάλθηκε στο <#%s>. Το κουμπί του ανανεώνεται αυτόματα κάθε 30 λεπτά.", ch.ID))
+	h.reply(s, i, fmt.Sprintf("✅ Το μήνυμα στάλθηκε στο <#%s>. Ο σύνδεσμος του κουμπιού ανανεώνεται αυτόματα κάθε 30 λεπτά.", ch.ID))
 }
 
 // rotateMCPLinks gives every announcement a new link, in place and silently,

@@ -24,7 +24,7 @@ func (h *Handler) cmdGuardStatus(s *discordgo.Session, i *discordgo.InteractionC
 
 	g, err := h.st.GuardStatus(ctx, user.ID)
 	if errors.Is(err, store.ErrNotFound) {
-		h.reply(s, i, fmt.Sprintf("Ο <@%s> δεν έχει στείλει ποτέ συνημμένο ή σύνδεσμο· καμία εγγραφή προστασίας.", user.ID))
+		h.reply(s, i, fmt.Sprintf("Ο <@%s> δεν έχει στείλει ποτέ συνημμένο ή σύνδεσμο, οπότε δεν υπάρχουν στοιχεία προστασίας.", user.ID))
 		return
 	}
 	if err != nil {
@@ -37,9 +37,9 @@ func (h *Handler) cmdGuardStatus(s *discordgo.Session, i *discordgo.InteractionC
 	fmt.Fprintf(&b, "**Προστασία για <@%s>**\n", user.ID)
 	switch {
 	case g.LinkPending && g.RestrictedAt != nil:
-		fmt.Fprintf(&b, "🔒 Σε περιορισμό από %s, περιμένει να λύσει το captcha.\n", discordTime(*g.RestrictedAt))
+		fmt.Fprintf(&b, "🔒 Σε περιορισμό από %s, μέχρι να λύσει το captcha.\n", discordTime(*g.RestrictedAt))
 	case g.LinkPending:
-		b.WriteString("🔒 Έχει ανοιχτό σύνδεσμο captcha.\n")
+		b.WriteString("🔒 Του έχει σταλεί σύνδεσμος captcha που δεν έχει λυθεί ακόμα.\n")
 	default:
 		b.WriteString("✅ Κανένας ενεργός περιορισμός.\n")
 	}
@@ -49,7 +49,7 @@ func (h *Handler) cmdGuardStatus(s *discordgo.Session, i *discordgo.InteractionC
 		b.WriteString("Χωρίς περίοδο χάριτος.\n")
 	}
 	if g.WindowStart != nil && now.Sub(*g.WindowStart) < guardWindow {
-		fmt.Fprintf(&b, "⏱️ Έστειλε συνημμένο ή σύνδεσμο %s· ένα ακόμα μέσα στην ώρα ενεργοποιεί τον περιορισμό.\n",
+		fmt.Fprintf(&b, "⏱️ Έστειλε συνημμένο ή σύνδεσμο %s. Αν στείλει κι άλλο μέσα σε μία ώρα, μπαίνει σε περιορισμό.\n",
 			discordTime(*g.WindowStart))
 	}
 	h.reply(s, i, b.String())
@@ -86,7 +86,7 @@ func (h *Handler) cmdGuardRestrict(s *discordgo.Session, i *discordgo.Interactio
 	res, err := h.restrict(s, user.ID, i.GuildID, i.ChannelID, verify.ReasonManual, tokenID, actorID(i))
 	if err != nil {
 		h.reply(s, i, fmt.Sprintf("Ο περιορισμός απέτυχε: %v\n"+
-			"Αν ο χρήστης έχει ρόλο ίσο ή υψηλότερο από του bot, το Discord δεν επιτρέπει timeout.", err))
+			"Το Discord δεν επιτρέπει timeout σε χρήστη με ρόλο ίσο ή υψηλότερο από του bot.", err))
 		return
 	}
 	if !res.DMSent {
@@ -115,5 +115,5 @@ func (h *Handler) cmdGuardUngrace(s *discordgo.Session, i *discordgo.Interaction
 	h.alertMods(s, "🕊️ Ο <@%s> αφαίρεσε την περίοδο χάριτος του <@%s>· η προστασία ισχύει ξανά κανονικά.",
 		actorID(i), user.ID)
 	h.reply(s, i, fmt.Sprintf("🕊️ Η περίοδος χάριτος του <@%s> αφαιρέθηκε. "+
-		"Ο επόμενος περιορισμός θα ισχύσει κανονικά.", user.ID))
+		"Από εδώ και πέρα η προστασία ισχύει κανονικά.", user.ID))
 }

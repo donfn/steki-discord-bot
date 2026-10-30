@@ -19,7 +19,7 @@ var (
 	errRoleNotGranted  = errors.New("verified in the database but the role was not granted")
 )
 
-const msgGenericError = "Υπήρξε ένα σφάλμα. Παρακαλώ προσπάθησε αργότερα..."
+const msgGenericError = "Κάτι πήγε στραβά. Δοκίμασε ξανά σε λίγο."
 
 // handleRegistration routes a message sent in a register channel to the step
 // the member is currently on.
@@ -74,7 +74,7 @@ func (h *Handler) stepSendEmail(ctx context.Context, s *discordgo.Session,
 
 	if reg.CodeSentCount >= maxCodeSends ||
 		!h.gate.allow("mail-user:"+reg.UserID, maxMailsPerUserHour, time.Hour) {
-		h.alertModsOnce(s, "toomany:"+reg.UserID, "⚠️ Ο χρήστης <@%s> ζήτησε %d email εγγραφής. Πιθανή κατάχρηση.",
+		h.alertModsOnce(s, "toomany:"+reg.UserID, "⚠️ Ο χρήστης <@%s> ζήτησε %d email εγγραφής. Ίσως πρόκειται για κατάχρηση.",
 			reg.UserID, reg.CodeSentCount)
 		return result(cardTooMany)
 	}
@@ -189,7 +189,7 @@ func (h *Handler) completeVerification(ctx context.Context, s *discordgo.Session
 	guildID, channelID string, reg *store.Registration) error {
 
 	if reg.Email == nil {
-		h.alertMods(s, "⚠️ Ο <@%s> αποδέχτηκε τον σύνδεσμο αλλά δεν υπάρχει email στη βάση. Χρειάζεται έλεγχος.", reg.UserID)
+		h.alertMods(s, "⚠️ Ο <@%s> πάτησε τον σύνδεσμο, αλλά δεν υπάρχει email του στη βάση. Ελέγξτε την εγγραφή του.", reg.UserID)
 		return errIneligibleEmail
 	}
 	email := *reg.Email
@@ -217,7 +217,7 @@ func (h *Handler) completeVerification(ctx context.Context, s *discordgo.Session
 		}
 		return err
 	case errors.Is(err, errIneligibleEmail):
-		h.alertMods(s, "⚠️ Κατά την εγγραφή του <@%s> το mail `%s` δεν πληροί τις προϋποθέσεις. Please check.",
+		h.alertMods(s, "⚠️ Ο <@%s> ολοκλήρωσε την εγγραφή με το `%s`, που δεν είναι αποδεκτό ακαδημαϊκό email. Ελέγξτε την εγγραφή του.",
 			reg.UserID, email)
 		h.send(s, channelID, "⚠️ Κάτι πήγε στραβά. Η Ομάδα Διαχείρισης το είδε και θα σε βοηθήσει σύντομα.")
 		return err
@@ -226,7 +226,7 @@ func (h *Handler) completeVerification(ctx context.Context, s *discordgo.Session
 		// so the member is not left with nothing while a moderator steps in.
 		h.log.Error("grant role failed", "user_id", reg.UserID, "error", err)
 		h.alertMods(s, "🚨 <@&%s> Ο <@%s> επαληθεύτηκε αλλά δεν μπόρεσα να του δώσω ρόλο. "+
-			"Χρειάζεται χειροκίνητα: ```%v```", staffRoleID, reg.UserID, err)
+			"Δώστε του τον ρόλο χειροκίνητα: ```%v```", staffRoleID, reg.UserID, err)
 		h.send(s, channelID, "⚠️ Κάτι πήγε στραβά. Η Ομάδα Διαχείρισης το είδε και θα σε βοηθήσει σύντομα.")
 		return err
 	default:
@@ -237,7 +237,7 @@ func (h *Handler) completeVerification(ctx context.Context, s *discordgo.Session
 	}
 
 	h.audit(reg.UserID, reg.ID, store.EventVerified, map[string]any{"email": email}, "")
-	h.alertMods(s, "✅ Ο χρήστης <@%s> ολοκλήρωσε με επιτυχία την εγγραφή του με `%s`.", reg.UserID, email)
+	h.alertMods(s, "✅ Ο χρήστης <@%s> ολοκλήρωσε την εγγραφή του με `%s`.", reg.UserID, email)
 
 	h.revokeHelp(ctx, s, reg.UserID)
 	if channelID != "" {

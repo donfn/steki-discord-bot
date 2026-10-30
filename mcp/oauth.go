@@ -374,7 +374,7 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) {
 	// shown to the member instead of sent anywhere.
 	client, err := s.client(q.Get("client_id"))
 	if err != nil {
-		s.errorPage(w, http.StatusBadRequest, "Η εφαρμογή δεν είναι εγγεγραμμένη ή η εγγραφή της έληξε. Δοκίμασε να τη συνδέσεις ξανά.")
+		s.errorPage(w, http.StatusBadRequest, "Η εφαρμογή δεν είναι καταχωρημένη ή η καταχώρησή της έληξε. Σύνδεσέ την ξανά από την αρχή.")
 		return
 	}
 	redirect := q.Get("redirect_uri")
@@ -382,7 +382,7 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) {
 		redirect = client.Redirects[0]
 	}
 	if !slices.Contains(client.Redirects, redirect) {
-		s.errorPage(w, http.StatusBadRequest, "Η διεύθυνση επιστροφής δεν ταιριάζει με την εγγραφή της εφαρμογής.")
+		s.errorPage(w, http.StatusBadRequest, "Η διεύθυνση επιστροφής δεν ταιριάζει με αυτή που δήλωσε η εφαρμογή.")
 		return
 	}
 
@@ -472,7 +472,7 @@ func (s *Server) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	case err != nil:
 		s.log.Error("mcp: check member", "user_id", user.ID, "error", err)
-		s.errorPage(w, http.StatusServiceUnavailable, "Δεν μπόρεσα να ελέγξω την εγγραφή σου. Δοκίμασε ξανά σε λίγο.")
+		s.errorPage(w, http.StatusServiceUnavailable, "Δεν μπόρεσα να ελέγξω αν είσαι μέλος του Steki. Δοκίμασε ξανά σε λίγο.")
 		return
 	}
 

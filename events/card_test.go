@@ -40,7 +40,7 @@ func TestCardAskOffersCompleteRegistration(t *testing.T) {
 
 func TestCardSentEchoesAddressAndTicksStepOne(t *testing.T) {
 	c := card{userID: "42", state: cardSent, email: "th12345@edu.hmu.gr"}
-	if !strings.Contains(c.status(), "Έστειλες το `th12345@edu.hmu.gr` για email.") {
+	if !strings.Contains(c.status(), "Έγραψες: `th12345@edu.hmu.gr`") {
 		t.Errorf("status = %q", c.status())
 	}
 	if !strings.HasPrefix(c.steps(), "✅") || !strings.Contains(c.steps(), "👉") {

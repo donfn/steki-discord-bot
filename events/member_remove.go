@@ -35,7 +35,7 @@ func (h *Handler) onMemberRemove(s *discordgo.Session, m *discordgo.GuildMemberR
 	if member, err := h.st.GetMember(ctx, m.User.ID); err == nil {
 		stay = fmt.Sprintf("%.2f ημέρες", time.Since(member.LastJoinAt).Hours()/24)
 	}
-	h.alertMods(s, "Ο χρήστης *%s* (<@%s>) αποχώρησε από τον σέρβερ. Ήταν στον σέρβερ για %s.",
+	h.alertMods(s, "Ο χρήστης *%s* (<@%s>) έφυγε από τον server μετά από %s.",
 		m.User.Username, m.User.ID, stay)
 
 	if err := h.st.MarkMemberLeft(ctx, m.User.ID); err != nil {

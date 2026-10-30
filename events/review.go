@@ -41,7 +41,7 @@ var reviewMu sync.Mutex
 func reviewCard(m *store.Material, imageURL string) (*discordgo.MessageEmbed, []discordgo.MessageComponent) {
 	e := &discordgo.MessageEmbed{
 		Title:       "🖼️ Εικόνα για έλεγχο",
-		Description: "Δεν ανέβηκε στο bucket και δεν φαίνεται στη σελίδα υλικού μέχρι να αποφασίσει κάποιος admin.",
+		Description: "Δεν έχει ανέβει στο bucket και δεν φαίνεται στη σελίδα υλικού μέχρι να αποφασίσει κάποιος admin.",
 		Color:       0xE67E22,
 		Fields: []*discordgo.MessageEmbedField{
 			{Name: "Γιατί", Value: orDash(derefStr(m.ScreenNote))},
@@ -178,10 +178,10 @@ func (h *Handler) onReviewButton(s *discordgo.Session, i *discordgo.InteractionC
 	}
 	if approve {
 		embed.Color = 0x2ECC71
-		embed.Description = "✅ Εγκρίθηκε από <@" + who + ">. Ανεβαίνει στο bucket και στη σελίδα υλικού."
+		embed.Description = "✅ Εγκρίθηκε από <@" + who + ">. Ανεβαίνει τώρα στο bucket και στη σελίδα υλικού."
 	} else {
 		embed.Color = 0xE74C3C
-		embed.Description = "🚫 Απορρίφθηκε από <@" + who + ">. Δεν ανέβηκε και δεν θα ανέβει."
+		embed.Description = "🚫 Απορρίφθηκε από <@" + who + ">. Δεν θα ανέβει."
 	}
 	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseUpdateMessage,
@@ -218,9 +218,9 @@ func (h *Handler) cmdMaterialsRescan(s *discordgo.Session, i *discordgo.Interact
 	}
 	h.mat.Rescan()
 	h.log.Info("materials: rescan started", "images", n, "user_id", actorID(i))
-	h.reply(s, i, fmt.Sprintf("🔎 Ξεκίνησε ο έλεγχος για **%d** εικόνες. Στα κανάλια μαθημάτων, όσες δεν είναι υλικό μαθήματος ή δείχνουν ανθρώπους "+
-		"βγαίνουν από τη σελίδα και το bucket και έρχονται εδώ για έγκριση. Αν τελειώσει το quota του Gemini, "+
-		"ο έλεγχος περιμένει και συνεχίζει μόνος του. Αν γίνει επανεκκίνηση πριν τελειώσει, τρέξε ξανά την εντολή.", n))
+	h.reply(s, i, fmt.Sprintf("🔎 Ξεκίνησε ο έλεγχος για **%d** εικόνες. Όσες δεν είναι υλικό μαθήματος ή δείχνουν ανθρώπους "+
+		"αφαιρούνται από τη σελίδα και το bucket και έρχονται εδώ για έγκριση. Αν τελειώσει το quota του Gemini, "+
+		"ο έλεγχος περιμένει και συνεχίζει μόνος του. Αν το bot επανεκκινηθεί πριν τελειώσει, τρέξε ξανά την εντολή.", n))
 }
 
 // messageIDFrom reads a message ID from a Discord message link or a bare ID.
@@ -249,7 +249,7 @@ func isSnowflake(v string) bool {
 // the bucket for good, whatever its state.
 func (h *Handler) cmdMaterialsRemove(s *discordgo.Session, i *discordgo.InteractionCreate, sub *discordgo.ApplicationCommandInteractionDataOption) {
 	if h.mat == nil {
-		h.reply(s, i, "Το υλικό είναι ανενεργό: λείπει το bucket.")
+		h.reply(s, i, "Το υλικό είναι απενεργοποιημένο: δεν έχει ρυθμιστεί bucket.")
 		return
 	}
 	msgOpt := findOpt(sub.Options, "message")
@@ -259,7 +259,7 @@ func (h *Handler) cmdMaterialsRemove(s *discordgo.Session, i *discordgo.Interact
 	}
 	messageID, ok := messageIDFrom(msgOpt.StringValue())
 	if !ok {
-		h.reply(s, i, "Δεν κατάλαβα το μήνυμα. Δώσε το link του (δεξί κλικ → Copy Message Link) ή το ID του.")
+		h.reply(s, i, "Δεν βρήκα αυτό το μήνυμα. Δώσε το link του (δεξί κλικ → Copy Message Link) ή το ID του.")
 		return
 	}
 	filter := ""
@@ -271,7 +271,7 @@ func (h *Handler) cmdMaterialsRemove(s *discordgo.Session, i *discordgo.Interact
 
 	rows, err := h.st.MaterialsOfMessage(ctx, messageID)
 	if err != nil {
-		h.reply(s, i, fmt.Sprintf("Δεν μπόρεσα να ψάξω: %v", err))
+		h.reply(s, i, fmt.Sprintf("Η αναζήτηση απέτυχε: %v", err))
 		return
 	}
 	var removed, skipped []string
@@ -308,11 +308,11 @@ func (h *Handler) cmdMaterialsRemove(s *discordgo.Session, i *discordgo.Interact
 	case len(removed) > 0:
 		msg := "🗑️ Αφαιρέθηκαν από τη σελίδα και το bucket: " + "`" + strings.Join(removed, "`, `") + "`."
 		if len(skipped) > 0 {
-			msg += " Ήταν ήδη αφαιρεμένα: `" + strings.Join(skipped, "`, `") + "`."
+			msg += " Είχαν ήδη αφαιρεθεί: `" + strings.Join(skipped, "`, `") + "`."
 		}
-		h.reply(s, i, msg+"\nΤο μήνυμα στο Discord δεν αγγίχτηκε.")
+		h.reply(s, i, msg+"\nΤο μήνυμα στο Discord έμεινε όπως ήταν.")
 	case len(skipped) > 0:
-		h.reply(s, i, "Το υλικό αυτού του μηνύματος είναι ήδη αφαιρεμένο.")
+		h.reply(s, i, "Το υλικό αυτού του μηνύματος έχει ήδη αφαιρεθεί.")
 	default:
 		h.reply(s, i, "Δεν βρήκα υλικό για αυτό το μήνυμα"+map[bool]string{true: " με αυτό το όνομα αρχείου", false: ""}[filter != ""]+".")
 	}
@@ -323,7 +323,7 @@ func (h *Handler) cmdMaterialsRemove(s *discordgo.Session, i *discordgo.Interact
 // are picked up.
 func (h *Handler) cmdMaterialsScan(s *discordgo.Session, i *discordgo.InteractionCreate, _ *discordgo.ApplicationCommandInteractionDataOption) {
 	if h.mat == nil || !h.matLive.Load() {
-		h.reply(s, i, "Το υλικό είναι ανενεργό: λείπει το bucket ή δεν απάντησε.")
+		h.reply(s, i, "Το υλικό είναι απενεργοποιημένο: δεν έχει ρυθμιστεί bucket ή δεν απαντάει.")
 		return
 	}
 	if !h.scanning.CompareAndSwap(false, true) {

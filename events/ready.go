@@ -59,7 +59,7 @@ func (h *Handler) startMaterials(s *discordgo.Session) {
 	cancel()
 	if err != nil {
 		h.log.Error("material backup off: bucket unreachable", "error", err)
-		h.alertMods(s, "⚠️ Δεν έχω πρόσβαση στο bucket των αντιγράφων (%v). Η αποθήκευση υλικού είναι ανενεργή μέχρι την επόμενη επανεκκίνηση.", err)
+		h.alertMods(s, "⚠️ Δεν έχω πρόσβαση στο bucket των αντιγράφων (%v). Η αποθήκευση υλικού είναι απενεργοποιημένη μέχρι την επόμενη επανεκκίνηση.", err)
 		return
 	}
 	h.log.Info("material backup enabled")
@@ -74,6 +74,7 @@ func (h *Handler) startMaterials(s *discordgo.Session) {
 	h.goLoopAfter("sticky_links", materialLinkRotate, func() { h.rotateStickyLinks(s) })
 	// Cards for flagged images left over from before the restart.
 	go h.safely("review_cards", func() { h.announceReviews(s) })
+	go h.safely("report_cards", func() { h.announceReports(s) })
 	// The MCP announcements' button links, replaced like the stickies'.
 	h.goLoop("mcp_links", mcpLinkRotate, func() { h.rotateMCPLinks(s) })
 }

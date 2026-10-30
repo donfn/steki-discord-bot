@@ -48,11 +48,11 @@ func (h *Handler) screenInvites(s *discordgo.Session, m *discordgo.Message) bool
 	}
 
 	if dm, err := s.UserChannelCreate(m.Author.ID); err == nil {
-		h.send(s, dm.ID, "Το μήνυμά σου στο στέκι διαγράφτηκε γιατί περιείχε **πρόσκληση σε άλλον Discord server**. "+
-			"Προσκλήσεις σε άλλους servers μπορεί να στείλει μόνο η Ομάδα Διαχείρισης.\n"+
+		h.send(s, dm.ID, "Το μήνυμά σου στο Steki διαγράφηκε γιατί περιείχε **πρόσκληση σε άλλον Discord server**. "+
+			"Μόνο η Ομάδα Διαχείρισης μπορεί να στέλνει προσκλήσεις σε άλλους servers.\n"+
 			"**Αν δεν το έστειλες εσύ, άλλαξε άμεσα τον κωδικό σου και ενεργοποίησε το 2FA.**")
 	}
-	h.alertMods(s, "🔗 Διαγράφτηκε πρόσκληση σε άλλον server από <@%s> στο <#%s>:```%s```",
+	h.alertMods(s, "🔗 Διαγράφηκε πρόσκληση σε άλλον server από <@%s> στο <#%s>:```%s```",
 		m.Author.ID, m.ChannelID, truncate(quote(text), 1500))
 	h.log.Info("invite: removed foreign invite", "user_id", m.Author.ID, "channel_id", m.ChannelID)
 	return true

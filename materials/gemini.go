@@ -184,38 +184,47 @@ func (a answer) verdict() Verdict {
 
 // classify sends the image and reads the model's answer.
 func (g *Gemini) classify(ctx context.Context, img io.Reader) (Verdict, error) {
-	// The body is built on the fly so the image is base64-encoded as it is
-	// read, never held whole in memory.
+	body, err := g.post(ctx, func(w io.Writer) error { return g.writeRequest(w, img) })
+	if err != nil {
+		return Verdict{}, err
+	}
+	return parseGemini(body)
+}
+
+// post sends a generateContent request whose body write produces, and returns
+// the response body of a successful call. The body is built on the fly so a
+// file is base64-encoded as it is read, never held whole in memory.
+func (g *Gemini) post(ctx context.Context, write func(io.Writer) error) ([]byte, error) {
 	pr, pw := io.Pipe()
-	go func() { pw.CloseWithError(g.writeRequest(pw, img)) }()
+	go func() { pw.CloseWithError(write(pw)) }()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.url, pr)
 	if err != nil {
 		pr.Close()
-		return Verdict{}, err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-goog-api-key", g.key) // a header, so it never lands in a URL or a log
 	resp, err := g.http.Do(req)
 	if err != nil {
 		pr.CloseWithError(err)
-		return Verdict{}, fmt.Errorf("gemini: %w", errScrub(err))
+		return nil, fmt.Errorf("gemini: %w", errScrub(err))
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return Verdict{}, fmt.Errorf("gemini: read response: %w", err)
+		return nil, fmt.Errorf("gemini: read response: %w", err)
 	}
 	switch {
 	case resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable:
-		return Verdict{}, g.limited(resp, body)
+		return nil, g.limited(resp, body)
 	case resp.StatusCode != http.StatusOK:
-		return Verdict{}, fmt.Errorf("gemini: HTTP %d: %s", resp.StatusCode, apiMessage(body))
+		return nil, fmt.Errorf("gemini: HTTP %d: %s", resp.StatusCode, apiMessage(body))
 	}
 	g.mu.Lock()
 	g.backof = 0
 	g.mu.Unlock()
-	return parseGemini(body)
+	return body, nil
 }
 
 // writeRequest streams the generateContent request body.

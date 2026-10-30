@@ -288,7 +288,7 @@ func (h *Handler) disableStickies(s *discordgo.Session, channelID, messageID str
 		h.log.Error("sticky: delete non-silent copy", "channel_id", channelID, "error", err)
 	}
 	h.log.Error("sticky: silent sending does not work; stickies are off until restart", "channel_id", channelID)
-	h.alertMods(s, "⚠️ Το Discord δεν κράτησε σιωπηλό το μήνυμα «Υλικό μαθήματος» στο <#%s>, οπότε το διέγραψα "+
+	h.alertMods(s, "⚠️ Το Discord έστειλε το μήνυμα «Υλικό μαθήματος» στο <#%s> με ειδοποίηση αντί για σιωπηλά. Το διέγραψα "+
 		"και σταμάτησα τα sticky μηνύματα μέχρι την επόμενη επανεκκίνηση, για να μην ενοχλούνται τα μέλη.", channelID)
 }
 

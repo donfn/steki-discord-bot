@@ -84,7 +84,7 @@ func (h *Handler) onHelpButton(s *discordgo.Session, i *discordgo.InteractionCre
 	}
 	h.audit(reg.UserID, reg.ID, store.EventHelpRequested, nil, "")
 	h.alertMods(s, "🆘 Ο <@%s> ζήτησε βοήθεια με την εγγραφή του στο <#%s>.", reg.UserID, config.SupportChannelID)
-	h.respondNow(s, i, "Σε έβαλα στο <#"+config.SupportChannelID+">. Γράψε εκεί τι πρόβλημα έχεις "+
+	h.respondNow(s, i, "Σου άνοιξα το <#"+config.SupportChannelID+">. Γράψε εκεί τι πρόβλημα έχεις "+
 		"και κάποιος από την ομάδα θα σου απαντήσει.\n"+
 		"-# Το κανάλι θα κρυφτεί ξανά όταν τελειώσει η εγγραφή σου.")
 }

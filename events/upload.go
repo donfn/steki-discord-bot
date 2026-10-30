@@ -147,7 +147,7 @@ func (h *Handler) openUploadForm(s *discordgo.Session, i *discordgo.InteractionC
 			CustomID: uploadModalID,
 			Title:    "Ανέβασμα υλικού",
 			Components: []discordgo.MessageComponent{
-				label("Τίτλος", "Θα εμφανίζεται πάνω από το αρχείο στο κανάλι.", title),
+				label("Τίτλος", "Εμφανίζεται πάνω από τα αρχεία στο κανάλι.", title),
 				label("Αρχεία", "PDF ή εικόνες (JPG, PNG, WebP, HEIC), έως 10 αρχεία.", map[string]any{
 					"type":       fileUploadComponent,
 					"custom_id":  uploadFileID,
@@ -278,8 +278,8 @@ func (h *Handler) onUploadSubmit(s *discordgo.Session, u *uploadSubmit) {
 			answer("Κάτι πήγε στραβά με τα αρχεία. Δοκίμασε ξανά.")
 			return
 		}
-		if materialType(a) == "" {
-			answer(fmt.Sprintf("Το «%s» δεν είναι PDF ή JPG. Ανέβασε μόνο αρχεία PDF ή JPG.", truncateRunes(a.Filename, 60)))
+		if materialType(a) == "" && !convertibleImage(a) {
+			answer(fmt.Sprintf("Το «%s» δεν είναι PDF ή εικόνα. Ανέβασε PDF ή εικόνες JPG, PNG, WebP ή HEIC.", truncateRunes(a.Filename, 60)))
 			return
 		}
 		total += int64(a.Size)
@@ -301,7 +301,7 @@ func (h *Handler) onUploadSubmit(s *discordgo.Session, u *uploadSubmit) {
 		body, err := download(ctx, a.URL, int64(a.Size))
 		if err != nil {
 			log.Error("upload: fetch uploaded file", "filename", a.Filename, "error", err)
-			answer("Δεν μπόρεσα να παραλάβω τα αρχεία. Δοκίμασε ξανά σε λίγο.")
+			answer("Δεν μπόρεσα να κατεβάσω τα αρχεία. Δοκίμασε ξανά σε λίγο.")
 			return
 		}
 		name, ctype := a.Filename, materialType(a)
@@ -321,7 +321,7 @@ func (h *Handler) onUploadSubmit(s *discordgo.Session, u *uploadSubmit) {
 		}
 		posted += int64(len(body))
 		if posted > limit {
-			answer(fmt.Sprintf("Τα αρχεία είναι πολύ μεγάλα μετά τη μετατροπή των εικόνων σε JPG (όριο %s). "+
+			answer(fmt.Sprintf("Μετά τη μετατροπή των εικόνων σε JPG, τα αρχεία ξεπερνούν το όριο των %s. "+
 				"Ανέβασέ τα σε μικρότερες ομάδες.", formatBytes(limit)))
 			return
 		}
@@ -353,7 +353,7 @@ func (h *Handler) onUploadSubmit(s *discordgo.Session, u *uploadSubmit) {
 		pinned = false
 		log.Warn("upload: pin", "error", err)
 		h.alertModsOnce(s, "pin:"+ch.ID, "⚠️ Δεν μπόρεσα να καρφιτσώσω το υλικό που ανέβηκε στο <#%s> (%v). "+
-			"Ίσως έχει γεμίσει το όριο καρφιτσωμένων μηνυμάτων.", ch.ID, err)
+			"Ίσως το κανάλι έχει φτάσει το όριο των καρφιτσωμένων μηνυμάτων.", ch.ID, err)
 	}
 	// The post and the "pinned a message" notice both came from the bot,
 	// which the message handler ignores, so the sticky is moved here.

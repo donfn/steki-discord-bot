@@ -53,6 +53,9 @@ type Handler struct {
 	// the stickies and the material page off. mat is set by Register.
 	bucket *materials.Bucket
 	mat    *materials.Worker
+	// judge checks the reports filed on the material page. It is set by
+	// Register when the content check has an API key.
+	judge  materials.ReportJudge
 	sticky stickyQueue
 	// matLive is set once the bucket answered and the worker runs; the
 	// stickies and both buttons wait for it.
@@ -128,7 +131,8 @@ func (h *Handler) Register(s *discordgo.Session) {
 	if h.bucket != nil {
 		var screener materials.Screener = materials.BasicScreener{}
 		if h.cfg.GoogleAIToken != "" {
-			screener = materials.NewGemini(h.cfg.GoogleAIToken, h.cfg.GoogleAIModel, h.log)
+			g := materials.NewGemini(h.cfg.GoogleAIToken, h.cfg.GoogleAIModel, h.log)
+			screener, h.judge = g, g
 			h.log.Info("image content check enabled")
 		}
 		h.mat = materials.NewWorker(h.st, h.bucket, screener, h.refreshMaterialSource(s),
