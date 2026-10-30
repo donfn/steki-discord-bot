@@ -138,6 +138,7 @@ func run() error {
 	pages := verify.NewServer(verify.NewTokens(cfg.JWTSecret), h.GuardLifter(sess), h.LinkConsenter(sess),
 		h.MaterialSource(sess), logger)
 	pages.SetLinkWatcher(h)
+	pages.SetProfiles(h.ProfileSource(sess))
 	if len(cfg.JWTSecret) < 32 {
 		logger.Warn("JWT_SECRET is shorter than 32 characters; use a long random value")
 	}

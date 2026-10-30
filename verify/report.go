@@ -91,7 +91,7 @@ func (v *Server) reportFile(w http.ResponseWriter, r *http.Request) {
 	}
 	sid := sessionID(r)
 	channelID, subject, ok := v.sessions.authorizeOnPage(sid, in.File, time.Now())
-	if _, who := v.sessions.owner(sid); who.Viewer != "" {
+	if _, viewer := v.sessions.owner(sid); viewer != "" {
 		// A staff member viewing as the member cannot report in their name.
 		ok = false
 	}

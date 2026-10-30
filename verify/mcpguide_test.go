@@ -51,7 +51,7 @@ func TestMCPGuidePage(t *testing.T) {
 
 	// Expired, malformed and other kinds of links all show the expired page.
 	expired := issue(func() (string, error) { return tk.IssueGuide("u1", "1", "b", time.Now().Add(-time.Hour)) })
-	materials := issue(func() (string, error) { return tk.IssueMaterials("u1", "1", "2", "c", Profile{}, hour) })
+	materials := issue(func() (string, error) { return tk.IssueMaterials("u1", "1", "2", "c", "", hour) })
 	media := issue(func() (string, error) { return tk.Issue("3", "1", ReasonMedia, "d", hour) })
 	for name, tok := range map[string]string{"expired": expired, "materials": materials, "media guard": media, "garbage": "x"} {
 		if _, body := page(tok); !strings.Contains(body, "Το link έληξε") || strings.Contains(body, "Add custom connector") {

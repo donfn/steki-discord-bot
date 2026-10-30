@@ -65,8 +65,9 @@ func hasSticky(ch *discordgo.Channel) bool {
 }
 
 // materialLink returns one member's personal link to a course channel's
-// material page, and the link's ID. who is how the page shows them.
-func (h *Handler) materialLink(userID, channelID string, who verify.Profile) (link, tokenID string, err error) {
+// material page, and the link's ID. viewer is the staff member viewing as them,
+// if any.
+func (h *Handler) materialLink(userID, channelID, viewer string) (link, tokenID string, err error) {
 	guildID := h.guildID()
 	if guildID == "" {
 		return "", "", errors.New("materials: guild not known yet")
@@ -74,7 +75,7 @@ func (h *Handler) materialLink(userID, channelID string, who verify.Profile) (li
 	if tokenID, err = newTokenID(); err != nil {
 		return "", "", err
 	}
-	token, err := h.tokens.IssueMaterials(userID, guildID, channelID, tokenID, who, time.Now().Add(personalLinkTTL))
+	token, err := h.tokens.IssueMaterials(userID, guildID, channelID, tokenID, viewer, time.Now().Add(personalLinkTTL))
 	if err != nil {
 		return "", "", err
 	}

@@ -125,6 +125,10 @@ type testEnv struct {
 
 func (e *testEnv) LinkUsed(string) { e.used.Add(1) }
 
+func (e *testEnv) MemberProfile(_ context.Context, _, userID string) (Profile, error) {
+	return Profile{Name: "Μαρία", Username: "maria_" + userID, Avatar: "https://cdn.discordapp.com/avatars/1/a.png?size=64"}, nil
+}
+
 func newEnv(t *testing.T) *testEnv {
 	t.Helper()
 	e := &testEnv{tk: NewTokens("secret"), fl: &fakeLifter{active: "jti1"}, fc: &fakeConsenter{active: "link1"},
@@ -132,6 +136,7 @@ func newEnv(t *testing.T) *testEnv {
 	mux := http.NewServeMux()
 	v := NewServer(e.tk, e.fl, e.fc, e.fm, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	v.SetLinkWatcher(e)
+	v.SetProfiles(e)
 	v.Register(mux)
 	e.srv = httptest.NewServer(mux)
 	t.Cleanup(e.srv.Close)

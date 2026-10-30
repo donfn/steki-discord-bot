@@ -112,8 +112,7 @@ func (e *testEnv) materialToken(t *testing.T, channelID string, ttl time.Duratio
 
 func (e *testEnv) materialTokenFor(t *testing.T, userID, channelID string, ttl time.Duration) string {
 	t.Helper()
-	who := Profile{Name: "Μαρία", Username: "maria_" + userID, Avatar: "https://cdn.discordapp.com/avatars/1/a.png?size=64"}
-	tok, err := e.tk.IssueMaterials(userID, "g1", channelID, fmt.Sprint("m", tokenSeq.Add(1)), who, time.Now().Add(ttl))
+	tok, err := e.tk.IssueMaterials(userID, "g1", channelID, fmt.Sprint("m", tokenSeq.Add(1)), "", time.Now().Add(ttl))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -348,7 +347,7 @@ func TestSessionEndsWhenEveryFileIsDownloaded(t *testing.T) {
 func TestSessionRunsOut(t *testing.T) {
 	s := newSessions()
 	now := time.Now()
-	id, ok := s.open("100", "u1", "g1", Profile{}, now)
+	id, ok := s.open("100", "u1", "g1", "", now)
 	if !ok {
 		t.Fatal("open refused")
 	}
@@ -356,7 +355,7 @@ func TestSessionRunsOut(t *testing.T) {
 		t.Error("an expired session served its page")
 	}
 
-	id, _ = s.open("100", "u1", "g1", Profile{}, now)
+	id, _ = s.open("100", "u1", "g1", "", now)
 	s.claimPage(id, now)
 	s.setFiles(id, []string{"11"})
 	if _, _, ok := s.authorize(id, "11", now.Add(sessionTTL+time.Second)); ok {
@@ -373,7 +372,7 @@ func TestSessionRunsOut(t *testing.T) {
 func TestEmptyChannelEndsTheSessionAtOnce(t *testing.T) {
 	s := newSessions()
 	now := time.Now()
-	id, _ := s.open("100", "u1", "g1", Profile{}, now)
+	id, _ := s.open("100", "u1", "g1", "", now)
 	s.claimPage(id, now)
 	s.setFiles(id, nil)
 	if _, _, ok := s.authorize(id, "11", now); ok {
@@ -385,14 +384,14 @@ func TestSessionCap(t *testing.T) {
 	s := newSessions()
 	now := time.Now()
 	for i := 0; i < maxSessions; i++ {
-		if _, ok := s.open("100", "u1", "g1", Profile{}, now); !ok {
+		if _, ok := s.open("100", "u1", "g1", "", now); !ok {
 			t.Fatalf("refused session %d before the cap", i)
 		}
 	}
-	if _, ok := s.open("100", "u1", "g1", Profile{}, now); ok {
+	if _, ok := s.open("100", "u1", "g1", "", now); ok {
 		t.Error("opened a session past the cap")
 	}
-	if _, ok := s.open("100", "u1", "g1", Profile{}, now.Add(studyTTL+time.Second)); !ok {
+	if _, ok := s.open("100", "u1", "g1", "", now.Add(studyTTL+time.Second)); !ok {
 		t.Error("expired sessions were not cleared to make room")
 	}
 }
@@ -407,5 +406,18 @@ func TestCourseName(t *testing.T) {
 		if got := courseName(in); got != want {
 			t.Errorf("courseName(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// Discord refuses a link button whose URL is over 512 characters.
+func TestMaterialLinkFitsAButton(t *testing.T) {
+	tk := NewTokens("test-secret")
+	id := strings.Repeat("a", 32)
+	tok, err := tk.IssueMaterials("123456789012345678", "123456789012345678", "123456789012345678", id, "123456789012345678", time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u := "https://steki-bot.example.up.railway.app/materials?t=" + tok; len(u) > 512 {
+		t.Fatalf("link is %d characters", len(u))
 	}
 }
