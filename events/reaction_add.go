@@ -4,12 +4,29 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
+// onReactionRemove reports a reaction a member took back.
+func (h *Handler) onReactionRemove(s *discordgo.Session, r *discordgo.MessageReactionRemove) {
+	if !h.inHomeGuild(r.GuildID) || (s.State.User != nil && r.UserID == s.State.User.ID) {
+		return
+	}
+	h.track("discord_reaction_removed", reactionProps(r.MessageReaction))
+}
+
+// reactionProps describes a reaction by its emoji and where it was left.
+func reactionProps(r *discordgo.MessageReaction) map[string]any {
+	return map[string]any{
+		"guild_id": r.GuildID, "channel_id": r.ChannelID,
+		"emoji": r.Emoji.Name, "emoji_custom": r.Emoji.ID != "",
+	}
+}
+
 // onReactionAdd implements the legacy restart reaction.
 // Both only apply inside the reacting member's own registration channel.
 func (h *Handler) onReactionAdd(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
 	if !h.inHomeGuild(r.GuildID) || (s.State.User != nil && r.UserID == s.State.User.ID) {
 		return
 	}
+	h.track("discord_reaction_added", reactionProps(r.MessageReaction))
 
 	ctx, cancel := h.ctx()
 	defer cancel()

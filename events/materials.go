@@ -231,6 +231,11 @@ func (h *Handler) onMessageDeleteBulk(s *discordgo.Session, m *discordgo.Message
 	for _, id := range m.Messages {
 		h.msgs.take(id)
 	}
+	if h.inHomeGuild(m.GuildID) {
+		h.track("discord_messages_bulk_deleted", map[string]any{
+			"guild_id": m.GuildID, "channel_id": m.ChannelID, "count": len(m.Messages),
+		})
+	}
 	h.forgetMaterials(s, m.GuildID, m.ChannelID, m.Messages...)
 }
 

@@ -16,6 +16,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"steki-bot/analytics"
 	"steki-bot/config"
 	"steki-bot/events"
 	"steki-bot/mcp"
@@ -113,7 +114,21 @@ func run() error {
 	sess.State.TrackThreads = false
 	sess.State.TrackThreadMembers = false
 
+	// A nil client is valid and drops every event, so analytics being off or
+	// misconfigured never affects the bot.
+	an, err := analytics.New(cfg.PostHogKey, cfg.PostHogHost, logger)
+	switch {
+	case err != nil:
+		logger.Warn("analytics is off: PostHog client failed", "error", err)
+	case an == nil:
+		logger.Info("POSTHOG_API_KEY not set; analytics is off")
+	default:
+		logger.Info("posthog analytics enabled", "host", cfg.PostHogHost)
+	}
+	defer an.Close()
+
 	h := events.NewHandler(cfg, st, logger)
+	h.SetAnalytics(an)
 	h.Register(sess)
 
 	if err := sess.Open(); err != nil {
@@ -146,7 +161,7 @@ func run() error {
 	default:
 		logger.Info("mcp server is off: DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET are not set")
 	}
-	srv := startHTTPServer(cfg.Port, st, pages, mcpServer, newShield(cfg, sess, logger), logger)
+	srv := startHTTPServer(cfg.Port, st, pages, mcpServer, newShield(cfg, sess, logger), an, logger)
 
 	logger.Info("bot is running")
 	stop := make(chan os.Signal, 1)
@@ -172,7 +187,7 @@ func run() error {
 
 // startHTTPServer exposes /healthz, so the platform can tell a wedged process
 // from a healthy one, and the registration and media guard pages.
-func startHTTPServer(port string, st *store.Store, pages *verify.Server, mcpSrv *mcp.Server, sh *shield.Detector, logger *slog.Logger) *http.Server {
+func startHTTPServer(port string, st *store.Store, pages *verify.Server, mcpSrv *mcp.Server, sh *shield.Detector, an *analytics.Client, logger *slog.Logger) *http.Server {
 	mux := http.NewServeMux()
 	pages.Register(mux)
 	if mcpSrv != nil {
@@ -199,7 +214,9 @@ func startHTTPServer(port string, st *store.Store, pages *verify.Server, mcpSrv 
 		_, _ = w.Write([]byte("ok"))
 	})
 
-	var handler http.Handler = verify.Harden(mux, logger)
+	// Inside Harden, so requests it turns away (rate limit, busy) are not
+	// reported: a flood must not become a flood of events.
+	var handler http.Handler = verify.Harden(an.Middleware(mux), logger)
 	if sh != nil {
 		// Outside Harden, so requests it turns away still count as load.
 		handler = sh.Middleware(handler)

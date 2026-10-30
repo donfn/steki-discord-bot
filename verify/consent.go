@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"steki-bot/analytics"
 )
 
 // Consent is what the link page shows the member before they accept: who they
@@ -76,7 +78,9 @@ func (v *Server) linkPage(w http.ResponseWriter, r *http.Request) {
 	raw := r.URL.Query().Get("t")
 	_, info, state := v.pending(ctx, raw)
 	data := map[string]any{"State": state}
+	analytics.Tag(ctx, "page", "registration_link", "state", state)
 	if state == stateReady {
+		analytics.Tag(ctx, "university", info.University)
 		uni := Universities[info.University]
 		data["Token"] = raw
 		data["Username"] = info.Username
@@ -123,6 +127,7 @@ func (v *Server) linkAccept(w http.ResponseWriter, r *http.Request) {
 		v.log.Error("link: accept failed", "user_id", c.Subject, "error", err)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": stateError})
 	default:
+		analytics.Tag(ctx, "outcome", "registration_accepted")
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	}
 }

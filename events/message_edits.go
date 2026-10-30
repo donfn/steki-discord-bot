@@ -25,6 +25,9 @@ func (h *Handler) onMessageUpdate(s *discordgo.Session, m *discordgo.MessageUpda
 	if m.Message == nil || m.Author == nil || m.Author.Bot || m.GuildID == "" {
 		return
 	}
+	if h.inHomeGuild(m.GuildID) {
+		h.track("discord_message_edited", messageProps(m.Message))
+	}
 	h.pruneMaterials(s, m.Message)
 	var before cachedMsg
 	var cached bool
@@ -65,10 +68,13 @@ func (h *Handler) onMessageDelete(s *discordgo.Session, m *discordgo.MessageDele
 
 	// Take the message even for other guilds, so the ring does not hold on to it.
 	gone, cached := h.msgs.take(m.ID)
-	if !h.inHomeGuild(m.GuildID) || !cached {
+	if !h.inHomeGuild(m.GuildID) {
 		return
 	}
-	if gone.bot {
+	h.track("discord_message_deleted", map[string]any{
+		"guild_id": m.GuildID, "channel_id": m.ChannelID, "author_known": cached,
+	})
+	if !cached || gone.bot {
 		return
 	}
 

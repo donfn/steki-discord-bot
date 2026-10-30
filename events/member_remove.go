@@ -20,6 +20,8 @@ func (h *Handler) onMemberRemove(s *discordgo.Session, m *discordgo.GuildMemberR
 		return
 	}
 
+	h.track("discord_member_left", map[string]any{"guild_id": m.GuildID})
+
 	defer h.lockUser(m.User.ID)()
 
 	ctx, cancel := h.ctxTimeout(flowTimeout)
