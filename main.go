@@ -160,7 +160,8 @@ func run() error {
 	default:
 		logger.Info("mcp server is off: DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET are not set")
 	}
-	srv := startHTTPServer(cfg.Port, st, pages, mcpServer, newShield(cfg, st, sess, logger), an, logger)
+	srv := startHTTPServer(cfg.Port, st, pages, mcpServer, newShield(cfg, st, sess, logger),
+		verify.NewPeerBlock(cfg.BlastdoorURL, logger), an, logger)
 
 	logger.Info("bot is running")
 	stop := make(chan os.Signal, 1)
@@ -186,7 +187,7 @@ func run() error {
 
 // startHTTPServer exposes /healthz, so the platform can tell a wedged process
 // from a healthy one, and the registration and media guard pages.
-func startHTTPServer(port string, st *store.Store, pages *verify.Server, mcpSrv *mcp.Server, sh *shield.Detector, an *analytics.Client, logger *slog.Logger) *http.Server {
+func startHTTPServer(port string, st *store.Store, pages *verify.Server, mcpSrv *mcp.Server, sh *shield.Detector, peers *verify.PeerBlock, an *analytics.Client, logger *slog.Logger) *http.Server {
 	mux := http.NewServeMux()
 	pages.Register(mux)
 	if mcpSrv != nil {
@@ -209,7 +210,9 @@ func startHTTPServer(port string, st *store.Store, pages *verify.Server, mcpSrv 
 	// reported: a flood must not become a flood of events.
 	// The shield goes outside Harden, so requests Harden turns away still
 	// count towards a block.
-	handler := sh.Middleware(verify.Harden(an.Middleware(mux), logger))
+	// The peer block goes outside the shield: what it refuses has a forged
+	// address, which must not count against anyone.
+	handler := peers.Middleware(sh.Middleware(verify.Harden(an.Middleware(mux), logger)))
 
 	// The verification page is public, so every phase of a request is
 	// bounded: a client that trickles bytes cannot hold connections open.
@@ -229,6 +232,7 @@ func startHTTPServer(port string, st *store.Store, pages *verify.Server, mcpSrv 
 	shieldCtx, stopShield := context.WithCancel(context.Background())
 	srv.RegisterOnShutdown(stopShield)
 	go sh.Run(shieldCtx)
+	go peers.Run(shieldCtx)
 	go func() {
 		tick := time.NewTicker(5 * time.Second)
 		defer tick.Stop()

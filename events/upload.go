@@ -327,10 +327,13 @@ func (h *Handler) onUploadSubmit(s *discordgo.Session, u *uploadSubmit) {
 		}
 		name, ctype := a.Filename, materialType(a)
 		if ctype == "" {
-			jpg, err := h.converter.ToJPEG(ctx, body)
+			jpg, err := h.converter.ToJPEG(ctx, body, limit-posted)
 			if err != nil {
 				log.Warn("upload: convert image", "filename", a.Filename, "error", err)
-				if errors.Is(err, materials.ErrUnsupportedImage) {
+				if errors.Is(err, materials.ErrConvertedTooLarge) {
+					answer(fmt.Sprintf("Μετά τη μετατροπή των εικόνων σε JPG, τα αρχεία ξεπερνούν το όριο των %s. "+
+						"Ανέβασέ τα σε μικρότερες ομάδες.", formatBytes(limit)))
+				} else if errors.Is(err, materials.ErrUnsupportedImage) {
 					answer(fmt.Sprintf("Δεν μπόρεσα να διαβάσω το «%s». Δοκίμασε να το αποθηκεύσεις ξανά ως JPG.",
 						truncateRunes(a.Filename, 60)))
 				} else {

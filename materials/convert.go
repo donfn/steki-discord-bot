@@ -13,8 +13,6 @@ import (
 )
 
 const (
-	// maxConverted bounds the reply read from the converter.
-	maxConverted = 200 << 20
 	// maxConvertedPixels rejects a reply far larger than any real conversion.
 	maxConvertedPixels = 200_000_000
 
@@ -27,6 +25,9 @@ const (
 
 // ErrUnsupportedImage is returned for content the converter cannot read.
 var ErrUnsupportedImage = errors.New("materials: unsupported image")
+
+// ErrConvertedTooLarge is returned for a result over the caller's limit.
+var ErrConvertedTooLarge = errors.New("materials: converted image is too large")
 
 // Converter sends images to the blastdoor service, the only place they are
 // decoded. There is deliberately no local fallback: without the service,
@@ -53,9 +54,10 @@ func NewConverter(baseURL string) *Converter {
 	}
 }
 
-// ToJPEG converts a PNG, WebP or HEIC image to a JPEG. The reply is treated as
-// hostile too: it must have a valid JPEG header of a sane size.
-func (c *Converter) ToJPEG(ctx context.Context, data []byte) ([]byte, error) {
+// ToJPEG converts a PNG, WebP or HEIC image to a JPEG of at most maxBytes. The
+// reply is treated as hostile too: it must have a valid JPEG header of a sane
+// size, and no more than maxBytes of it are ever held in memory.
+func (c *Converter) ToJPEG(ctx context.Context, data []byte, maxBytes int64) ([]byte, error) {
 	if c == nil || c.url == "/convert" {
 		return nil, errors.New("materials: BLASTDOOR_URL is not set")
 	}
@@ -68,8 +70,8 @@ func (c *Converter) ToJPEG(ctx context.Context, data []byte) ([]byte, error) {
 			case <-time.After(time.Duration(attempt) * convertBackoff):
 			}
 		}
-		out, err := c.convert(ctx, data)
-		if err == nil || errors.Is(err, ErrUnsupportedImage) {
+		out, err := c.convert(ctx, data, maxBytes)
+		if err == nil || errors.Is(err, ErrUnsupportedImage) || errors.Is(err, ErrConvertedTooLarge) {
 			return out, err
 		}
 		lastErr = err
@@ -77,7 +79,7 @@ func (c *Converter) ToJPEG(ctx context.Context, data []byte) ([]byte, error) {
 	return nil, lastErr
 }
 
-func (c *Converter) convert(ctx context.Context, data []byte) ([]byte, error) {
+func (c *Converter) convert(ctx context.Context, data []byte, maxBytes int64) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(data))
 	if err != nil {
 		return nil, err
@@ -94,12 +96,12 @@ func (c *Converter) convert(ctx context.Context, data []byte) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("materials: converter answered %d", resp.StatusCode)
 	}
-	out, err := io.ReadAll(io.LimitReader(resp.Body, maxConverted+1))
+	out, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
 	if err != nil {
 		return nil, err
 	}
-	if len(out) > maxConverted {
-		return nil, errors.New("materials: converter reply too large")
+	if int64(len(out)) > maxBytes {
+		return nil, ErrConvertedTooLarge
 	}
 	cfg, err := jpeg.DecodeConfig(bytes.NewReader(out))
 	if err != nil {
