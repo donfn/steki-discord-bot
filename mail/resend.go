@@ -115,14 +115,11 @@ func plainBody(l Link) string {
 		l.Username, l.Email, l.URL, minutes(l.ValidFor))
 }
 
-// htmlBody renders the email in the style of the pages: notebook-yellow
-// ground, a sheet with a hard ink border and an offset shadow, a highlighted
-// word in the headline, a yellow button. Mail clients ignore stylesheets and
-// most modern CSS, so it is built from tables with inline styles. The offset
-// shadow is a dark cell the sheet sits inside, with 6px left over at the
-// right and bottom. Tilts, tape and web fonts do not survive email clients and
-// are left out, and it pins the light scheme: clients that recolour emails
-// for dark mode would turn the brand yellow into mud. With picture set, the
+// htmlBody renders the email in the style of the pages: warm paper ground, a
+// plain sheet with a hairline border, a yellow button. Mail clients ignore
+// stylesheets and most modern CSS, so it is built from tables with inline
+// styles. It pins the light scheme: clients that recolour emails for dark mode
+// would turn the brand yellow into mud. With picture set, the
 // top is the inline header PNG (see renderHeader); without, it is HTML.
 func htmlBody(l Link, picture bool) string {
 	e := html.EscapeString
@@ -154,23 +151,23 @@ const htmlHeader = `      <img src="cid:` + headerCID + `" width="384" alt="Σύ
 `
 
 // fallbackHeader is the same top in HTML, for when the picture cannot be drawn.
-const fallbackHeader = `      <img src="{{LOGO}}" width="52" height="52" alt="στέκι" style="display:block;width:52px;height:52px;border:2px solid #1B1A17;border-radius:12px;">
+const fallbackHeader = `      <img src="{{LOGO}}" width="52" height="52" alt="στέκι" style="display:block;width:52px;height:52px;border-radius:12px;">
 
-      <h1 style="margin:22px 0 10px;font-family:'Fira Sans Extra Condensed','Arial Narrow','Helvetica Neue',Arial,sans-serif;font-size:36px;line-height:1.05;font-weight:800;color:#1B1A17;">Σύνδεσε τον <span style="background:#FFC900;padding:0 5px;">λογαριασμό</span> σου</h1>
+      <h1 style="margin:22px 0 10px;font-family:'Commissioner',-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:28px;line-height:1.2;font-weight:700;color:#1B1A17;">Σύνδεσε τον λογαριασμό σου</h1>
 
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 22px;"><tr>
-        <td width="43%" align="center" valign="top" style="background:#F8F2DC;border:2px solid #1B1A17;border-radius:8px;padding:16px 8px 12px;">
-          <img src="{{AVATAR}}" width="64" height="64" alt="" style="display:block;width:64px;height:64px;border:2px solid #1B1A17;border-radius:34px;">
+        <td width="43%" align="center" valign="top" style="background:#F8F6EF;border:1px solid #D9D5C8;border-radius:8px;padding:16px 8px 12px;">
+          <img src="{{AVATAR}}" width="64" height="64" alt="" style="display:block;width:64px;height:64px;border-radius:34px;">
           <div style="margin-top:10px;font-size:14px;font-weight:700;color:#1B1A17;word-break:break-word;">{{USERNAME}}</div>
-          <div style="font-family:'JetBrains Mono',Menlo,Consolas,monospace;font-size:12px;color:#5A5648;">Discord</div>
+          <div style="font-size:12px;color:#5A5648;">Discord</div>
         </td>
         <td width="14%" align="center" valign="middle">
-          <div style="width:34px;height:34px;line-height:34px;border:2px solid #1B1A17;border-radius:19px;background:#FFC900;font-size:18px;font-weight:700;text-align:center;color:#1B1A17;">&#8596;</div>
+          <div style="width:34px;height:34px;line-height:34px;font-size:18px;font-weight:700;text-align:center;color:#1B1A17;">&#8596;</div>
         </td>
-        <td width="43%" align="center" valign="top" style="background:#F8F2DC;border:2px solid #1B1A17;border-radius:8px;padding:16px 8px 12px;">
-          <img src="{{UNILOGO}}" width="64" height="64" alt="" style="display:block;width:64px;height:64px;border:2px solid #1B1A17;border-radius:34px;background:#FFFFFF;">
+        <td width="43%" align="center" valign="top" style="background:#F8F6EF;border:1px solid #D9D5C8;border-radius:8px;padding:16px 8px 12px;">
+          <img src="{{UNILOGO}}" width="64" height="64" alt="" style="display:block;width:64px;height:64px;border-radius:34px;background:#FFFFFF;">
           <div style="margin-top:10px;font-size:13px;font-weight:700;color:#1B1A17;">{{EMAILUSER}}<wbr>@{{EMAILDOMAIN}}</div>
-          <div style="font-family:'JetBrains Mono',Menlo,Consolas,monospace;font-size:12px;color:#5A5648;">{{UNI}}</div>
+          <div style="font-size:12px;color:#5A5648;">{{UNI}}</div>
         </td>
       </tr></table>
 `
@@ -184,13 +181,13 @@ const htmlTemplate = `<!doctype html>
 <meta name="supported-color-schemes" content="light">
 <title>Εγγραφή στο Steki</title>
 </head>
-<body style="margin:0;padding:0;background:#FFC900;">
+<body style="margin:0;padding:0;background:#F8F6EF;">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;">Επιβεβαίωσε την εγγραφή σου στο Steki. Ο σύνδεσμος ισχύει για {{MINUTES}} λεπτά.</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#FFC900;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F8F6EF;">
 <tr><td align="center" style="padding:32px 16px;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:446px;">
-  <tr><td style="background:#1B1A17;border-radius:8px;padding:0 6px 6px 0;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#FEFBF1;border:2px solid #1B1A17;border-radius:8px;font-family:'Fira Sans',-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1B1A17;">
+  <tr><td>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#FEFDF8;border:1px solid #D9D5C8;border-radius:8px;font-family:'Commissioner',-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1B1A17;">
     <tr><td style="padding:32px 26px 26px;">
 
 {{HEADER}}
@@ -198,18 +195,14 @@ const htmlTemplate = `<!doctype html>
 
 
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-        <td style="background:#1B1A17;border-radius:8px;padding:0 4px 4px 0;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-            <td align="center" style="background:#FFC900;border:2px solid #1B1A17;border-radius:8px;">
-              <a href="{{URL}}" style="display:block;padding:16px 20px;font-size:17px;font-weight:800;color:#1B1A17;text-decoration:none;">Σύνδεση λογαριασμού</a>
-            </td>
-          </tr></table>
+        <td align="center" style="background:#FFC900;border-radius:8px;">
+          <a href="{{URL}}" style="display:block;padding:16px 20px;font-size:17px;font-weight:700;color:#1B1A17;text-decoration:none;">Σύνδεση λογαριασμού</a>
         </td>
       </tr></table>
 
       <p style="margin:18px 0 0;font-size:13px;line-height:1.5;color:#5A5648;text-align:center;">Ο σύνδεσμος ισχύει για {{MINUTES}} λεπτά και ανοίγει μόνο μία φορά.</p>
 
-      <p style="margin:24px 0 0;padding-top:18px;border-top:2px dashed #D9D2B8;font-size:13px;line-height:1.5;color:#5A5648;"><strong style="color:#1B1A17;">Δεν το ζήτησες εσύ;</strong> Αγνόησε αυτό το email. Χωρίς το κλικ σου κανείς δεν μπορεί να μπει στο Steki με το email σου.</p>
+      <p style="margin:24px 0 0;padding-top:18px;border-top:1px solid #D9D5C8;font-size:13px;line-height:1.5;color:#5A5648;"><strong style="color:#1B1A17;">Δεν το ζήτησες εσύ;</strong> Αγνόησε αυτό το email. Χωρίς το κλικ σου κανείς δεν μπορεί να μπει στο Steki με το email σου.</p>
       <p style="margin:12px 0 0;font-size:12px;line-height:1.5;color:#7A7562;">Αν το κουμπί δεν δουλεύει, αντίγραψε αυτόν τον σύνδεσμο στον browser σου:<br><a href="{{URL}}" style="color:#5A5648;word-break:break-all;">{{URL}}</a></p>
 
     </td></tr>

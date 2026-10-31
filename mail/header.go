@@ -29,19 +29,16 @@ import (
 // The header is the top of the email — logo, headline and the Discord ↔
 // university pair — drawn as one PNG and sent inline. Mail clients load no web
 // fonts, drop rounded corners and squeeze the three-column pair on phones; an
-// image looks the same everywhere. The fonts are Fira (SIL OFL, fonts/OFL.txt).
+// image looks the same everywhere. The font is Commissioner (SIL OFL, fonts/OFL-Commissioner.txt).
 
 var (
-	//go:embed fonts/FiraSansExtraCondensed-ExtraBold.ttf
-	headlineTTF []byte
-	//go:embed fonts/FiraSans-Bold.ttf
+	//go:embed fonts/Commissioner-Bold.ttf
 	boldTTF []byte
-	//go:embed fonts/FiraSans-Regular.ttf
+	//go:embed fonts/Commissioner-Regular.ttf
 	regularTTF []byte
 
-	headlineFont = mustFont(headlineTTF)
-	boldFont     = mustFont(boldTTF)
-	regularFont  = mustFont(regularTTF)
+	boldFont    = mustFont(boldTTF)
+	regularFont = mustFont(regularTTF)
 )
 
 func mustFont(b []byte) *sfnt.Font {
@@ -58,9 +55,9 @@ const (
 	headerWidth = 384 // the sheet's inner width
 	scale       = 2
 	ink         = 0x1B1A17
-	paper       = 0xFEFBF1
-	cardFill    = 0xF8F2DC
-	yellow      = 0xFFC900
+	paper       = 0xFEFDF8
+	cardFill    = 0xF8F6EF
+	rule        = 0xD9D5C8
 	muted       = 0x5A5648
 	white       = 0xFFFFFF
 	blurple     = 0x5865F2
@@ -80,10 +77,10 @@ func (c canvas) roundRect(x0, y0, x1, y1, r float32, col uint32) {
 	c.roundRectMask(x0, y0, x1, y1, r).Draw(c.img, c.img.Bounds(), image.NewUniform(rgb(col)), image.Point{})
 }
 
-// box fills a rounded rectangle with a 2px ink border.
+// box fills a rounded rectangle with a 1px hairline border.
 func (c canvas) box(x0, y0, x1, y1, r float32, fill uint32) {
-	c.roundRect(x0, y0, x1, y1, r, ink)
-	c.roundRect(x0+2, y0+2, x1-2, y1-2, r-2, fill)
+	c.roundRect(x0, y0, x1, y1, r, rule)
+	c.roundRect(x0+1, y0+1, x1-1, y1-1, r-1, fill)
 }
 
 func (c canvas) roundRectMask(x0, y0, x1, y1, r float32) *vector.Rasterizer {
@@ -116,8 +113,8 @@ func (c canvas) picture(src image.Image, x, y, size, r float32, bg uint32) {
 	c.roundRectMask(x, y, x+size, y+size, r).Draw(c.img, c.img.Bounds(), scaled, image.Point{})
 }
 
-// arrow draws a ↔ centred on cx, cy. It is a shape, not text: Fira has no
-// arrow glyphs.
+// arrow draws a ↔ centred on cx, cy. It is a shape, not text, so it never depends on
+// the font having an arrow glyph.
 func (c canvas) arrow(cx, cy float32) {
 	b := c.img.Bounds()
 	z := vector.NewRasterizer(b.Dx(), b.Dy())
@@ -129,12 +126,6 @@ func (c canvas) arrow(cx, cy float32) {
 	}
 	z.ClosePath()
 	z.Draw(c.img, b, image.NewUniform(rgb(ink)), image.Point{})
-}
-
-// framed draws a picture with a 2px ink ring around it.
-func (c canvas) framed(src image.Image, x, y, size, r float32, bg uint32) {
-	c.roundRect(x, y, x+size, y+size, r, ink)
-	c.picture(src, x+2, y+2, size-4, r-2, bg)
 }
 
 // face is a font at a CSS pixel size.
@@ -249,11 +240,8 @@ func wrap(f face, s string, w float32, max int) []string {
 	return out
 }
 
-// headline is the title, with one word on a yellow marker.
-var headline = []struct {
-	word string
-	mark bool
-}{{"Σύνδεσε", false}, {"τον", false}, {"λογαριασμό", true}, {"σου", false}}
+// headline is the title.
+var headline = []string{"Σύνδεσε", "τον", "λογαριασμό", "σου"}
 
 // renderHeader draws the header PNG for l.
 func renderHeader(ctx context.Context, l Link) ([]byte, error) {
@@ -267,40 +255,36 @@ func renderHeader(ctx context.Context, l Link) ([]byte, error) {
 	}
 	avatar := fetchAvatar(ctx, l.AvatarURL)
 
-	big := newFace(headlineFont, 36)
+	big := newFace(boldFont, 28)
 	name := newFace(boldFont, 14)
 	addr := newFace(boldFont, 13)
 	small := newFace(regularFont, 12)
 
 	// Lay the headline out first: its height decides where the pair goes.
-	const lineH, markPad = 38, 5
+	const lineH = 34
 	type placed struct {
 		word    string
-		mark    bool
 		x, line float32
 	}
 	var words []placed
 	var x, line float32
 	space := big.width(" ")
 	for _, w := range headline {
-		ww := big.width(w.word)
-		if w.mark {
-			ww += 2 * markPad
-		}
+		ww := big.width(w)
 		if x > 0 && x+space+ww > headerWidth {
 			x, line = 0, line+1
 		} else if x > 0 {
 			x += space
 		}
-		words = append(words, placed{w.word, w.mark, x, line})
+		words = append(words, placed{w, x, line})
 		x += ww
 	}
-	const titleTop = 52 + 22
-	pairTop := titleTop + (line+1)*lineH + 24
+	const titleTop = 52 + 20
+	pairTop := titleTop + (line+1)*lineH + 20
 
 	// Each card: picture, the main line(s) and the small line(s) under it.
 	const gap, pic = 48, 64
-	cardW := float32(headerWidth-gap-4) / 2 // 4px left for the offset shadow
+	cardW := float32(headerWidth-gap) / 2
 	textW := cardW - 16
 	user := wrap(name, name.clean(l.Username), textW, 2)
 	if len(user) == 0 {
@@ -310,28 +294,22 @@ func renderHeader(ctx context.Context, l Link) ([]byte, error) {
 	uni := wrap(small, small.clean(l.UniName), textW, 3)
 	textH := func(main, sub int) float32 { return float32(main)*20 + float32(sub)*17 }
 	cardH := 16 + pic + 10 + max(textH(len(user), 1), textH(len(email), len(uni))) + 12
-	height := pairTop + cardH + 4
+	height := pairTop + cardH
 
 	c := canvas{image.NewRGBA(image.Rect(0, 0, headerWidth*scale, int(height*scale)))}
 	draw.Draw(c.img, c.img.Bounds(), image.NewUniform(rgb(paper)), image.Point{}, draw.Src)
 
-	c.framed(logo, 0, 0, 52, 12, white)
+	c.picture(logo, 0, 0, 52, 12, white)
 
 	for _, w := range words {
 		top := titleTop + w.line*lineH
-		tx := w.x
-		if w.mark {
-			c.roundRect(w.x, top+4, w.x+big.width(w.word)+2*markPad, top+lineH, 2, yellow)
-			tx += markPad
-		}
-		c.text(big, w.word, tx, top+big.ascent()*0.88, ink)
+		c.text(big, w.word, w.x, top+big.ascent()*0.95, ink)
 	}
 
 	card := func(x float32, picture image.Image, picBG uint32, main face, mainLines, sub []string) {
-		c.roundRect(x+4, pairTop+4, x+cardW+4, pairTop+cardH+4, 8, ink)
 		c.box(x, pairTop, x+cardW, pairTop+cardH, 8, cardFill)
 		cx := x + cardW/2
-		c.framed(picture, cx-pic/2, pairTop+16, pic, pic/2, picBG)
+		c.picture(picture, cx-pic/2, pairTop+16, pic, pic/2, picBG)
 		y := c.centred(main, mainLines, cx, pairTop+16+pic+10, 20, ink)
 		c.centred(small, sub, cx, y, 17, muted)
 	}
@@ -340,8 +318,6 @@ func renderHeader(ctx context.Context, l Link) ([]byte, error) {
 
 	// The link between the two cards.
 	cx, cy := cardW+gap/2, pairTop+16+pic/2
-	c.roundRect(cx-17, cy-17, cx+17, cy+17, 17, ink)
-	c.roundRect(cx-15, cy-15, cx+15, cy+15, 15, yellow)
 	c.arrow(cx, cy)
 
 	var out bytes.Buffer
