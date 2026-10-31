@@ -2,7 +2,6 @@ package blastdoor
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
@@ -26,14 +25,10 @@ const (
 	decompressMemoryKiB = 512 << 10
 )
 
-// zstdCommand runs zstd over stdin and stdout with no environment and a
-// memory ceiling.
+// zstdCommand runs zstd over stdin and stdout with no environment, a memory
+// ceiling and no network (see sandbox.go).
 func zstdCommand(ctx context.Context, memoryKiB int, args ...string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, "/bin/sh", append([]string{"-c",
-		fmt.Sprintf(`ulimit -v %d 2>/dev/null; exec zstd "$@"`, memoryKiB), "zstd"}, args...)...)
-	cmd.Env = []string{"PATH=" + os.Getenv("PATH")}
-	cmd.WaitDelay = 5 * time.Second
-	return cmd
+	return sandboxCommand(ctx, memoryKiB, []string{"PATH=" + os.Getenv("PATH")}, "zstd", args...)
 }
 
 // handleCompress serves POST /compress?size=N. The size tells zstd how large

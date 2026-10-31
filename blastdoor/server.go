@@ -23,7 +23,7 @@ const (
 )
 
 // Handler serves POST /convert (image in, JPEG out), POST /compress and POST
-// /decompress (see stream.go) and GET /healthz. A 422 from /convert means the
+// /decompress (see stream.go), GET /healthz and GET /ready. A 422 from /convert means the
 // image cannot be read; anything else is the service's own failure.
 func Handler(log *slog.Logger) http.Handler {
 	sem := make(chan struct{}, slots)
@@ -32,6 +32,11 @@ func Handler(log *slog.Logger) http.Handler {
 	mux.HandleFunc("POST /decompress", handleDecompress(make(chan struct{}, decompressSlots)))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
+	})
+	// Railway's healthcheck wants a 200. The service only listens once
+	// CheckSandbox has passed, so an answer here means the sandbox works.
+	mux.HandleFunc("GET /ready", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
 	})
 	mux.HandleFunc("POST /convert", func(w http.ResponseWriter, r *http.Request) {
 		select {

@@ -116,12 +116,10 @@ const heifMemoryKiB = 768 << 10
 
 // heifCommand builds the converter's command line. The file it reads comes
 // from a stranger, so the process gets what it needs and nothing else: no
-// environment, and a memory ceiling.
+// environment, a memory ceiling, and no network (see sandbox.go).
 func heifCommand(ctx context.Context, tool, in, out string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, "/bin/sh", "-c",
-		fmt.Sprintf(`ulimit -v %d 2>/dev/null; exec "$0" "$@"`, heifMemoryKiB),
+	cmd := sandboxCommand(ctx, heifMemoryKiB, []string{"PATH=" + os.Getenv("PATH"), "TMPDIR=" + filepath.Dir(in)},
 		tool, "-q", fmt.Sprint(jpegQuality), in, out)
-	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "TMPDIR=" + filepath.Dir(in)}
 	cmd.Dir = filepath.Dir(in)
 	return cmd
 }
