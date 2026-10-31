@@ -68,6 +68,17 @@ func (p *presence) counts(channelID string) (here, all int) {
 	return len(p.users[channelID]), len(p.online)
 }
 
+// relay passes a save on to the member's other open sockets.
+func (p *presence) relay(from *pageSocket, it socketItem) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for s := range p.sockets {
+		if s != from && s.user == from.user {
+			s.relay(it)
+		}
+	}
+}
+
 // changed schedules one update for every open socket. The caller holds the
 // lock.
 func (p *presence) changed() {

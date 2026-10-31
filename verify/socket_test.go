@@ -174,6 +174,104 @@ func TestSocketsHoldNotesUntilTheyClose(t *testing.T) {
 	waitHolds(0)
 }
 
+func TestSocketKeepsIntroForTheAccount(t *testing.T) {
+	e := newEnv(t)
+	_, _, body := e.open(t, "100")
+	tok, _ := pageData(t, body)
+	ws := e.dial(t, tok)
+	ws.read()
+	ws.send(map[string]any{"op": "save", "seq": 1, "items": []map[string]any{
+		{"f": "room", "k": "intro", "d": map[string]any{"seen": 1}},
+		{"f": "room", "k": "study", "d": map[string]any{"n": "x"}},
+		{"f": "11", "k": "intro", "d": map[string]any{"seen": 1}},
+	}})
+	m, _ := ws.read()
+	if drops, _ := m["drop"].([]any); m["op"] != "ack" || len(drops) != 2 {
+		t.Fatalf("ack = %v, want the two misplaced items dropped", m)
+	}
+	_, _, body = e.open(t, "100")
+	if _, notes := pageData(t, body); notes["room"]["intro"] == nil || notes["room"]["study"] != nil {
+		t.Errorf("notes on the next visit = %v", notes)
+	}
+}
+
+func TestSocketPassesSavesToTheMembersOtherPages(t *testing.T) {
+	e := newEnv(t)
+	join := func(userID, channelID string) *testSocket {
+		t.Helper()
+		_, body := fetch(t, browser(t), e.srv.URL+"/materials?t="+e.materialTokenFor(t, userID, channelID, time.Minute))
+		tok, _ := pageData(t, body)
+		ws := e.dial(t, tok)
+		if m, _ := ws.read(); m["op"] != "token" {
+			t.Fatalf("first message = %v", m)
+		}
+		// Presence goes out once the socket has joined, so saves reach it.
+		for {
+			if m, _ := ws.readAny(); m["op"] == "presence" {
+				return ws
+			}
+		}
+	}
+	a, b, other := join("u1", "100"), join("u1", "100"), join("u2", "100")
+
+	a.send(map[string]any{"op": "save", "seq": 1, "items": []map[string]any{
+		{"f": "11", "k": "study", "d": map[string]any{"n": "από το κινητό"}},
+		{"f": "room", "k": "intro", "d": map[string]any{"seen": 1}},
+		{"f": "21", "k": "study", "d": map[string]any{"d": 1}}, // another channel's file
+	}})
+	if m, _ := a.read(); m["op"] != "ack" {
+		t.Fatalf("ack = %v", m)
+	}
+	got := map[string]bool{}
+	for len(got) < 2 {
+		m, code := b.read()
+		if code != 0 || m["op"] != "notes" {
+			t.Fatalf("other page got %v, close %d", m, code)
+		}
+		for _, it := range m["items"].([]any) {
+			item := it.(map[string]any)
+			got[item["f"].(string)+":"+item["k"].(string)] = true
+		}
+	}
+	if !got["11:study"] || !got["room:intro"] {
+		t.Errorf("other page got %v", got)
+	}
+
+	// Deleting reaches it as null.
+	a.send(map[string]any{"op": "save", "seq": 2, "items": []map[string]any{{"f": "11", "k": "study", "d": nil}}})
+	m, _ := b.read()
+	if items, _ := m["items"].([]any); m["op"] != "notes" || len(items) != 1 || items[0].(map[string]any)["d"] != nil {
+		t.Errorf("delete arrived as %v", m)
+	}
+
+	// A page that was away asks for everything; only its own files come.
+	b.send(map[string]any{"op": "sync"})
+	m, _ = b.read()
+	notes, _ := m["notes"].(map[string]any)
+	file11, _ := notes["11"].(map[string]any)
+	if m["op"] != "sync" || notes["room"] == nil || file11["study"] != nil || notes["21"] != nil {
+		t.Errorf("sync = %v", m)
+	}
+
+	// The saving page and other members get nothing. Their next message is
+	// their answer to this sync.
+	for _, ws := range []*testSocket{a, other} {
+		ws.send(map[string]any{"op": "sync"})
+		for {
+			m, code := ws.read()
+			if code != 0 {
+				t.Fatalf("socket closed: %d", code)
+			}
+			if m["op"] == "notes" {
+				t.Errorf("got someone's save: %v", m)
+			}
+			if m["op"] == "sync" {
+				break
+			}
+		}
+	}
+}
+
 func TestSocketNeedsAuthFirst(t *testing.T) {
 	e := newEnv(t)
 	h := http.Header{"Origin": {e.srv.URL}}

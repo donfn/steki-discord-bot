@@ -71,9 +71,10 @@ const (
 // materialCSP is pageCSP widened for the viewer: pdf.js is fetched from the
 // pinned CDN and runs its worker from a blob, and PDF pages render to
 // canvases. Files are fetched as blobs, so images and the fallback PDF frame
-// load from blob: URLs.
+// load from blob: URLs. Notes draw formulas with KaTeX's stylesheet, from the
+// same CDN, and keep their images as data: URLs.
 const materialCSP = "default-src 'none'; script-src 'nonce-%s' https://cdn.jsdelivr.net; " +
-	"style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com https://cdn.jsdelivr.net data:; " +
+	"style-src 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src https://fonts.gstatic.com https://cdn.jsdelivr.net data:; " +
 	"img-src 'self' data: blob: https://cdn.discordapp.com; connect-src 'self' https://cdn.jsdelivr.net; worker-src blob:; " +
 	"frame-src blob: https://www.youtube-nocookie.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 

@@ -34,15 +34,23 @@ import (
 // already has, and resends unacknowledged batches after a reconnect. Frames
 // are deflated (permessage-deflate), which suits JSON ink strokes well.
 //
+// A stored save goes on to the member's other open sockets, so their other
+// devices and tabs show it at once. A page that reconnects asks for everything
+// again, to catch up on what it missed. The latest save stays: a page keeps its
+// own change over one that arrives while its change is still on the way.
+//
 // Messages, as JSON:
 //
 //	page → server  {"op":"auth","t":token}
-//	               {"op":"save","seq":n,"items":[{"f":fileID,"k":"study"|"ink","d":object|null}]}
+//	               {"op":"save","seq":n,"items":[{"f":fileID,"k":"study"|"ink"|"intro","d":object|null}]}
+//	               {"op":"sync"}                            send everything saved
 //	server → page  {"op":"token","t":token,"exp":unixMillis}
 //	               {"op":"ack","seq":n}                     every item stored
 //	               {"op":"ack","seq":n,"retry":true}        nothing stored; send again
 //	               {"op":"ack","seq":n,"drop":[{"f","k","code"}]}  those items refused
 //	               {"op":"presence","here":n,"all":n}       members on this course's page and in the study space
+//	               {"op":"notes","items":[...]}             saved from another device, same items as a save
+//	               {"op":"sync","notes":{fileID:{kind:object}}}  everything saved, in answer to a sync
 //
 // The server closes with socketExpired when the page can no longer reconnect
 // and should send the member back to Discord.
@@ -166,6 +174,72 @@ type pageSocket struct {
 	// presenceDue wakes keepAlive to send the latest presence counts; it
 	// holds at most one wake-up, so a slow page only ever gets the latest.
 	presenceDue chan struct{}
+
+	// outbox holds saves made on the member's other sockets, the latest per
+	// file and kind, so a slow page neither holds up the save nor piles up old
+	// values. outDue wakes keepAlive to send them.
+	outMu  sync.Mutex
+	outbox map[string]socketItem
+	outDue chan struct{}
+}
+
+// relay queues a save made on another of the member's sockets, if this page
+// lists the file.
+func (s *pageSocket) relay(it socketItem) {
+	if !s.shows(it.File) {
+		return
+	}
+	s.outMu.Lock()
+	s.outbox[it.File+":"+it.Kind] = it
+	s.outMu.Unlock()
+	select {
+	case s.outDue <- struct{}{}:
+	default:
+	}
+}
+
+// shows reports whether this page holds notes for a file.
+func (s *pageSocket) shows(fileID string) bool {
+	if fileID == introFile {
+		return true
+	}
+	s.filesMu.Lock()
+	defer s.filesMu.Unlock()
+	return s.files[fileID]
+}
+
+// sendOutbox sends the queued saves.
+func (s *pageSocket) sendOutbox() error {
+	s.outMu.Lock()
+	items := make([]socketItem, 0, len(s.outbox))
+	for _, it := range s.outbox {
+		items = append(items, it)
+	}
+	clear(s.outbox)
+	s.outMu.Unlock()
+	if len(items) == 0 {
+		return nil
+	}
+	return s.send(map[string]any{"op": "notes", "items": items})
+}
+
+// sync sends the page everything saved for its files. When the notes cannot be
+// read it sends nothing: an empty answer would read as everything deleted.
+func (s *pageSocket) sync(ctx context.Context) {
+	sctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	defer cancel()
+	all, err := s.nb.Notes(sctx, s.user)
+	if err != nil {
+		s.v.log.Error("verify: socket sync", "user_id", s.user, "error", err)
+		return
+	}
+	notes := map[string]map[string]json.RawMessage{}
+	for id, kinds := range all {
+		if s.shows(id) {
+			notes[id] = kinds
+		}
+	}
+	_ = s.send(map[string]any{"op": "sync", "notes": notes})
 }
 
 // poke asks for the latest presence counts to be sent, without waiting.
@@ -200,7 +274,7 @@ func (v *Server) socket(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithCancel(context.WithoutCancel(r.Context()))
 	defer cancel()
-	s := &pageSocket{v: v, nb: nb, conn: conn, presenceDue: make(chan struct{}, 1)}
+	s := &pageSocket{v: v, nb: nb, conn: conn, presenceDue: make(chan struct{}, 1), outbox: map[string]socketItem{}, outDue: make(chan struct{}, 1)}
 	s.run(ctx)
 }
 
@@ -270,6 +344,10 @@ func (s *pageSocket) run(ctx context.Context) {
 			s.close(websocket.ClosePolicyViolation, "too many messages")
 			return
 		}
+		if in.Op == "sync" {
+			s.sync(ctx)
+			continue
+		}
 		if in.Op != "save" {
 			continue
 		}
@@ -299,6 +377,10 @@ func (s *pageSocket) keepAlive(ctx context.Context, done <-chan struct{}) {
 		case <-s.presenceDue:
 			here, all := s.v.presence.counts(s.channel)
 			if s.send(map[string]any{"op": "presence", "here": here, "all": all}) != nil {
+				return
+			}
+		case <-s.outDue:
+			if s.sendOutbox() != nil {
 				return
 			}
 		case <-ping.C:
@@ -396,7 +478,8 @@ func (s *pageSocket) save(ctx context.Context, in socketIn) bool {
 		in.Items = in.Items[:maxItemsPerSave]
 	}
 	for _, it := range in.Items {
-		if !isSnowflake(it.File) || !files[it.File] {
+		intro := it.File == introFile && it.Kind == NoteIntro
+		if !intro && (!isSnowflake(it.File) || !files[it.File] || it.Kind == NoteIntro) {
 			drops = append(drops, socketDrop{it.File, it.Kind, "gone"})
 			continue
 		}
@@ -419,6 +502,7 @@ func (s *pageSocket) save(ctx context.Context, in socketIn) bool {
 			_ = s.send(map[string]any{"op": "ack", "seq": in.Seq, "retry": true})
 			return true
 		}
+		s.v.presence.relay(s, socketItem{it.File, it.Kind, data})
 	}
 	ack := map[string]any{"op": "ack", "seq": in.Seq}
 	if len(drops) > 0 {

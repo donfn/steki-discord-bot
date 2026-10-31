@@ -75,6 +75,7 @@
     --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
     --dur-short: 140ms;
     --dur-med: 420ms;
+    --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
     color-scheme: light;
   }
   :root[data-theme="dark"] {
@@ -236,11 +237,14 @@
     max-width: min(92vw, 28rem); padding: 0.7rem 1rem; border-radius: var(--radius-ctl);
     background: var(--color-ink); color: var(--color-sheet); font-size: 0.875rem; font-weight: 500;
     box-shadow: var(--shadow-card); transform: translateX(-50%);
-    animation: toast-in 180ms var(--ease-out) both;
+    transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out), display 180ms allow-discrete;
   }
-  .toast[hidden] { display: none; }
-  @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 6px); } }
-  @media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
+  .toast[hidden] { display: none; opacity: 0; transform: translate(-50%, 6px); }
+  @starting-style { .toast { opacity: 0; transform: translate(-50%, 6px); } }
+  @media (prefers-reduced-motion: reduce) {
+    .toast, .toast[hidden] { transform: translateX(-50%); }
+    @starting-style { .toast { transform: translateX(-50%); } }
+  }
   /* Study music. The player lives in one element the whole time, since moving
    * an iframe reloads it: docked, it sits over the menu's right column while
    * the menu is open and is parked off screen otherwise, with the button
@@ -275,15 +279,16 @@
   .music-menu {
     position: absolute; left: 0; bottom: calc(100% + 8px); display: flex; gap: 8px; padding: 6px;
     border: var(--border); border-radius: var(--radius-ctl); background: var(--color-float); box-shadow: var(--shadow-card);
-    transform-origin: bottom left; animation: menu-in 160ms var(--ease-out) both;
+    transform-origin: bottom left;
+    transition: opacity 160ms var(--ease-out), transform 160ms var(--ease-out), display 160ms allow-discrete;
   }
-  @keyframes menu-in { from { opacity: 0; transform: scale(0.96); } }
-  .music-menu[hidden] { display: none; }
+  @starting-style { .music-menu { opacity: 0; transform: scale(0.96); } }
+  .music-menu[hidden] { display: none; opacity: 0; transform: scale(0.96); }
   .music-list { min-width: 13rem; }
   .dock-slot { display: none; width: min(300px, calc(100vw - 13rem - 60px)); }
   .music-menu.with-player .dock-slot { display: block; }
   /* The player is placed from the slot's measured box, which a scale would skew. */
-  .music-menu.with-player { animation: none; }
+  .music-menu.with-player { transition: none; }
   @media (max-width: 560px) {
     .music-menu { flex-direction: column; }
     .dock-slot { width: min(360px, calc(100vw - 46px)); }
@@ -308,6 +313,7 @@
     box-shadow: var(--shadow-card); overflow: hidden;
   }
   .player[hidden] { display: none; }
+  .player:not(.docked) { animation: dialog-in 200ms var(--ease-out) both; }
   /* Docked inside the menu: no frame of its own. */
   .player.docked { z-index: 9; border: 0; border-radius: 6px; background: transparent; box-shadow: none; }
   .player.docked:not(.shown) { left: -10000px !important; top: 0 !important; opacity: 0; pointer-events: none; }
@@ -322,7 +328,9 @@
   .player-frame iframe { display: block; width: 100%; height: 100%; border: 0; }
   @media (prefers-reduced-motion: reduce) {
     .eq i { animation: none; transform: scaleY(0.6); }
-    .music-menu { animation: none; }
+    .music-menu, .music-menu[hidden] { transform: none; }
+    @starting-style { .music-menu { transform: none; } }
+    .player:not(.docked) { animation-name: fade-in; }
     .music-btn { transition: none; }
   }
   .study-foot {
@@ -337,7 +345,7 @@
   .credit a, .footnote a { font-weight: 700; text-underline-offset: 0.15em; }
 
   .view[hidden] { display: none; }
-  .view.entering { animation: swap 320ms var(--ease-out) both; }
+  .view.entering { animation: swap 280ms var(--ease-out) both; }
   @keyframes swap { from { opacity: 0; transform: translateY(6px); } }
 
   /* The result icon. */
@@ -405,7 +413,7 @@
   .progress-row { display: flex; align-items: center; gap: 0.6rem; font-size: 0.875rem; font-weight: 700; }
   .progress-row span:last-child { flex: 1; min-width: 0; }
   .bar { height: 12px; border: 1px solid var(--color-line); border-radius: 4px; background: var(--color-sheet); overflow: hidden; }
-  .bar i { display: block; height: 100%; width: 0; background: var(--color-brand); transition: width 240ms var(--ease-out); }
+  .bar i { display: block; height: 100%; background: var(--color-brand); transform: scaleX(0); transform-origin: left; transition: transform 240ms var(--ease-out); }
   .progress[data-done] .bar { display: none; }
   .progress[data-tone="error"] { color: var(--color-marker); }
 
@@ -441,7 +449,7 @@
     white-space: nowrap;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
-    transition: transform var(--dur-short) var(--ease-out);
+    transition: transform var(--dur-short) var(--ease-out), background-color 120ms ease, color 120ms ease;
   }
   .chip:active { transform: scale(0.95); transition-duration: 60ms; }
   .chip[aria-pressed="true"] { background: var(--color-brand); color: var(--color-on-brand); }
@@ -458,7 +466,17 @@
   }
   .file[hidden] { display: none; }
   .file:not([hidden]) ~ .file:not([hidden]) { border-top: 1px solid var(--color-soft); border-top-left-radius: 0; border-top-right-radius: 0; }
-  .file:hover { background: var(--color-tile); }
+  .file { transition: background-color 120ms ease; }
+  .thumb { transition: opacity 200ms ease; }
+  @media (hover: hover) { .file:hover { background: var(--color-tile); } }
+  /* The first list comes in with a short stagger; filtering stays instant. */
+  .files.arriving .file { animation: swap 280ms var(--ease-out) both; }
+  .files.arriving .file:nth-child(2) { animation-delay: 40ms; }
+  .files.arriving .file:nth-child(3) { animation-delay: 80ms; }
+  .files.arriving .file:nth-child(4) { animation-delay: 120ms; }
+  .files.arriving .file:nth-child(5) { animation-delay: 160ms; }
+  .files.arriving .file:nth-child(n+6) { animation-delay: 200ms; }
+  @media (prefers-reduced-motion: reduce) { .files.arriving .file { animation: none; } }
   .open {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
@@ -494,7 +512,8 @@
     font: 500 0.75rem/1.2 var(--font-body); white-space: nowrap; pointer-events: none;
     opacity: 0; transform: translate(-50%, 2px); transition: opacity 120ms var(--ease-out), transform 120ms var(--ease-out);
   }
-  .title-edit:hover::after, .title-edit:focus-visible::after { opacity: 1; transform: translate(-50%, 0); transition-delay: 300ms; }
+  @media (hover: hover) { .title-edit:hover::after { opacity: 1; transform: translate(-50%, 0); transition-delay: 300ms; } }
+  .title-edit:focus-visible::after { opacity: 1; transform: translate(-50%, 0); transition-delay: 300ms; }
 
   /* With a mouse, a card's actions show on hover or keyboard focus. A file
    * marked as studied keeps its check visible. Touch screens always show them. */
@@ -549,7 +568,7 @@
     cursor: pointer;
     text-decoration: none;
     -webkit-tap-highlight-color: transparent;
-    transition: transform var(--dur-short) var(--ease-out);
+    transition: transform var(--dur-short) var(--ease-out), background-color 120ms ease, color 120ms ease, border-color 120ms ease;
   }
   .icon-btn:hover { border-color: var(--color-line); }
   .icon-btn:active { transform: scale(0.95); transition-duration: 60ms; }
@@ -578,10 +597,12 @@
     color: var(--color-muted);
   }
   .presence[hidden] { display: none; }
+  .presence { transition: opacity 200ms ease; }
   .presence.stale { opacity: 0.55; }
   .presence .stat { white-space: nowrap; }
   .presence b { font-weight: 600; font-variant-numeric: tabular-nums; }
-  .presence b.bump { animation: swap 320ms var(--ease-out) both; }
+  .presence b { display: inline-block; }
+  .presence b.bump { animation: swap 200ms var(--ease-out) both; }
   /* On a phone nothing floats over the reading: the theme switch sits above
      the sheet and scrolls away with it, and the music button
      is smaller and steps aside while the member scrolls down. */
@@ -612,12 +633,16 @@
     display: flex;
     flex-direction: column;
     background: var(--color-stage);
-    animation: rise 300ms var(--ease-out) both;
   }
   .viewer[hidden], .scrim[hidden] { display: none; }
+  /* The file's card becomes the viewer: over everything while it is still the
+     card, then gone as the viewer opens out. Closing, the page already takes
+     the next press while the viewer folds back onto its card. */
+  .viewer-skin { position: absolute; inset: 0; z-index: 20; background: var(--color-sheet); opacity: 0; pointer-events: none; }
+  .viewer.landing, .scrim.landing { pointer-events: none; }
+  .file[data-morphed] { visibility: hidden; }
   /* A pinch here zooms the file, in script, and never the page. */
   .viewer, .scrim { touch-action: pan-x pan-y; }
-  @keyframes rise { from { opacity: 0; transform: translateY(16px); } }
   .scrim { position: fixed; inset: 0; z-index: 9; background: var(--color-scrim); }
   @media (min-width: 900px) {
     .viewer {
@@ -710,6 +735,10 @@
   .viewer-body .stage { flex: 1 1 auto; min-width: 0; }
   .pad { display: flex; flex-direction: column; flex: none; width: min(380px, 40%); border-left: var(--border); background: var(--color-sheet); }
   .pad[hidden] { display: none; }
+  .pad { transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out); }
+  @starting-style { .pad { opacity: 0; transform: translateX(8px); } }
+  @media (max-width: 899px) { @starting-style { .pad { transform: translateY(8px); } } }
+  @media (prefers-reduced-motion: reduce) { @starting-style { .pad { transform: none; } } }
   @media (max-width: 899px) {
     .pad { position: absolute; inset: auto 0 0; z-index: 3; width: auto; height: 55%; border-left: 0; border-top: var(--border); }
   }
@@ -733,6 +762,30 @@
   .md blockquote { padding-left: 0.8em; border-left: 3px solid var(--color-brand); color: var(--color-muted); }
   .md a { color: var(--color-ink); text-decoration-color: var(--color-marker); }
   .md mark { background: var(--color-brand); color: var(--color-on-brand); }
+  .md img { display: block; max-width: 100%; height: auto; margin: 0 0 0.7em; border-radius: 6px; }
+  .md img[data-align="center"] { margin-inline: auto; }
+  .md img[data-align="right"] { margin-left: auto; }
+  .pad { position: relative; }
+  @media (max-width: 899px) { .pad { position: absolute; } }
+  .pad-text[contenteditable="true"] img:not([data-mermaid] img) { cursor: pointer; }
+  .pad-text img.picked { outline: 2px solid var(--color-ink, currentColor); outline-offset: 2px; }
+  .img-bar { position: absolute; z-index: 4; display: flex; flex-wrap: wrap; align-items: center; gap: 2px; max-width: calc(100% - 16px); padding: 4px; border: var(--border); border-radius: 8px; background: var(--color-sheet); box-shadow: 0 4px 16px rgb(0 0 0 / 0.18); }
+  .img-bar[hidden], .img-grip[hidden] { display: none; }
+  .img-bar button { display: grid; place-items: center; min-width: 34px; height: 34px; padding: 0 4px; border: 0; border-radius: 6px; background: none; color: inherit; font: 600 0.75rem/1 var(--font-body); cursor: pointer; touch-action: manipulation; }
+  .img-bar button:hover, .img-bar button[aria-pressed="true"] { background: var(--color-tile); }
+  .img-bar svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .img-bar i { width: 1px; height: 20px; margin: 0 3px; background: currentColor; opacity: 0.2; }
+  .img-grip { position: absolute; z-index: 4; width: 22px; height: 22px; border: 2px solid var(--color-sheet); border-radius: 50%; background: var(--color-ink, currentColor); cursor: nwse-resize; touch-action: none; }
+  .md table { display: block; max-width: 100%; margin: 0 0 0.7em; overflow-x: auto; border-collapse: collapse; font-size: 0.875rem; }
+  .md th, .md td { padding: 0.3em 0.6em; border: 1px solid var(--color-soft); text-align: left; }
+  .md th { background: var(--color-tile); }
+  .md [data-tex] { cursor: pointer; border-radius: 4px; }
+  .md [data-tex]:hover { background: var(--color-tile); }
+  .md [data-tex][data-display] { display: block; margin: 0 0 0.7em; padding: 0.2em 0; max-width: 100%; overflow-x: auto; overflow-y: hidden; }
+  .md [data-tex][data-display] .katex-display { margin: 0; }
+  .md [data-mermaid] { margin: 0 0 0.7em; overflow-x: auto; white-space: pre-wrap; font-size: 0.8125rem; }
+  .md [data-mermaid] img { width: auto; max-height: 320px; margin: 0 auto; }
+  .md [data-mermaid].chart-error { padding: 0.6em 0.8em; border-radius: 6px; background: var(--color-tile); font-family: var(--font-mono); }
   .md hr { border: 0; border-top: 1px solid var(--color-soft); }
   .md .empty-md { color: var(--color-muted); }
   .stage img.photo { display: block; flex: none; margin: auto; max-width: none; border-radius: 4px; box-shadow: 0 0 0 2px var(--color-line); }
@@ -754,6 +807,34 @@
   .icon-btn.done-btn[aria-pressed="true"] { background: var(--color-brand); color: var(--color-on-brand); border-color: var(--color-line); }
   .file.done .name { text-decoration: line-through; text-decoration-thickness: 2px; text-decoration-color: var(--color-marker); }
   .file.done .thumb { opacity: 0.55; }
+  .help-btn { display: flex; align-items: center; gap: 0.4rem; min-height: 44px; margin: var(--space-sm) auto 0; padding: 0 0.9rem; border: var(--border); border-radius: var(--radius-ctl); background: var(--color-sheet); color: var(--color-ink); font: 600 0.875rem var(--font-body); cursor: pointer; transition: transform var(--dur-short) var(--ease-out); }
+  .help-btn:active { transform: scale(0.97); }
+  .help-btn:focus-visible { outline: 3px solid var(--color-sky); outline-offset: 2px; }
+  .help-btn svg { width: 18px; height: 18px; }
+  .lock { flex: none; width: 13px; height: 13px; }
+  /* Marks what only the member (and staff viewing as them) can see. */
+  .private { display: flex; align-items: flex-start; gap: 0.4rem; }
+  .private .lock { margin-top: 0.15em; }
+  .private b { font-weight: 700; color: var(--color-ink); }
+  .link-btn { padding: 0; border: 0; background: none; color: var(--color-ink); font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+  .note::before {
+    content: ""; display: inline-block; width: 11px; height: 11px; margin-right: 0.3em; vertical-align: -1px; background: var(--color-muted);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='5' y='11' width='14' height='10' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='5' y='11' width='14' height='10' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+  /* First visit: what the room is and who sees what. */
+  dialog.report.intro { width: min(92vw, 36rem); max-height: 90dvh; padding: 0; overflow: auto; }
+  .intro-art { display: block; width: 100%; height: auto; border-bottom: var(--border); background: var(--color-tile); }
+  .intro-art .ink-line { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw 700ms var(--ease-out) 320ms forwards; }
+  .intro-art .ink-mark { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw 480ms var(--ease-out) 120ms forwards; }
+  .intro-body { padding: 1.35rem 1.4rem 1.25rem; }
+  dialog.report.intro h2 { margin-bottom: 0.5rem; }
+  /* The button stays in reach when the text is taller than the screen. */
+  .intro-body .report-row { position: sticky; bottom: 0; margin: 0 -1.4rem -1.25rem; padding: 0.75rem 1.4rem max(1rem, env(safe-area-inset-bottom)); background: var(--color-sheet); }
+  @media (max-width: 480px) {
+    .intro-art { height: 84px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .intro-art .ink-line, .intro-art .ink-mark { animation: none; stroke-dashoffset: 0; } }
   .private-note { margin: 0 0 var(--space-sm); font-size: var(--text-xs); color: var(--color-muted); }
   /* Without the socket nothing can be saved, so nothing can be edited. */
   .private-note.offline { color: var(--color-ink); font-weight: 600; }
@@ -797,10 +878,11 @@
     background: var(--color-sheet);
     box-shadow: var(--shadow-ctl);
     overflow: hidden;
-    transition: filter var(--dur-short) var(--ease-out), transform var(--dur-short) var(--ease-out);
+    transition: border-color 120ms ease, transform var(--dur-short) var(--ease-out);
   }
+  .files[data-view="grid"] .file:has(.open:active) { transform: scale(0.985); transition-duration: 60ms; }
   .files[data-view="grid"] .file[hidden] { display: none; }
-  .files[data-view="grid"] .file:hover { background: var(--color-sheet); border-color: var(--color-muted); }
+  @media (hover: hover) { .files[data-view="grid"] .file:hover { background: var(--color-sheet); border-color: var(--color-muted); } }
   .files[data-view="grid"] .top { display: block; padding: 8px 12px 7px; }
   .files[data-view="grid"] .open { flex: 1 1 auto; display: flex; flex-direction: column; align-items: stretch; gap: 0.6rem; padding: 0; border-radius: 0; text-align: left; }
   .files[data-view="grid"] .thumb { width: 100%; height: auto; aspect-ratio: 4 / 3; border-width: 2px 0; border-radius: 0; font-size: 1.1rem; }
@@ -826,11 +908,24 @@
     color: var(--color-ink);
     box-shadow: var(--shadow-card);
   }
-  dialog.report::backdrop { background: var(--color-scrim); animation: fade-in 200ms var(--ease-out) both; }
-  dialog.report[open] { animation: dialog-in 220ms var(--ease-out) both; }
+  dialog.report {
+    opacity: 0; transform: scale(0.97);
+    transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out), overlay 180ms allow-discrete, display 180ms allow-discrete;
+  }
+  dialog.report[open] { opacity: 1; transform: none; transition-duration: 220ms; }
+  @starting-style { dialog.report[open] { opacity: 0; transform: scale(0.97); } }
+  dialog.report::backdrop {
+    background: var(--color-scrim); opacity: 0;
+    transition: opacity 180ms ease, overlay 180ms allow-discrete, display 180ms allow-discrete;
+  }
+  dialog.report[open]::backdrop { opacity: 1; }
+  @starting-style { dialog.report[open]::backdrop { opacity: 0; } }
   @keyframes fade-in { from { opacity: 0; } }
   @keyframes dialog-in { from { opacity: 0; transform: scale(0.97); } }
-  @media (prefers-reduced-motion: reduce) { dialog.report[open], dialog.report::backdrop { animation: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    dialog.report, dialog.report[open] { transform: none; }
+    @starting-style { dialog.report[open] { transform: none; } }
+  }
   dialog.report h2 { margin: 0 0 0.35rem; font: 700 1.7rem/1.25 var(--font-display); }
   dialog.report p { margin-bottom: 0.75rem; font-size: 0.9375rem; }
   .report-file { margin: 0 0 0.9rem; font: 500 0.8125rem/1.4 var(--font-body); color: var(--color-muted); overflow-wrap: anywhere; }
@@ -856,7 +951,6 @@
   @media (max-width: 440px) { .report-row { flex-direction: column-reverse; } }
 
   @media (prefers-reduced-motion: reduce) {
-    .viewer { animation: fade 200ms ease both; }
     .bar i { transition: none; }
   }
 </style>
@@ -888,7 +982,7 @@
   <div class="sheet-head">
     <div class="logo-wrap"><img class="logo" src="/verify/logo.png" alt="" width="56" height="56"></div>
     {{if or .Who.Username .ViewOnly}}
-    <div class="whoami{{if .ViewOnly}} viewing{{end}}" title="Οι σημειώσεις σου αποθηκεύονται σε αυτόν τον λογαριασμό">
+    <div class="whoami{{if .ViewOnly}} viewing{{end}}" title="Οι σημειώσεις σου αποθηκεύονται σε αυτόν τον λογαριασμό και δεν τις βλέπουν άλλα μέλη">
       {{if .Avatar}}<img class="whoami-avatar" src="{{.Avatar}}" alt="" width="36" height="36" referrerpolicy="no-referrer">{{end}}
       <span class="whoami-text">
         <small>{{if .ViewOnly}}Προβολή ως{{else}}Σύνδεση ως{{end}}</small>
@@ -923,7 +1017,7 @@
     </div>
   </div>
 
-  <p class="private-note" id="private-note">✓ μελετημένα, σημειώσεις, δικοί σου τίτλοι και ό,τι γράφεις πάνω στα αρχεία αποθηκεύονται στον λογαριασμό σου. Τα βλέπεις μόνο εσύ και τα βρίσκεις κάθε φορά που επιστρέφεις, από όποια συσκευή κι αν μπεις.</p>
+  <p class="private-note private" id="private-note"><svg class="lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span><b>Ιδιωτικά:</b> ✓ μελετημένα, σημειώσεις, δικοί σου τίτλοι και ό,τι γράφεις πάνω στα αρχεία. Δεν τα βλέπουν άλλα μέλη και τα βρίσκεις από όποια συσκευή κι αν μπεις. <button class="link-btn" type="button" id="intro-open">Ποιος βλέπει τι</button></span></p>
 
   <ul class="files" id="files" data-view="grid"></ul>
 
@@ -938,7 +1032,7 @@
   <footer class="study-foot" id="study-foot">
     <h2>Προσωπικός χώρος μελέτης για το μάθημα {{.Course}}</h2>
     <p>Ένα εργαλείο του Steki για να διαβάζεις πιο οργανωμένα στην εξεταστική. Τσέκαρε ό,τι έχεις διαβάσει, δώσε στα αρχεία δικούς σου τίτλους, κράτα σημειώσεις δίπλα σε κάθε αρχείο και γράψε ή υπογράμμισε πάνω στις σελίδες.</p>
-    <p>Όλα αποθηκεύονται στον λογαριασμό σου στο Discord και τα βλέπεις μόνο εσύ. Την επόμενη φορά που θα ανοίξεις τη σελίδα, από αυτή ή από άλλη συσκευή, θα τα βρεις όπως τα άφησες.</p>
+    <p>Όλα αποθηκεύονται στον λογαριασμό σου και δεν τα βλέπουν άλλα μέλη. Την επόμενη φορά που θα ανοίξεις τη σελίδα, από αυτή ή από άλλη συσκευή, θα τα βρεις όπως τα άφησες.</p>
   </footer>
 
   <div class="presence" id="presence" role="status" aria-live="off" hidden>
@@ -947,10 +1041,12 @@
   </div>
 
   <p class="footnote">Τα αρχεία τα ανέβασαν μέλη του Steki και κατεβαίνουν όλα μόλις ανοίξει η σελίδα. Αν την ανανεώσεις, θα χρειαστείς νέο σύνδεσμο από το Discord.</p>
+  <button class="help-btn" type="button" id="help"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.7.4-1.1 1-1.1 1.8M12 17h.01"/></svg>Βοήθεια</button>
 </main>
 
 <div class="scrim" id="scrim" hidden></div>
 <section class="viewer" id="viewer" role="dialog" aria-modal="true" aria-labelledby="viewer-name" hidden>
+  <div class="viewer-skin" id="viewer-skin" aria-hidden="true"></div>
   <div class="bar-top">
     <button class="icon-btn" type="button" id="close" aria-label="Κλείσιμο">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
@@ -989,7 +1085,7 @@
     <span class="ink-sep" aria-hidden="true"></span>
     <button class="icon-btn" type="button" id="ink-undo" aria-label="Αναίρεση" title="Αναίρεση"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
     <button class="icon-btn" type="button" id="ink-clear" aria-label="Σβήσιμο όλων" title="Σβήσιμο όλων"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button>
-    <span class="ink-hint" id="ink-hint">Αποθηκεύονται στον λογαριασμό σου. Τα βλέπεις μόνο εσύ.</span>
+    <span class="ink-hint private" id="ink-hint"><svg class="lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Ιδιωτικό. Δεν το βλέπουν άλλα μέλη.</span>
   </div>
   <div class="viewer-body">
     <div class="stage" id="stage"></div>
@@ -1000,13 +1096,29 @@
           <button class="icon-btn" type="button" data-cmd="italic" aria-label="Πλάγια" title="Πλάγια"><i>I</i></button>
           <button class="icon-btn" type="button" data-cmd="mark" aria-label="Υπογράμμιση με μαρκαδόρο" title="Μαρκαδόρος"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h6"/><path d="M14.5 4.5l5 5L11 18H6v-5z"/></svg></button>
           <button class="icon-btn" type="button" data-cmd="heading" aria-label="Επικεφαλίδα" title="Επικεφαλίδα">H</button>
+          <button class="icon-btn" type="button" data-cmd="formula" aria-label="Νέος τύπος" title="Νέος τύπος (Enter για τέλος)">∑</button>
           <button class="icon-btn" type="button" data-cmd="insertUnorderedList" aria-label="Λίστα" title="Λίστα"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></svg></button>
           <button class="icon-btn" type="button" data-cmd="insertOrderedList" aria-label="Αριθμημένη λίστα" title="Αριθμημένη λίστα"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 6h10M10 12h10M10 18h10"/><path d="M4 5l1.5-1v5M4 14h2.5L4 18h2.5"/></svg></button>
         </div>
         <button class="icon-btn" type="button" id="pad-close" aria-label="Κλείσιμο σημειώσεων"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
       </div>
       <div class="pad-text md" id="pad-text" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Σημειώσεις" spellcheck="true" data-placeholder="Γράψε τις σημειώσεις σου εδώ…"></div>
-      <p class="pad-foot">Αποθηκεύονται στον λογαριασμό σου. Τα βλέπεις μόνο εσύ.</p>
+      <div class="img-bar" id="img-bar" role="toolbar" aria-label="Εικόνα" hidden>
+        <button type="button" data-img-size="25" aria-label="Μέγεθος 25%">25%</button>
+        <button type="button" data-img-size="50" aria-label="Μέγεθος 50%">50%</button>
+        <button type="button" data-img-size="100" aria-label="Πλήρες πλάτος">100%</button>
+        <i></i>
+        <button type="button" data-img-align="" aria-label="Στοίχιση αριστερά"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h13"/></svg></button>
+        <button type="button" data-img-align="center" aria-label="Στοίχιση στο κέντρο"><svg viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M5 18h14"/></svg></button>
+        <button type="button" data-img-align="right" aria-label="Στοίχιση δεξιά"><svg viewBox="0 0 24 24"><path d="M4 6h16M10 12h10M7 18h13"/></svg></button>
+        <i></i>
+        <button type="button" data-img-turn="270" aria-label="Περιστροφή αριστερά"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></button>
+        <button type="button" data-img-turn="90" aria-label="Περιστροφή δεξιά"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
+        <i></i>
+        <button type="button" id="img-delete" aria-label="Διαγραφή εικόνας"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5"/></svg></button>
+      </div>
+      <div class="img-grip" id="img-grip" aria-hidden="true" hidden></div>
+      <p class="pad-foot private"><svg class="lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span><b>Ιδιωτικές.</b> Δεν τις βλέπουν άλλα μέλη.</span></p>
     </aside>
   </div>
 </section>
@@ -1038,10 +1150,25 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
+<dialog class="report intro" id="intro" aria-labelledby="intro-title">
+  <svg class="intro-art" viewBox="0 0 560 150" aria-hidden="true" fill="none" stroke-linecap="round">
+    <rect x="150" y="22" width="260" height="150" rx="6" fill="var(--color-sheet)" stroke="var(--color-line)" stroke-width="2"/>
+    <path class="ink-mark" pathLength="1" d="M176 62H330" stroke="var(--color-brand)" stroke-width="16" opacity="0.55"/>
+    <path d="M176 62H372M176 90H384M176 118H340" stroke="var(--color-muted)" stroke-width="5"/>
+    <path class="ink-line" pathLength="1" d="M176 133C216 126 268 138 346 130" stroke="var(--color-marker)" stroke-width="3.5"/>
+  </svg>
+  <form class="intro-body" method="dialog">
+    <h2 id="intro-title">Τι είναι αυτή η σελίδα</h2>
+    <p>Εδώ είναι όλα τα αρχεία που έχουν ανέβει στο κανάλι του μαθήματος. Μπορείς να τα διαβάσεις από εδώ, να κρατήσεις σημειώσεις, να γράψεις πάνω στις σελίδες και να τσεκάρεις τι έχεις διαβάσει.</p>
+    <p class="private"><svg class="lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span><b>Τα άλλα μέλη δεν βλέπουν τίποτα από αυτά</b>, και τα αρχεία δεν αλλάζουν για κανέναν άλλον. Θα τα βρεις όπως τα άφησες και από άλλη συσκευή.</span></p>
+    <div class="report-row"><button class="btn" type="submit" id="intro-ok">Εντάξει</button></div>
+  </form>
+</dialog>
+
 <dialog class="report notes-form" id="notes" aria-labelledby="notes-title">
   <form id="notes-form" method="dialog">
     <h2 id="notes-title">Τίτλος και περιγραφή</h2>
-    <p>Αποθηκεύονται <strong>στον λογαριασμό σου</strong>. Τα βλέπεις μόνο εσύ, από όποια συσκευή κι αν μπεις.</p>
+    <p class="private"><svg class="lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span><strong>Ιδιωτικά.</strong> Αλλάζουν μόνο για σένα: τα άλλα μέλη βλέπουν το αρχικό όνομα του αρχείου.</span></p>
     <p class="report-file" id="notes-file"></p>
     <label for="notes-name">Τίτλος</label>
     <input id="notes-name" maxlength="120" autocomplete="off">
@@ -1167,7 +1294,7 @@
       if (it.d === null) stored.delete(key); else stored.set(key, JSON.stringify(it.d));
     }
     if ((m.drop || []).some((x) => x.code === 'too_large')) {
-      saveFailed('Οι σημειώσεις σε ένα αρχείο είναι πολύ μεγάλες για να αποθηκευτούν. Σβήσε λίγες γραμμές.');
+      saveFailed('Οι σημειώσεις σε ένα αρχείο είναι πολύ μεγάλες για να αποθηκευτούν. Σβήσε λίγες γραμμές ή εικόνες.');
     }
   }
   // Puts unacknowledged items back, unless a newer change took their place.
@@ -1197,11 +1324,18 @@
           for (const items of inflight.values()) requeue(items);
           inflight.clear();
           flushSaves();
+          // Back after a drop: catch up on what the other devices saved.
+          if (sock.joined) ws.send(JSON.stringify({ op: 'sync' }));
+          sock.joined = true;
         }
       } else if (m.op === 'ack') {
         acknowledged(m);
       } else if (m.op === 'presence') {
         showPresence(m.here, m.all);
+      } else if (m.op === 'notes') {
+        for (const it of m.items) applyRemote(it.f, it.k, it.d);
+      } else if (m.op === 'sync') {
+        applySync(m.notes);
       }
     };
     ws.onclose = (e) => {
@@ -1218,6 +1352,54 @@
       sock.wait = Math.min(sock.wait * 2, 30000);
     };
   }
+  // ── Saves from the member's other devices and tabs ──────────────────────
+  // A change of this page's own still on the way wins: it is the newer one.
+  function applyRemote(id, kind, d) {
+    const key = keyOf(id, kind);
+    if (pendingSaves.has(key)) return;
+    for (const items of inflight.values()) if (items.some((it) => keyOf(it.f, it.k) === key)) return;
+    const json = d === null ? undefined : JSON.stringify(d);
+    if (stored.get(key) === json) return;
+    if (d === null) stored.delete(key); else stored.set(key, json);
+    if (kind === 'intro') { if (d) (saved[id] ||= {}).intro = d; return; }
+    const f = files.find((x) => x.id === id);
+    if (!f) return;
+    if (kind === 'study') applyStudy(f, d);
+    else if (kind === 'ink') applyInk(f, d);
+  }
+  // Everything the server holds: what is missing from it was deleted elsewhere.
+  function applySync(notes) {
+    for (const key of [...stored.keys()]) {
+      const at = key.lastIndexOf(':');
+      const id = key.slice(0, at);
+      const kind = key.slice(at + 1);
+      if (!notes[id]?.[kind]) applyRemote(id, kind, null);
+    }
+    for (const [id, kinds] of Object.entries(notes)) {
+      for (const [kind, d] of Object.entries(kinds)) applyRemote(id, kind, d);
+    }
+  }
+  function applyStudy(f, d) {
+    const before = mine(f).n || '';
+    if (d) study[f.id] = d; else delete study[f.id];
+    paintMine(f);
+    renderSummary();
+    applyFilter();
+    if (current !== f) return;
+    $('viewer-name').textContent = titleOf(f);
+    $('viewer-meta').textContent = (titleOf(f) !== f.name ? f.name + ' · ' : '') + f.row.bits.join(' · ');
+    // Text being typed here stays, and its save keeps the rest of what came.
+    if (padFile === f && !padTimer && !mathSource && before !== (mine(f).n || '')) refreshPad(f);
+  }
+  function applyInk(f, d) {
+    if (d) ink[f.id] = d; else delete ink[f.id];
+    if (current !== f) return;
+    // What undo remembers points at strokes that were just replaced.
+    inkUndo = [];
+    for (const c of stage.querySelectorAll('.ink')) paintInk(c, drawing?.c === c ? drawing.s : null);
+    syncInkButtons();
+  }
+
   // ── Presence: how many are studying now, here and in the whole space ────
   function showPresence(here, all) {
     const box = document.getElementById('presence');
@@ -1316,9 +1498,12 @@
   const descOf = (f) => mine(f).c || f.caption || '';
   const titleOf = (f) => mine(f).t || descOf(f) || f.name;
   // The notes as one line of text, for the list and its search.
-  const plainOf = (html) => new DOMParser()
-    .parseFromString('<body>' + (html || '').replace(/<\/(p|div|li|h3)>|<br>/g, ' $&'), 'text/html')
-    .body.textContent.replace(/\s+/g, ' ').trim();
+  const plainOf = (html) => {
+    const body = new DOMParser()
+      .parseFromString('<body>' + (html || '').replace(/<\/(p|div|li|h[1-4]|td|th)>|<br>/g, ' $&'), 'text/html').body;
+    for (const a of body.querySelectorAll('[data-tex]')) a.textContent = ' ' + a.dataset.tex + ' ';
+    return body.textContent.replace(/\s+/g, ' ').trim();
+  };
 
   const data = JSON.parse(document.getElementById('data').textContent);
   const $ = (id) => document.getElementById(id);
@@ -1409,6 +1594,7 @@
     nameRow.append(nameEl, edit);
     const capEl = el('span', 'caption');
     const noteEl = el('span', 'note');
+    noteEl.title = 'Ιδιωτικό. Δεν το βλέπουν άλλα μέλη.';
     info.append(nameRow, capEl);
     const bits = [size(f.size), dateFmt.format(new Date(f.posted))];
     if (f.by) bits.push(f.by);
@@ -1470,6 +1656,21 @@
     r.edit.setAttribute('aria-label', 'Αλλαγή τίτλου και περιγραφής: ' + titleOf(f));
     r.li.dataset.search = [f.name, f.caption, f.by, f.thread, m.t, m.c, r.noteEl.textContent].filter(Boolean).join(' ').toLocaleLowerCase('el');
   }
+
+  // ── First visit: shown once per account, never to staff viewing as a member ──
+  function introSeen() {
+    if (saved.room?.intro) return true;
+    try { return localStorage.getItem('intro') === '1'; } catch { return false; }
+  }
+  $('intro').addEventListener('close', () => {
+    if (boot.viewOnly || introSeen()) return;
+    (saved.room ||= {}).intro = { seen: 1 };
+    persist('room', 'intro', saved.room.intro);
+    try { localStorage.setItem('intro', '1'); } catch {}
+  });
+  $('intro-open').addEventListener('click', () => $('intro').showModal());
+  $('help').addEventListener('click', () => $('intro').showModal());
+  if (!boot.viewOnly && !introSeen()) $('intro').showModal();
 
   // ── Own title and notes ─────────────────────────────────────────────────
   let noting = null;
@@ -1547,11 +1748,13 @@
   let expired = false;
   let done = 0;
   const queue = [...files];
+  $('files').classList.add('arriving');
+  setTimeout(() => $('files').classList.remove('arriving'), 700);
 
   function progress() {
     const box = $('progress');
     if (!files.length) { box.hidden = true; return; }
-    $('progress-bar').style.width = (100 * done / files.length) + '%';
+    $('progress-bar').style.transform = 'scaleX(' + done / files.length + ')';
     if (done < files.length) {
       $('progress-text').textContent = 'Λήψη: ' + done + ' από ' + files.length + '…';
       return;
@@ -1685,6 +1888,157 @@
   let observer = null;
   let lastFocus = null;
 
+  // The viewer, grown out of the file's card. Four springs rather than one tween:
+  // the centre moves on two and the size on two more, so the card widens a beat
+  // before it deepens, and folds flat a beat before it narrows. Everything else
+  // is read off how far open it is. Springs, because a viewer that is closing
+  // can be opened again and carries on from where it is, at the speed it is going.
+  // The viewer is clipped rather than scaled, so nothing in it is ever stretched.
+  const viewerMorph = (() => {
+    const OPENING = { x: 0.42, y: 0.42, w: 0.34, h: 0.46 };
+    const CLOSING = { x: 0.34, y: 0.34, w: 0.36, h: 0.28 };
+    const PLAIN = { x: 0.3, y: 0.3, w: 0.3, h: 0.3 };
+    const SIDES = ['x', 'y', 'w', 'h'];
+    const clamp = (v) => Math.min(1, Math.max(0, v));
+    const part = (v, from, to) => (Math.abs(to - from) < 1 ? 1 : clamp((v - from) / (to - from)));
+    const between = (v, a, b) => { const t = clamp((v - a) / (b - a)); return t * t * (3 - 2 * t); };
+    let frameId = 0, at = null, velocity = null, frame = null, chip = null, dressed = false, folding = false, lifted = null, fades = [];
+
+    const viewer = () => $('viewer');
+    const lift = (li) => {
+      if (lifted && lifted !== li) delete lifted.dataset.morphed;
+      lifted = li;
+      if (li) li.dataset.morphed = '';
+    };
+    function frameBox() {
+      const v = viewer();
+      v.style.transform = '';
+      v.style.clipPath = '';
+      const b = v.getBoundingClientRect();
+      return { x: b.left + b.width / 2, y: b.top + b.height / 2, w: b.width, h: b.height, r: parseFloat(getComputedStyle(v).borderTopLeftRadius) || 0 };
+    }
+    function chipBox(f) {
+      const li = f?.row?.li;
+      if (!li?.isConnected || li.hidden) return null;
+      const b = li.getBoundingClientRect();
+      const left = Math.max(b.left, 0), right = Math.min(b.right, innerWidth);
+      const top = Math.max(b.top, 0), bottom = Math.min(b.bottom, innerHeight);
+      if (right - left < 1 || bottom - top < 1) return null;
+      return {
+        x: (left + right) / 2, y: (top + bottom) / 2,
+        w: Math.min(right - left, frame.w), h: Math.min(bottom - top, frame.h),
+        r: parseFloat(getComputedStyle(li).borderTopLeftRadius) || 0,
+      };
+    }
+    const plainEnd = () => ({ ...frame, y: frame.y + 12, w: frame.w * 0.94, h: frame.h * 0.94 });
+    function draw(a) {
+      const wide = part(a.w, chip.w, frame.w), tall = part(a.h, chip.h, frame.h);
+      const insetX = Math.max(0, (frame.w - a.w) / 2), insetY = Math.max(0, (frame.h - a.h) / 2);
+      const round = Math.max(0, Math.min(chip.r + (frame.r - chip.r) * tall, a.w / 2, a.h / 2));
+      const v = viewer();
+      if (folding) {
+        // Folding, the file itself shrinks, evenly, so it stays in sight the whole way,
+        // and it fades into the real card waiting under it.
+        const scale = Math.max(a.w / frame.w, a.h / frame.h);
+        v.style.transform = 'translate(' + (a.x - frame.x).toFixed(2) + 'px, ' + (a.y - frame.y).toFixed(2) + 'px) scale(' + scale.toFixed(4) + ')';
+        v.style.clipPath = 'inset(' + Math.max(0, (frame.h - a.h / scale) / 2).toFixed(2) + 'px ' + Math.max(0, (frame.w - a.w / scale) / 2).toFixed(2) + 'px round ' + (round / scale).toFixed(2) + 'px)';
+        v.style.opacity = dressed ? between(tall, 0, 0.22).toFixed(3) : between(tall, 0, 0.5).toFixed(3);
+        $('viewer-skin').style.opacity = '0';
+        $('scrim').style.opacity = between((wide + tall) / 2, 0, 0.85).toFixed(3);
+        return;
+      }
+      v.style.transform = 'translate(' + (a.x - frame.x).toFixed(2) + 'px, ' + (a.y - frame.y).toFixed(2) + 'px)';
+      v.style.clipPath = 'inset(' + insetY.toFixed(2) + 'px ' + insetX.toFixed(2) + 'px round ' + round.toFixed(2) + 'px)';
+      v.style.opacity = dressed ? '1' : between(tall, 0, 0.5).toFixed(3);
+      $('viewer-skin').style.opacity = dressed ? (1 - between(tall, 0.1, 0.75)).toFixed(3) : '0';
+      $('scrim').style.opacity = between((wide + tall) / 2, 0, 0.85).toFixed(3);
+    }
+    function undress() {
+      const v = viewer();
+      for (const k of ['transform', 'clipPath', 'opacity']) v.style[k] = '';
+      $('viewer-skin').style.opacity = '';
+      $('scrim').style.opacity = '';
+      v.classList.remove('landing');
+      $('scrim').classList.remove('landing');
+    }
+    function stop() {
+      cancelAnimationFrame(frameId);
+      for (const a of fades) a.cancel();
+      fades = [];
+    }
+    function run(springs, target, rest, follow) {
+      let last = performance.now();
+      draw(at);
+      const tick = (now) => {
+        const to = follow ? follow() : target;
+        const elapsed = Math.min(Math.max(0, now - last) / 1000, 1 / 20);
+        last = now;
+        let still = true;
+        for (const side of SIDES) {
+          const stiffness = (2 * Math.PI / springs[side]) ** 2;
+          const friction = 4 * Math.PI / springs[side];
+          // Small fixed steps, so a dropped frame is caught up on rather than overshot.
+          for (let left = elapsed; left > 0; left -= 1 / 240) {
+            const h = Math.min(left, 1 / 240);
+            velocity[side] += (-stiffness * (at[side] - to[side]) - friction * velocity[side]) * h;
+            at[side] += velocity[side] * h;
+          }
+          if (Math.abs(at[side] - to[side]) > 0.3 || Math.abs(velocity[side]) > 4) still = false;
+        }
+        if (still) { at = null; velocity = null; folding = false; undress(); rest(); return; }
+        draw(at);
+        frameId = requestAnimationFrame(tick);
+      };
+      frameId = requestAnimationFrame(tick);
+    }
+    // Without movement: the viewer and its dimming fade, and that is all.
+    function fade(from, to, rest) {
+      fades = [viewer(), $('scrim')].map((el) => el.animate({ opacity: [from, to] }, { duration: 160, easing: 'ease-out', fill: 'both' }));
+      fades[0].onfinish = () => { for (const a of fades) a.cancel(); fades = []; undress(); rest(); };
+    }
+    const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    return {
+      open(f) {
+        stop();
+        // Opened again mid-fold, it grows back the way it was shrinking, from where it is.
+        folding = !!at && folding;
+        viewer().classList.remove('landing');
+        $('scrim').classList.remove('landing');
+        if (reduced()) { undress(); return fade(0, 1, () => {}); }
+        frame = frameBox();
+        const box = chipBox(f);
+        dressed = !!box;
+        chip = box || plainEnd();
+        lift(box && !folding ? f.row.li : null);
+        if (!at) { at = { x: chip.x, y: chip.y, w: chip.w, h: chip.h }; velocity = { x: 0, y: 0, w: 0, h: 0 }; }
+        run(box ? OPENING : PLAIN, frame, () => {});
+      },
+      close(f, done) {
+        stop();
+        folding = true;
+        viewer().classList.add('landing');
+        $('scrim').classList.add('landing');
+        const finish = () => { lift(null); done(); };
+        if (reduced()) { lift(null); return fade(1, 0, done); }
+        const keep = at;
+        frame = frameBox();
+        const box = chipBox(f);
+        dressed = !!box;
+        chip = box || plainEnd();
+        lift(null);
+        if (!keep) { at = { x: frame.x, y: frame.y, w: frame.w, h: frame.h }; velocity = { x: 0, y: 0, w: 0, h: 0 }; }
+        // The page gets its scrollbar back as this starts, so the card is asked for again every frame.
+        const follow = () => {
+          const now = dressed ? chipBox(f) : chip;
+          if (now) chip = now; else dressed = false;
+          return chip;
+        };
+        run(box ? CLOSING : PLAIN, chip, finish, follow);
+      },
+    };
+  })();
+
   const visibleFiles = () => files.filter((f) => !f.row.li.hidden);
 
   function loading(text, still) {
@@ -1710,6 +2064,7 @@
       lastFocus = document.activeElement;
       $('viewer').hidden = false;
       $('scrim').hidden = false;
+      viewerMorph.open(f);
       document.body.classList.add('locked');
       // The back button (or gesture) closes the viewer instead of the page.
       history.pushState({ viewer: true }, '');
@@ -2482,30 +2837,556 @@
   let padOpen = false;
   try { padOpen = localStorage.getItem('pad') === '1'; } catch {}
 
-  const KEEP = new Set(['P', 'DIV', 'BR', 'B', 'STRONG', 'I', 'EM', 'MARK', 'H3', 'UL', 'OL', 'LI']);
+  // Formulas and diagrams are stored as their source, in data-tex and
+  // data-mermaid, and drawn when shown. Images are stored inside the note as
+  // base64. Anything else in a note's src or href is dropped.
+  const KEEP = new Set(['P', 'DIV', 'BR', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'DEL', 'SUB', 'SUP', 'MARK', 'H1', 'H2', 'H3', 'H4', 'UL', 'OL', 'LI',
+    'BLOCKQUOTE', 'PRE', 'CODE', 'HR', 'A', 'IMG', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TH', 'TD', 'SPAN']);
+  const DROP = new Set(['SCRIPT', 'STYLE', 'BUTTON', 'NAV', 'SVG', 'svg', 'MATH', 'math', 'IFRAME', 'OBJECT', 'EMBED', 'TEMPLATE', 'NOSCRIPT', 'TITLE', 'INPUT', 'TEXTAREA', 'SELECT', 'FORM']);
+  const IMAGE_DATA = /^data:image\/(png|jpeg|webp|gif);base64,[a-z0-9+/=]+$/i;
   function cleanHTML(html) {
     const doc = new DOMParser().parseFromString('<body>' + html, 'text/html');
     const walk = (node) => {
       for (const c of [...node.childNodes]) {
         if (c.nodeType === 3) continue;
-        if (c.nodeType !== 1) { c.remove(); continue; }
+        if (c.nodeType !== 1 || DROP.has(c.tagName)) { c.remove(); continue; }
+        const tex = c.getAttribute('data-tex'), chart = c.getAttribute('data-mermaid');
+        if (tex || chart) {
+          const atom = doc.createElement(tex ? 'span' : 'div');
+          atom.setAttribute(tex ? 'data-tex' : 'data-mermaid', tex || chart);
+          if (tex && c.hasAttribute('data-display')) atom.setAttribute('data-display', '');
+          c.replaceWith(atom);
+          continue;
+        }
         walk(c);
-        if (!KEEP.has(c.tagName)) { c.replaceWith(...c.childNodes); continue; }
+        if (!KEEP.has(c.tagName) || c.tagName === 'SPAN') { c.replaceWith(...c.childNodes); continue; }
+        const src = c.getAttribute('src'), href = c.getAttribute('href');
+        const span = [c.getAttribute('colspan'), c.getAttribute('rowspan')];
+        const width = c.getAttribute('width'), align = c.getAttribute('data-align');
         for (const a of [...c.attributes]) c.removeAttribute(a.name);
+        if (c.tagName === 'IMG') {
+          if (IMAGE_DATA.test(src || '')) {
+            c.setAttribute('src', src);
+            c.setAttribute('alt', '');
+            if (/^(100|[1-9]\d)%$/.test(width || '')) c.setAttribute('width', width);
+            if (align === 'center' || align === 'right') c.setAttribute('data-align', align);
+          } else c.remove();
+        } else if (c.tagName === 'A') {
+          if (/^https?:\/\//i.test(href || '')) { c.setAttribute('href', href); c.setAttribute('target', '_blank'); c.setAttribute('rel', 'noopener noreferrer'); } else c.replaceWith(...c.childNodes);
+        } else if (c.tagName === 'TD' || c.tagName === 'TH') {
+          if (/^\d{1,2}$/.test(span[0] || '')) c.setAttribute('colspan', span[0]);
+          if (/^\d{1,2}$/.test(span[1] || '')) c.setAttribute('rowspan', span[1]);
+        }
       }
     };
     walk(doc.body);
     return doc.body.innerHTML;
   }
 
-  function loadPad(f) {
-    padText.innerHTML = cleanHTML(mine(f).n || '');
+  // ── Libraries for notes, pinned and only fetched when a note needs them ──
+  const NOTE_LIBS = {
+    katex: ['katex@0.16.11/dist/katex.min.js', 'sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg'],
+    marked: ['marked@15.0.7/marked.min.js', 'sha384-H+hy9ULve6xfxRkWIh/YOtvDdpXgV2fmAGQkIDTxIgZwNoaoBal14Di2YTMR6MzR'],
+    mermaid: ['mermaid@11.4.1/dist/mermaid.min.js', 'sha384-rbtjAdnIQE/aQJGEgXrVUlMibdfTSa4PQju4HDhN3sR2PmaKFzhEafuePsl9H/9I'],
+  };
+  const libs = {};
+  function noteLib(name) {
+    return libs[name] ||= new Promise((resolve, reject) => {
+      if (name === 'katex') {
+        const css = document.createElement('link');
+        css.rel = 'stylesheet';
+        css.href = 'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css';
+        css.integrity = 'sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+';
+        css.crossOrigin = 'anonymous';
+        document.head.append(css);
+      }
+      const js = document.createElement('script');
+      js.src = 'https://cdn.jsdelivr.net/npm/' + NOTE_LIBS[name][0];
+      js.integrity = NOTE_LIBS[name][1];
+      js.crossOrigin = 'anonymous';
+      js.onload = () => resolve(window[name]);
+      js.onerror = () => { delete libs[name]; reject(new Error('load ' + name)); };
+      document.head.append(js);
+    });
   }
+
+  // Draws the formulas and diagrams under root. Until the library arrives, or
+  // if it never does, the source itself shows.
+  let chartSeq = 0;
+  function drawAtoms(root) {
+    const maths = [...root.querySelectorAll('[data-tex]')];
+    const charts = [...root.querySelectorAll('[data-mermaid]')];
+    for (const a of [...maths, ...charts]) {
+      a.contentEditable = 'false';
+      if (!a.childNodes.length) a.textContent = a.dataset.tex || a.dataset.mermaid;
+    }
+    if (maths.length) noteLib('katex').then((katex) => {
+      for (const a of maths) katex.render(a.dataset.tex, a, { displayMode: a.hasAttribute('data-display'), throwOnError: false, strict: false, trust: false });
+    }).catch(() => {});
+    if (charts.length) noteLib('mermaid').then(async (mermaid) => {
+      const dark = document.documentElement.dataset.theme === 'dark' || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
+      mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', suppressErrorRendering: true, theme: dark ? 'dark' : 'neutral', htmlLabels: false, flowchart: { htmlLabels: false } });
+      for (const a of charts) {
+        try {
+          const { svg } = await mermaid.render('note-chart-' + ++chartSeq, a.dataset.mermaid);
+          // As an image the drawing cannot run anything.
+          const img = new Image();
+          img.alt = 'Διάγραμμα';
+          img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+          a.replaceChildren(img);
+        } catch {
+          a.classList.add('chart-error');
+        }
+      }
+    }).catch(() => {});
+  }
+
+  // ── LaTeX in the forms agents write it ──────────────────────────────────
+  const ENVS = 'equation|align|alignat|gather|multline|flalign|cases|matrix|pmatrix|bmatrix|vmatrix|array';
+  const MATH_SRC = String.raw`\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|(\\begin\{(?:ENVS)\*?\}[\s\S]+?\\end\{(?:ENVS)\*?\})|\\\(([\s\S]+?)\\\)|(?<![\\$\w])\$(?![\s$])((?:\\.|[^$\n\\])+?)(?<!\s)\$(?![\d$])`.replaceAll('ENVS', ENVS);
+  const matchTex = (m) => {
+    const display = m[1] ?? m[2] ?? m[3];
+    return { tex: (display ?? m[4] ?? m[5]).trim(), display: display != null };
+  };
+  const attr = (t) => t.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '&#10;');
+  const mathTag = ({ tex, display }) => `<span data-tex="${attr(tex)}"${display ? ' data-display' : ''}></span>`;
+
+  // Turns the math in markdown into tags before the markdown is read, so its
+  // backslashes and underscores survive. Code is left as it is. Text copied
+  // from ChatGPT can also lose the backslashes: "[ x^2 ]" alone on a line, and
+  // "( \alpha )", which is only taken when it holds a command.
+  function protectMath(md) {
+    const re = new RegExp(String.raw`(^(?:\x60{3,}|~{3,})[^\n]*\n[\s\S]*?^(?:\x60{3,}|~{3,})\s*$|\x60[^\x60\n]+\x60)|` + MATH_SRC +
+      String.raw`|^[ \t]*\[[ \t]+([^\n]*[\\^_][^\n]*?)[ \t]+\][ \t]*$|\([ \t]+(\\[a-zA-Z][^()\n]*?)[ \t]+\)`, 'gm');
+    return md.replace(re, (...a) => {
+      if (a[1]) return a[1];
+      const bare = a[7] ?? a[8];
+      if (bare != null) return (a[7] != null ? '\n\n' : '') + mathTag({ tex: bare.trim(), display: a[7] != null }) + (a[7] != null ? '\n\n' : '');
+      const m = matchTex([a[0], a[2], a[3], a[4], a[5], a[6]]);
+      return m.display ? '\n\n' + mathTag(m) + '\n\n' : mathTag(m);
+    });
+  }
+
+  // Converts math written as plain text under root. skip is a text node still
+  // being typed in.
+  function mathify(root, skip) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) => (n === skip || n.parentElement.closest('pre, code, [data-tex], [data-mermaid]') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+    });
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    let changed = false;
+    for (const node of nodes) {
+      const text = node.nodeValue;
+      const re = new RegExp(MATH_SRC, 'g');
+      let at = 0, m;
+      const out = [];
+      const doc = node.ownerDocument;
+      while ((m = re.exec(text))) {
+        const { tex, display } = matchTex(m);
+        out.push(doc.createTextNode(text.slice(at, m.index)));
+        const atom = doc.createElement('span');
+        atom.dataset.tex = tex;
+        if (display) atom.setAttribute('data-display', '');
+        out.push(atom);
+        at = re.lastIndex;
+      }
+      if (!out.length) continue;
+      out.push(doc.createTextNode(text.slice(at)));
+      node.replaceWith(...out);
+      changed = true;
+    }
+    return changed;
+  }
+
+  // ── Images ──────────────────────────────────────────────────────────────
+  const IMAGE_MAX_SIDE = 1600;
+  const IMAGE_MAX_DATA = 500 << 10;
+  const loadImage = (src) => new Promise((resolve, reject) => {
+    const i = new Image();
+    i.onload = () => resolve(i);
+    i.onerror = reject;
+    i.src = src;
+  });
+  const asDataURL = (blob) => new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
+  // A small picture stays exactly as it came, so a chart keeps its sharp lines.
+  // A larger one is scaled until the note can carry it.
+  async function imageData(src, known) {
+    const img = await loadImage(src);
+    const w = img.naturalWidth, h = img.naturalHeight;
+    if (known && IMAGE_DATA.test(known) && known.length <= IMAGE_MAX_DATA && Math.max(w, h) <= IMAGE_MAX_SIDE) return known;
+    let side = Math.min(IMAGE_MAX_SIDE, Math.max(w, h));
+    for (;;) {
+      const k = side / Math.max(w, h);
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(w * k));
+      c.height = Math.max(1, Math.round(h * k));
+      const g = c.getContext('2d');
+      g.fillStyle = '#fff';
+      g.fillRect(0, 0, c.width, c.height);
+      g.drawImage(img, 0, 0, c.width, c.height);
+      let out = c.toDataURL('image/webp', 0.82);
+      if (!out.startsWith('data:image/webp')) out = c.toDataURL('image/jpeg', 0.82);
+      if (out.length <= IMAGE_MAX_DATA || side < 400) return out;
+      side = Math.round(side * 0.75);
+    }
+  }
+  async function fileImage(file) {
+    const url = URL.createObjectURL(file);
+    try { return await imageData(url, await asDataURL(file)); } finally { URL.revokeObjectURL(url); }
+  }
+  // A drawn chart in a copied page arrives as SVG; it is stored as a picture.
+  async function svgImage(svg) {
+    const box = svg.viewBox?.baseVal;
+    const w = parseFloat(svg.getAttribute('width')) || box?.width || 0;
+    const h = parseFloat(svg.getAttribute('height')) || box?.height || 0;
+    if (w && h && Math.max(w, h) < 48) return null; // an icon
+    const copy = svg.cloneNode(true);
+    copy.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    if (w && h) { copy.setAttribute('width', w * 2); copy.setAttribute('height', h * 2); }
+    const src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(copy));
+    return imageData(src);
+  }
+
+  // ── Paste and drop ──────────────────────────────────────────────────────
+  const CHART_START = /^\s*(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|gantt|pie|journey|mindmap|timeline|xychart-beta|quadrantChart|gitGraph)\b/;
+  const LOOKS_MD = /^\s*(#{1,6}\s|[-*+]\s|\d+\.\s|>\s|\x60{3}|~{3}|\|.*\|)|\*\*[^*]+\*\*|\x60[^\x60]+\x60|\$\$|\\\[|\\\(|\\begin\{|\$[^\s$][^$\n]*\$|^\s*\[\s.*[\\^_].*\s\]\s*$/m;
+
+  // Rewrites a copied page into what a note stores.
+  async function prepareDoc(doc, files) {
+    for (const a of [...doc.querySelectorAll('.katex-display, .katex')]) {
+      if (!a.isConnected) continue;
+      const tex = a.querySelector('annotation[encoding="application/x-tex"]')?.textContent.trim();
+      if (!tex) continue;
+      const atom = doc.createElement('span');
+      atom.dataset.tex = tex;
+      if (a.matches('.katex-display')) atom.setAttribute('data-display', '');
+      a.replaceWith(atom);
+    }
+    for (const m of [...doc.querySelectorAll('math')]) {
+      const tex = m.querySelector('annotation[encoding="application/x-tex"]')?.textContent.trim();
+      if (!tex) continue;
+      const atom = doc.createElement('span');
+      atom.dataset.tex = tex;
+      if (m.getAttribute('display') === 'block') atom.setAttribute('data-display', '');
+      m.replaceWith(atom);
+    }
+    for (const pre of [...doc.querySelectorAll('pre')]) {
+      const code = pre.querySelector('code');
+      const text = (code || pre).textContent.replace(/\n$/, '');
+      const lang = (code?.className.match(/language-([\w-]+)/) || [])[1];
+      if (lang === 'mermaid' || CHART_START.test(text)) {
+        const atom = doc.createElement('div');
+        atom.dataset.mermaid = text;
+        pre.replaceWith(atom);
+      } else if (lang === 'math') {
+        const atom = doc.createElement('span');
+        atom.dataset.tex = text;
+        atom.setAttribute('data-display', '');
+        pre.replaceWith(atom);
+      } else if (lang === 'svg' && /^\s*<svg[\s>]/.test(text)) {
+        const svg = new DOMParser().parseFromString(text, 'image/svg+xml').documentElement;
+        const data = svg.tagName === 'svg' && await svgImage(svg).catch(() => null);
+        if (data) { const i = doc.createElement('img'); i.src = data; pre.replaceWith(i); }
+      } else {
+        // Drops the language label and copy button around the code.
+        const c = doc.createElement('code');
+        c.textContent = text;
+        pre.replaceChildren(c);
+      }
+    }
+    for (const svg of [...doc.querySelectorAll('svg')]) {
+      const data = await svgImage(svg).catch(() => null);
+      if (data) { const i = doc.createElement('img'); i.src = data; svg.replaceWith(i); } else svg.remove();
+    }
+    const left = [...files];
+    for (const img of [...doc.querySelectorAll('img')]) {
+      const src = img.getAttribute('src') || '';
+      try {
+        if (src.startsWith('data:image/')) { img.setAttribute('src', await imageData(src, src)); continue; }
+        // The clipboard may hold the picture itself alongside its web address.
+        if (left.length) { img.setAttribute('src', await fileImage(left.shift())); continue; }
+      } catch {}
+      // A picture on another site cannot be read from this page.
+      const miss = doc.createElement('em');
+      miss.textContent = '[Η εικόνα δεν αντιγράφηκε. Αντίγραψε μόνο την εικόνα και κόλλησέ τη εδώ.]';
+      img.replaceWith(miss);
+    }
+    mathify(doc.body);
+    for (const f of left) {
+      const i = doc.createElement('img');
+      try { i.src = await fileImage(f); doc.body.append(i); } catch {}
+    }
+  }
+
+  async function insertClip({ html, text, files }) {
+    const sel = getSelection();
+    const range = sel.rangeCount && padText.contains(sel.anchorNode) ? sel.getRangeAt(0).cloneRange() : null;
+    let source = html;
+    // A copy button gives markdown; a selection gives the page with its formulas.
+    if (text && LOOKS_MD.test(text) && !/class="[^"]*katex/.test(html || '')) {
+      try {
+        const marked = await noteLib('marked');
+        source = marked.parse(protectMath(text), { gfm: true, breaks: true, async: false });
+      } catch { source = html; }
+    }
+    if (!source && text && !files.length) {
+      const d = document.createElement('div');
+      d.textContent = text;
+      source = d.innerHTML.replace(/\n/g, '<br>');
+    }
+    const doc = new DOMParser().parseFromString('<body>' + (source || ''), 'text/html');
+    await prepareDoc(doc, files);
+    const clean = cleanHTML(doc.body.innerHTML);
+    if (!clean) return;
+    const frag = document.createRange().createContextualFragment('');
+    const holder = document.createElement('div');
+    holder.innerHTML = clean;
+    frag.append(...holder.childNodes);
+    const last = frag.lastChild;
+    padText.focus();
+    if (range) {
+      range.deleteContents();
+      range.insertNode(frag);
+    } else {
+      padText.append(frag);
+    }
+    if (last) {
+      const after = document.createRange();
+      after.setStartAfter(last);
+      after.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(after);
+    }
+    drawAtoms(padText);
+    padText.dispatchEvent(new Event('input'));
+  }
+  function clipOf(dt) {
+    return {
+      html: dt.getData('text/html'),
+      text: dt.getData('text/plain'),
+      files: [...dt.files].filter((f) => f.type.startsWith('image/')),
+    };
+  }
+
+  // Clicking a formula opens its source; leaving it draws it again.
+  let mathSource = null;
+  padText.addEventListener('click', (e) => {
+    const a = e.target.closest?.('[data-tex]');
+    if (!a || !padText.isContentEditable) return;
+    const mark = a.hasAttribute('data-display') ? '$$' : '$';
+    const t = document.createTextNode(mark + a.dataset.tex + mark);
+    a.replaceWith(t);
+    mathSource = t;
+    getSelection().collapse(t, t.length - mark.length);
+  });
+  document.addEventListener('selectionchange', () => {
+    if (!mathSource || getSelection().anchorNode === mathSource) return;
+    // A new formula left without anything in it leaves nothing behind.
+    if (mathSource.nodeValue === '$$') mathSource.remove();
+    mathSource = null;
+    if (mathify(padText)) { drawAtoms(padText); padText.dispatchEvent(new Event('input')); }
+  });
+  // A new formula: opens the source of an empty one, or of the selected text.
+  function newFormula() {
+    const sel = getSelection();
+    const range = sel.rangeCount && padText.contains(sel.anchorNode) ? sel.getRangeAt(0) : null;
+    const t = document.createTextNode('$' + (range ? range.toString() : '') + '$');
+    if (range) {
+      range.deleteContents();
+      range.insertNode(t);
+    } else {
+      padText.append(t);
+    }
+    mathSource = t;
+    sel.collapse(t, t.length - 1);
+  }
+  // Enter finishes the formula being written and carries on after it.
+  padText.addEventListener('keydown', (e) => {
+    if (!mathSource || e.key !== 'Enter' || e.isComposing) return;
+    e.preventDefault();
+    const after = document.createTextNode(' ');
+    mathSource.after(after);
+    getSelection().collapse(after, 1);
+    if (mathSource.nodeValue === '$$') mathSource.remove();
+    mathSource = null;
+    if (mathify(padText)) drawAtoms(padText);
+    padText.dispatchEvent(new Event('input'));
+  });
+  // A closing delimiter just typed turns what it closes into a formula.
+  function typedMath() {
+    const sel = getSelection();
+    const node = sel.anchorNode;
+    if (mathSource || !sel.isCollapsed || node?.nodeType !== 3 || !padText.contains(node)) return;
+    if (!/[$)\]}]$/.test(node.nodeValue.slice(0, sel.anchorOffset)) || !new RegExp(MATH_SRC).test(node.nodeValue)) return;
+    const holder = document.createElement('span');
+    node.replaceWith(holder);
+    holder.append(node);
+    mathify(holder);
+    const made = [...holder.childNodes];
+    holder.replaceWith(...made);
+    const end = made[made.length - 1];
+    if (!end.nodeValue) end.nodeValue = ' ';
+    sel.collapse(end, end.nodeValue === ' ' ? 1 : 0);
+    drawAtoms(padText);
+  }
+
+  function loadPad(f) {
+    mathSource = null;
+    pickImage(null);
+    padText.innerHTML = cleanHTML(mine(f).n || '');
+    drawAtoms(padText);
+  }
+  // Loads notes that changed elsewhere, leaving the caret where it was.
+  function refreshPad(f) {
+    const sel = getSelection();
+    let at = -1;
+    if (document.activeElement === padText && sel.rangeCount && padText.contains(sel.anchorNode)) {
+      const r = document.createRange();
+      r.selectNodeContents(padText);
+      r.setEnd(sel.anchorNode, sel.anchorOffset);
+      at = r.toString().length;
+    }
+    const top = padText.scrollTop;
+    loadPad(f);
+    padText.scrollTop = top;
+    if (at < 0) return;
+    const walk = document.createTreeWalker(padText, NodeFilter.SHOW_TEXT);
+    let last = null;
+    while (walk.nextNode()) {
+      last = walk.currentNode;
+      if (at <= last.length) { sel.collapse(last, at); return; }
+      at -= last.length;
+    }
+    if (last) sel.collapse(last, last.length); else sel.collapse(padText, 0);
+  }
+  // ── Images in the notes: pick one to size, align, turn or delete it ─────
+  // Size and alignment are kept on the image; a turn redraws its pixels, so
+  // the note's layout follows and nothing else has to remember it.
+  let picked = null;
+  const imgBar = $('img-bar'), imgGrip = $('img-grip');
+  function pickImage(img) {
+    picked?.classList.remove('picked');
+    picked = img;
+    img?.classList.add('picked');
+    imgBar.hidden = imgGrip.hidden = !img;
+    placeImageTools();
+  }
+  function placeImageTools() {
+    if (!picked) return;
+    const pad = $('pad').getBoundingClientRect();
+    const r = picked.getBoundingClientRect();
+    const box = padText.getBoundingClientRect();
+    // Scrolled out of the notes: the tools stay at the edge of what shows.
+    const top = Math.max(box.top + 4, r.top - imgBar.offsetHeight - 8);
+    imgBar.style.top = Math.min(top, box.bottom - imgBar.offsetHeight - 4) - pad.top + 'px';
+    imgBar.style.left = Math.max(8, Math.min(r.left - pad.left, pad.width - imgBar.offsetWidth - 8)) + 'px';
+    imgGrip.hidden = r.bottom > box.bottom || r.bottom < box.top;
+    imgGrip.style.left = r.right - pad.left - 11 + 'px';
+    imgGrip.style.top = r.bottom - pad.top - 11 + 'px';
+    const size = picked.getAttribute('width') || '100%';
+    const align = picked.dataset.align || '';
+    for (const b of imgBar.querySelectorAll('[data-img-size]')) b.setAttribute('aria-pressed', String(b.dataset.imgSize + '%' === size));
+    for (const b of imgBar.querySelectorAll('[data-img-align]')) b.setAttribute('aria-pressed', String(b.dataset.imgAlign === align));
+  }
+  function imageChanged() {
+    padText.dispatchEvent(new Event('input'));
+    placeImageTools();
+  }
+  function sizeImage(img, percent) {
+    if (percent >= 100) img.removeAttribute('width'); else img.setAttribute('width', percent + '%');
+  }
+  async function turnImage(img, deg) {
+    const src = new Image();
+    src.src = img.src;
+    await src.decode();
+    const side = deg !== 180;
+    const c = document.createElement('canvas');
+    c.width = side ? src.naturalHeight : src.naturalWidth;
+    c.height = side ? src.naturalWidth : src.naturalHeight;
+    const ctx = c.getContext('2d');
+    ctx.translate(c.width / 2, c.height / 2);
+    ctx.rotate(deg * Math.PI / 180);
+    ctx.drawImage(src, -src.naturalWidth / 2, -src.naturalHeight / 2);
+    const type = /^data:image\/jpeg/.test(img.src) ? 'image/jpeg' : 'image/png';
+    img.src = c.toDataURL(type, 0.92);
+    await img.decode();
+    if (img === picked) imageChanged(); else padText.dispatchEvent(new Event('input'));
+  }
+  function deleteImage() {
+    const img = picked;
+    if (!img) return;
+    pickImage(null);
+    // Through the editor, so Ctrl+Z brings it back.
+    padText.focus();
+    const r = document.createRange();
+    r.selectNode(img);
+    const sel = getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+    document.execCommand('delete');
+    if (img.isConnected) img.remove();
+    padText.dispatchEvent(new Event('input'));
+  }
+  // Keep the caret in the notes while the tools are pressed.
+  imgBar.addEventListener('pointerdown', (e) => e.preventDefault());
+  imgBar.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b || !picked) return;
+    if (b.dataset.imgSize) { sizeImage(picked, +b.dataset.imgSize); imageChanged(); }
+    else if (b.dataset.imgAlign !== undefined) {
+      if (b.dataset.imgAlign) picked.dataset.align = b.dataset.imgAlign; else delete picked.dataset.align;
+      imageChanged();
+    } else if (b.dataset.imgTurn) turnImage(picked, +b.dataset.imgTurn).catch(() => toast('Δεν μπόρεσα να περιστρέψω την εικόνα.'));
+    else if (b.id === 'img-delete') deleteImage();
+  });
+  imgGrip.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    imgGrip.setPointerCapture(e.pointerId);
+    const start = e.clientX;
+    const from = picked.getBoundingClientRect().width;
+    const css = getComputedStyle(padText);
+    const room = padText.clientWidth - parseFloat(css.paddingLeft) - parseFloat(css.paddingRight);
+    // A centred image grows both ways, so the pointer moves half as far.
+    const pull = picked.dataset.align === 'center' ? 2 : picked.dataset.align === 'right' ? -1 : 1;
+    const move = (ev) => {
+      const percent = Math.round((from + (ev.clientX - start) * pull) / room * 100);
+      sizeImage(picked, Math.max(10, Math.min(100, percent)));
+      placeImageTools();
+    };
+    const end = () => {
+      imgGrip.removeEventListener('pointermove', move);
+      imgGrip.removeEventListener('pointerup', end);
+      imgGrip.removeEventListener('pointercancel', end);
+      imageChanged();
+    };
+    imgGrip.addEventListener('pointermove', move);
+    imgGrip.addEventListener('pointerup', end);
+    imgGrip.addEventListener('pointercancel', end);
+  });
+  padText.addEventListener('click', (e) => {
+    const img = e.target.closest?.('img');
+    pickImage(img && padText.isContentEditable && !img.closest('[data-mermaid]') ? img : null);
+  });
+  padText.addEventListener('keydown', (e) => {
+    if (!picked) return;
+    if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteImage(); }
+    else if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); pickImage(null); }
+    else if (!['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) pickImage(null);
+  });
+  padText.addEventListener('scroll', placeImageTools);
+  addEventListener('resize', placeImageTools);
+  const padHasContent = () => !!(padText.textContent.trim() || padText.querySelector('img, [data-tex], [data-mermaid], hr'));
   function savePad() {
     clearTimeout(padTimer);
     padTimer = null;
     if (!padFile) return;
-    const n = padText.textContent.trim() ? cleanHTML(padText.innerHTML) : '';
+    const n = padHasContent() ? cleanHTML(padText.innerHTML) : '';
     if (n === (mine(padFile).n || '')) return;
     saveMine(padFile, { n });
     paintMine(padFile);
@@ -2521,7 +3402,9 @@
   }
   function format(cmd) {
     padText.focus();
-    if (cmd === 'mark') {
+    if (cmd === 'formula') {
+      newFormula();
+    } else if (cmd === 'mark') {
       const sel = getSelection();
       if (!sel.rangeCount || sel.isCollapsed) return;
       const range = sel.getRangeAt(0);
@@ -2543,15 +3426,24 @@
     b.addEventListener('click', () => format(b.dataset.cmd));
   }
   padText.addEventListener('paste', (e) => {
-    // Pasted text comes in plain, so formatting from elsewhere does not follow it.
     e.preventDefault();
-    document.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
+    if (!padText.isContentEditable) return;
+    insertClip(clipOf(e.clipboardData));
+  });
+  padText.addEventListener('dragover', (e) => { if ([...e.dataTransfer.types].includes('Files')) e.preventDefault(); });
+  padText.addEventListener('drop', (e) => {
+    const clip = clipOf(e.dataTransfer);
+    if (!clip.files.length || !padText.isContentEditable) return;
+    e.preventDefault();
+    getSelection().collapse(padText, padText.childNodes.length);
+    insertClip({ html: '', text: '', files: clip.files });
   });
   padText.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'h' && e.shiftKey) { e.preventDefault(); format('mark'); }
   });
   padText.addEventListener('input', () => {
-    if (!padText.textContent.trim() && !padText.querySelector('li')) padText.innerHTML = '';
+    if (!padHasContent() && !padText.querySelector('li')) padText.innerHTML = '';
+    typedMath();
     clearTimeout(padTimer);
     padTimer = setTimeout(savePad, 400);
   });
@@ -2567,12 +3459,20 @@
     padFile = null;
     setInking(false);
     generation++;
+    const wasPhoto = stage.classList.contains('photo');
     teardown();
+    // A photo keeps its layout until the viewer has folded away.
+    stage.classList.toggle('photo', wasPhoto);
+    const was = current;
     current = null;
-    $('viewer').hidden = true;
-    $('scrim').hidden = true;
     document.body.classList.remove('locked');
-    stage.replaceChildren();
+    // The file stays in place while the viewer folds back onto its card.
+    viewerMorph.close(was, () => {
+      $('viewer').hidden = true;
+      $('scrim').hidden = true;
+      stage.classList.remove('photo');
+      stage.replaceChildren();
+    });
     if (!fromHistory && history.state?.viewer) history.back();
     lastFocus?.focus?.();
   }

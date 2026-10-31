@@ -190,7 +190,7 @@
   .credit a, .footnote a { font-weight: 700; text-underline-offset: 0.15em; }
 
   .view[hidden] { display: none; }
-  .view.entering { animation: swap 320ms var(--ease-out) both; }
+  .view.entering { animation: swap 280ms var(--ease-out) both; }
   @keyframes swap { from { opacity: 0; transform: translateY(6px); } }
 
   /* The result icon. */
@@ -258,7 +258,7 @@
   {{if eq .State "ready"}}
   <section class="view" id="form">
     <div class="logo-wrap"><img class="logo" src="/verify/logo.png" alt="στέκι" width="56" height="56"></div>
-    <h1>Είσαι εσύ;</h1>
+    <h1>Έλεγχος ασφαλείας</h1>
     {{if eq .Reason "manual"}}
     <p><strong>Οι διαχειριστές σε έβαλαν σε timeout για 24 ώρες</strong>, γιατί ο λογαριασμός σου φαινόταν να έχει χακαριστεί.</p>
     {{else if eq .Reason "duplicate"}}

@@ -190,7 +190,7 @@
   .credit a, .footnote a { font-weight: 700; text-underline-offset: 0.15em; }
 
   .view[hidden] { display: none; }
-  .view.entering { animation: swap 320ms var(--ease-out) both; }
+  .view.entering { animation: swap 280ms var(--ease-out) both; }
   @keyframes swap { from { opacity: 0; transform: translateY(6px); } }
 
   /* The result icon. */
@@ -450,6 +450,7 @@ document.querySelectorAll('[data-copy]').forEach(function (b) {
   b.addEventListener('click', function () {
     var text = b.getAttribute('data-copy'), done = function () {
       b.textContent = 'Αντιγράφηκε ✓';
+      b.animate([{ opacity: 0.4 }, { opacity: 1 }], 160);
       setTimeout(function () { b.textContent = 'Αντιγραφή'; }, 1800);
     };
     if (navigator.clipboard && navigator.clipboard.writeText) {

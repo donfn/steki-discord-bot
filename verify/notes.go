@@ -9,16 +9,23 @@ import (
 
 // What a member keeps for themselves on the material page (studied marks,
 // their own titles, notes, ink) is saved per member and file, so it is there
-// on any device the next time they open the page. The page sends its saves
-// over a socket (socket.go). There is no syncing: every save replaces what was
-// stored, and the latest one stays.
+// on any device. The page sends its saves over a socket (socket.go), which
+// passes them on to the member's other open pages. Every save replaces what
+// was stored, and the latest one stays.
 
 // Kinds of state the page saves per file, and the most each may weigh.
 const (
 	NoteStudy = "study"
 	NoteInk   = "ink"
 
-	maxStudyBytes = 64 << 10
+	// NoteIntro on introFile records that the member has seen the first-visit
+	// explanation. It belongs to the account, not to any one file.
+	NoteIntro     = "intro"
+	introFile     = "room"
+	maxIntroBytes = 64
+
+	// Notes hold their images as base64.
+	maxStudyBytes = 2 << 20
 	maxInkBytes   = 1 << 20
 )
 
@@ -56,6 +63,9 @@ func (v *Server) notesFor(ctx context.Context, userID string, fileIDs []string) 
 		v.log.Error("verify: load notes", "user_id", userID, "error", err)
 		return out
 	}
+	if n := all[introFile]; n != nil {
+		out[introFile] = n
+	}
 	for _, id := range fileIDs {
 		if n := all[id]; n != nil {
 			out[id] = n
@@ -70,13 +80,13 @@ func (v *Server) notesFor(ctx context.Context, userID string, fileIDs []string) 
 func cleanNote(kind string, raw json.RawMessage) (json.RawMessage, string) {
 	data := bytes.TrimSpace(raw)
 	switch {
-	case kind != NoteStudy && kind != NoteInk:
+	case kind != NoteStudy && kind != NoteInk && kind != NoteIntro:
 		return nil, "bad_request"
 	case len(data) == 0 || bytes.Equal(data, []byte("null")) || bytes.Equal(data, []byte("{}")):
 		return nil, ""
 	case data[0] != '{' || !json.Valid(data):
 		return nil, "bad_request"
-	case kind == NoteStudy && len(data) > maxStudyBytes, kind == NoteInk && len(data) > maxInkBytes:
+	case kind == NoteStudy && len(data) > maxStudyBytes, kind == NoteInk && len(data) > maxInkBytes, kind == NoteIntro && len(data) > maxIntroBytes:
 		return nil, "too_large"
 	}
 	return data, ""
