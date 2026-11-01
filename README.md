@@ -103,8 +103,9 @@ that are missing. See `.env.example`.
 Discord channel, category and role IDs are compile-time constants in
 `config/config.go` and `bot/constants.go`. The guild ID is learned from the gateway.
 
-Each service's build and deploy settings are in `cmd/<service>/railway.toml`,
-including watch patterns, so a change only redeploys the services built from it.
+Each service's build and deploy settings are recorded in `cmd/<service>/settings.toml`
+and set on the service in Railway, including watch patterns, so a change only
+redeploys the services built from it.
 
 ## Moving from the single bot
 
@@ -112,10 +113,10 @@ The existing `stekibot` service becomes `web`; the others reference its variable
 
 1. Rename `stekibot` to `web`. On it add `INTERNAL_SECRET` (`openssl rand -hex 32`),
    `REGISTRATION_URL=http://${{registration.RAILWAY_PRIVATE_DOMAIN}}:8081` and
-   `MODERATION_URL=http://${{moderation.RAILWAY_PRIVATE_DOMAIN}}:8081`. Point its
-   config file at `cmd/web/railway.toml`. Keep the volume attached.
-2. Create `registration` and `moderation` from the same repository, with config files
-   `cmd/<service>/railway.toml`, no public domain and no serverless. Give each:
+   `MODERATION_URL=http://${{moderation.RAILWAY_PRIVATE_DOMAIN}}:8081`. Give it the settings
+   in `cmd/web/settings.toml`. Keep the volume attached.
+2. Create `registration` and `moderation` from the same repository, with the settings in
+   `cmd/<service>/settings.toml`, no public domain and no serverless. Give each:
    `DISCORD_TOKEN=${{web.DISCORD_TOKEN}}`, `INTERNAL_SECRET=${{web.INTERNAL_SECRET}}`,
    the five `BUCKET_*=${{web.BUCKET_*}}`, `PUBLIC_URL=https://${{web.RAILWAY_PUBLIC_DOMAIN}}`,
    `WEB_URL=http://${{web.RAILWAY_PRIVATE_DOMAIN}}:8081`, and the other's URL. On top:

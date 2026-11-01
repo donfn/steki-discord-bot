@@ -1,4 +1,5 @@
-# Point the registration service at this file: Settings > Config-as-code.
+# The registration service's Railway settings, set on the service itself: Railway no longer
+# reads config files. This records them, and a test keeps the watch patterns complete.
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "cmd/registration/Dockerfile"

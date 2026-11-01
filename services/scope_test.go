@@ -49,7 +49,7 @@ func TestServicesStayInTheirLane(t *testing.T) {
 // not redeploying a service built from it.
 func TestWatchPatternsCoverEveryDependency(t *testing.T) {
 	for _, cmd := range []string{"registration", "moderation", "web"} {
-		raw, err := os.ReadFile("../cmd/" + cmd + "/railway.toml")
+		raw, err := os.ReadFile("../cmd/" + cmd + "/settings.toml")
 		if err != nil {
 			t.Fatal(err)
 		}

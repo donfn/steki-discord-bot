@@ -1,17 +1,11 @@
-# Point the web service at this file: Settings > Config-as-code.
+# The moderation service's Railway settings, set on the service itself: Railway no longer
+# reads config files. This records them, and a test keeps the watch patterns complete.
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"
+dockerfilePath = "cmd/moderation/Dockerfile"
 watchPatterns = [
-  "cmd/web/**",
-  "services/web/**",
-  "verify/**",
-  "mcp/**",
-  "materials/**",
-  "usernotes/**",
-  "shield/**",
-  "Dockerfile",
-  "docker-entrypoint.sh",
+  "cmd/moderation/**",
+  "services/moderation/**",
   "go.mod",
   "go.sum",
   "analytics/**",
