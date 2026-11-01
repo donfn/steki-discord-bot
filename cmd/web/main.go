@@ -19,6 +19,7 @@ import (
 	"steki-bot/analytics"
 	"steki-bot/bot"
 	"steki-bot/config"
+	"steki-bot/materials"
 	"steki-bot/mcp"
 	"steki-bot/rpc"
 	"steki-bot/s3db"
@@ -51,6 +52,11 @@ func run() error {
 	defer cancel()
 	objects, err := bot.OpenBucket(ctx, cfg.Common)
 	if err != nil {
+		return err
+	}
+	// Course material used to sit at the bucket's root. It goes into its folder
+	// before anything else happens here, and later boots find nothing to move.
+	if err := moveMaterial(ctx, cfg, logger); err != nil {
 		return err
 	}
 	// The first boot with the old volume attached turns its database into the
@@ -140,6 +146,28 @@ func run() error {
 	defer stop()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Warn("http server shutdown", "error", err)
+	}
+	return nil
+}
+
+// moveMaterial puts everything in the bucket but the databases and the members'
+// notes into the material folder.
+func moveMaterial(ctx context.Context, cfg *config.Web, logger *slog.Logger) error {
+	b := cfg.Bucket
+	bucket, err := materials.NewBucket(b.Endpoint, b.Region, b.AccessKeyID, b.SecretAccessKey, b.Name)
+	if err != nil {
+		return err
+	}
+	keep := []string{"user-notes/", "db/.verify-"}
+	for _, shard := range []string{store.ShardRegistry, store.ShardGuard, store.ShardActivity, store.ShardLibrary} {
+		keep = append(keep, "db/"+shard+"/")
+	}
+	moved, err := bucket.MoveIntoFolder(ctx, keep, logger)
+	if err != nil {
+		return fmt.Errorf("move course material into its folder: %w", err)
+	}
+	if moved > 0 {
+		logger.Warn("moved course material into its folder", "objects", moved)
 	}
 	return nil
 }

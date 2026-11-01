@@ -221,10 +221,11 @@ func (b *Bucket) Store(ctx context.Context, key string, r io.Reader, size int64,
 	defer discard(out)
 	b.writes.Lock()
 	defer b.writes.Unlock()
-	return b.put(ctx, key, io.MultiReader(bytes.NewReader(hdr.bytes()), out), int64(headerSize)+zn, contentType)
+	return b.put(ctx, MaterialPrefix+key, io.MultiReader(bytes.NewReader(hdr.bytes()), out), int64(headerSize)+zn, contentType)
 }
 
 // Fetch writes the object at key to w as stored, and reports whether it exists.
+// It and PutFile are for the members' notes, which live outside MaterialPrefix.
 func (b *Bucket) Fetch(ctx context.Context, key string, w io.Writer) (bool, error) {
 	obj, err := b.client.GetObject(ctx, b.name, key, minio.GetObjectOptions{})
 	if err != nil {
@@ -263,7 +264,7 @@ func (b *Bucket) PutFile(ctx context.Context, key, path, contentType string) err
 // size. The caller closes it. Plain objects from before compression are read
 // as they are.
 func (b *Bucket) Open(ctx context.Context, key string) (io.ReadCloser, int64, error) {
-	obj, err := b.client.GetObject(ctx, b.name, key, minio.GetObjectOptions{})
+	obj, err := b.client.GetObject(ctx, b.name, MaterialPrefix+key, minio.GetObjectOptions{})
 	if err != nil {
 		return nil, 0, err
 	}
@@ -387,6 +388,7 @@ func (r *checkedReader) Close() error {
 // It reports errObjectDone for one already compressed and errObjectGone for
 // one no longer there.
 func (b *Bucket) compressObject(ctx context.Context, key string) (before, after int64, err error) {
+	key = MaterialPrefix + key
 	obj, err := b.client.GetObject(ctx, b.name, key, minio.GetObjectOptions{})
 	if err != nil {
 		return 0, 0, err

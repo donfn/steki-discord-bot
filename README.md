@@ -51,10 +51,16 @@ process; the bucket holds the truth (`s3db/`). No volume.
 
 ```
 db/<shard>/manifest.json   the commit point: which objects make the database
-db/<shard>/snap/…          whole images (zstd), the current one and three before it
+db/<shard>/snap/…          whole images, the current one and three before it
 db/<shard>/seg/…           the pages changed since the current image
 db/<shard>/daily/…         one image a day, kept for two weeks
+material/…                 course material, blastdoor-compressed
+user-notes/…               members' notes, one SQLite file each
 ```
+
+Nothing under `db/` is compressed, neither by blastdoor nor by the engine: an image
+opens as it is with any SQLite tool. `materials.object_key` does not include
+`material/`; the bucket client adds it.
 
 - **Commit.** SQLite commits to its write-ahead log as usual. One goroutine reads the
   committed frames out of the log, uploads them as a segment and adds it to the
@@ -128,15 +134,18 @@ The existing `stekibot` service becomes `web`; the others reference its variable
    others reference them they stay in its environment. To get them out of the public
    container, enter them directly on the service that uses them (a sealed value cannot
    be copied, so take a new Resend key) and delete them from `web`.
-4. Deploy. On its first boot `web` splits `/data/steki.db` into the shards, checking
+4. Deploy. On its first boot `web` first moves everything in the bucket except
+   `user-notes/` into `material/`, copying and checking each object before deleting
+   the original, then splits `/data/steki.db` into the shards, checking
    row counts, and moves leftover note copies off the volume. The others wait up to
-   three minutes for their shards. The split only reads the old file and skips shards
+   30 minutes for their shards. The split only reads the old file and skips shards
    that exist, so rebooting is safe.
 5. Check the logs for `split the old database into a shard` four times, run `/bot stats`
    and `/reg reconcile` (joins during the switch were missed), and try a registration.
 6. After a while, detach the volume. The old file stops being read as soon as the
-   shards exist. Rolling back to the old bot before that means losing what was written
-   to the shards since; after it, the volume is gone too.
+   shards exist. Rolling back to the old bot means losing what was written to the
+   shards since, and moving the material back to the bucket's root, since the old code
+   looks for it there.
 
 ## Course material
 
@@ -240,7 +249,7 @@ fences the live service.
 also runs the engine against a real S3 server.
 
 To read a shard's data outside a service, fetch its manifest and objects: an image
-is a zstd-compressed SQLite file, or take `daily/<date>.zst` for a day's copy.
+is a SQLite file, or take `daily/<date>.db` for a day's copy.
 
 ## Memory footprint
 

@@ -22,6 +22,10 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
+// MaterialPrefix is the bucket folder course material lives in. Stored keys
+// (materials.object_key) do not include it: Store, Open and Delete add it.
+const MaterialPrefix = "material/"
+
 // partSize is the multipart chunk for large uploads. The client buffers one
 // chunk at a time, so this is the upload's memory cost; 5 MiB is the S3
 // minimum.
@@ -60,7 +64,7 @@ func NewBucket(endpoint, region, accessKey, secretKey, name string) (*Bucket, er
 	return &Bucket{client: client, name: name}, nil
 }
 
-// put streams size bytes from r into the object at key as they are.
+// put streams size bytes from r into the object at the full key as they are.
 func (b *Bucket) put(ctx context.Context, key string, r io.Reader, size int64, contentType string) error {
 	_, err := b.client.PutObject(ctx, b.name, key, r, size, minio.PutObjectOptions{
 		ContentType: contentType,
@@ -70,11 +74,11 @@ func (b *Bucket) put(ctx context.Context, key string, r io.Reader, size int64, c
 	return err
 }
 
-// Delete removes the object at key. Removing one that is not there succeeds.
+// Delete removes the material at key. Removing one that is not there succeeds.
 func (b *Bucket) Delete(ctx context.Context, key string) error {
 	b.writes.Lock()
 	defer b.writes.Unlock()
-	return b.client.RemoveObject(ctx, b.name, key, minio.RemoveObjectOptions{})
+	return b.client.RemoveObject(ctx, b.name, MaterialPrefix+key, minio.RemoveObjectOptions{})
 }
 
 // Check confirms the bucket exists and the credentials can reach it.

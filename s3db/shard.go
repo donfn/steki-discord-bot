@@ -4,7 +4,7 @@
 // exactly one writing process. The bucket holds the truth:
 //
 //	db/<shard>/manifest.json     the commit point: which objects make the database
-//	db/<shard>/snap/…            whole database images, zstd compressed
+//	db/<shard>/snap/…            whole database images, plain SQLite files
 //	db/<shard>/seg/…             the pages changed since that image
 //	db/<shard>/daily/…           one image a day, kept for two weeks
 //
@@ -23,7 +23,10 @@
 //
 // Automatic checkpoints are off, so the log only restarts when this package says
 // so, and the main file changes only then. That makes the main file a stable
-// image to compress while writers carry on into the log.
+// image to upload while writers carry on into the log.
+//
+// Nothing here is compressed. The databases are small, and an image can be opened
+// as it is with any SQLite tool.
 package s3db
 
 import (
@@ -46,7 +49,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/klauspost/compress/zstd"
 	_ "modernc.org/sqlite" // registers the "sqlite" driver
 )
 
@@ -153,7 +155,7 @@ func Seed(ctx context.Context, o Objects, name, src string) (bool, error) {
 	if _, err := os.Stat(src + "-wal"); err == nil {
 		return false, fmt.Errorf("s3db: seed %s: %s has a write-ahead log", name, src)
 	}
-	ref, _, err := uploadSnapshot(ctx, o, name, src, "seed")
+	ref, err := uploadSnapshot(ctx, o, name, src, "seed")
 	if err != nil {
 		return false, err
 	}
@@ -335,71 +337,42 @@ func fetch(ctx context.Context, o Objects, ref objectRef) ([]byte, error) {
 }
 
 func downloadSnapshot(ctx context.Context, o Objects, ref objectRef, dst string) error {
-	body, err := fetch(ctx, o, ref)
-	if err != nil {
-		return err
-	}
-	dec, err := zstd.NewReader(bytes.NewReader(body), zstd.WithDecoderConcurrency(1), zstd.WithDecoderLowmem(true))
-	if err != nil {
-		return err
-	}
-	defer dec.Close()
 	f, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o640)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	if _, err := io.Copy(f, dec); err != nil {
+	hash := sha256.New()
+	if _, err := o.Get(ctx, ref.Key, io.MultiWriter(f, hash)); err != nil {
 		return fmt.Errorf("%s: %w", ref.Key, err)
+	}
+	if hex.EncodeToString(hash.Sum(nil)) != ref.SHA256 {
+		return fmt.Errorf("%s: contents do not match the manifest", ref.Key)
 	}
 	return f.Close()
 }
 
-// uploadSnapshot compresses the file at path and uploads it. It returns the
-// compressed copy's path too, for the daily image; the caller removes it.
-func uploadSnapshot(ctx context.Context, o Objects, shard, path, tag string) (objectRef, string, error) {
-	src, err := os.Open(path)
+// uploadSnapshot uploads the file at path as an image.
+func uploadSnapshot(ctx context.Context, o Objects, shard, path, tag string) (objectRef, error) {
+	f, err := os.Open(path)
 	if err != nil {
-		return objectRef{}, "", err
+		return objectRef{}, err
 	}
-	defer src.Close()
-	tmp, err := os.CreateTemp(filepath.Dir(path), "snap-*.zst")
-	if err != nil {
-		return objectRef{}, "", err
-	}
-	defer tmp.Close()
+	defer f.Close()
 	hash := sha256.New()
-	out := io.MultiWriter(tmp, hash)
-	enc, err := zstd.NewWriter(out, zstd.WithEncoderLevel(zstd.SpeedBetterCompression),
-		zstd.WithEncoderConcurrency(1), zstd.WithWindowSize(1<<20))
+	size, err := io.Copy(hash, f)
 	if err != nil {
-		os.Remove(tmp.Name())
-		return objectRef{}, "", err
+		return objectRef{}, err
 	}
-	if _, err := io.Copy(enc, src); err != nil {
-		os.Remove(tmp.Name())
-		return objectRef{}, "", err
-	}
-	if err := enc.Close(); err != nil {
-		os.Remove(tmp.Name())
-		return objectRef{}, "", err
-	}
-	size, err := tmp.Seek(0, io.SeekCurrent)
-	if err != nil {
-		os.Remove(tmp.Name())
-		return objectRef{}, "", err
-	}
-	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
-		os.Remove(tmp.Name())
-		return objectRef{}, "", err
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return objectRef{}, err
 	}
 	sum := hex.EncodeToString(hash.Sum(nil))
-	ref := objectRef{Key: fmt.Sprintf("db/%s/snap/%s-%s.zst", shard, tag, sum[:16]), SHA256: sum, Size: size}
-	if err := o.Put(ctx, ref.Key, tmp, size); err != nil {
-		os.Remove(tmp.Name())
-		return objectRef{}, "", err
+	ref := objectRef{Key: fmt.Sprintf("db/%s/snap/%s-%s.db", shard, tag, sum[:16]), SHA256: sum, Size: size}
+	if err := o.Put(ctx, ref.Key, f, size); err != nil {
+		return objectRef{}, err
 	}
-	return ref, tmp.Name(), nil
+	return ref, nil
 }
 
 func (s *Shard) dsn(pragmas ...string) string {
@@ -686,12 +659,11 @@ func (s *Shard) compact(ctx context.Context) error {
 }
 
 func (s *Shard) publishSnapshot(ctx context.Context) error {
-	ref, compressed, err := uploadSnapshot(ctx, s.o.Objects, s.o.Name, s.path,
+	ref, err := uploadSnapshot(ctx, s.o.Objects, s.o.Name, s.path,
 		fmt.Sprintf("%016x-%016x", s.m.Seq+1, s.m.Epoch))
 	if err != nil {
 		return fmt.Errorf("upload image: %w", err)
 	}
-	defer os.Remove(compressed)
 
 	next := s.m
 	next.Seq++
@@ -708,7 +680,7 @@ func (s *Shard) publishSnapshot(ctx context.Context) error {
 		return err
 	}
 	s.needSnapshot = false
-	s.keepDailyImage(ctx, compressed)
+	s.keepDailyImage(ctx)
 	s.collectGarbage(ctx)
 	return nil
 }
@@ -716,14 +688,14 @@ func (s *Shard) publishSnapshot(ctx context.Context) error {
 // keepDailyImage stores the day's first image apart. Railway buckets have
 // neither versioning nor backups, so this is what undoes a bad day. Failure only
 // costs that day's copy.
-func (s *Shard) keepDailyImage(ctx context.Context, compressed string) {
+func (s *Shard) keepDailyImage(ctx context.Context) {
 	prefix := "db/" + s.o.Name + "/daily/"
-	key := prefix + time.Now().UTC().Format("2006-01-02") + ".zst"
+	key := prefix + time.Now().UTC().Format("2006-01-02") + ".db"
 	keys, err := s.o.Objects.List(ctx, prefix)
 	if err != nil || slices.Contains(keys, key) {
 		return
 	}
-	f, err := os.Open(compressed)
+	f, err := os.Open(s.path) // stable until the next checkpoint, which only this goroutine runs
 	if err != nil {
 		return
 	}

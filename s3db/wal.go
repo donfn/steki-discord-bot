@@ -8,8 +8,6 @@ import (
 	"io"
 	"os"
 	"sort"
-
-	"github.com/klauspost/compress/zstd"
 )
 
 // The write-ahead log's layout, from https://www.sqlite.org/fileformat.html.
@@ -144,16 +142,10 @@ func walChecksum(order binary.ByteOrder, s1, s2 uint32, b []byte) (uint32, uint3
 	return s1, s2
 }
 
-// A segment is a zstd stream of: segmentMagic, then the page size, the
+// A segment is, uncompressed: segmentMagic, then the page size, the
 // database's size in pages and the page count as big-endian uint32, then each
 // page as its uint32 number and its bytes.
 var segmentMagic = []byte("STKSEG1\n")
-
-var (
-	segEncoder, _ = zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedDefault),
-		zstd.WithEncoderConcurrency(1), zstd.WithWindowSize(1<<20))
-	segDecoder, _ = zstd.NewReader(nil, zstd.WithDecoderConcurrency(1), zstd.WithDecoderLowmem(true))
-)
 
 // encodeSegment serialises a batch, with pages in order so that the same batch
 // always produces the same bytes.
@@ -173,17 +165,13 @@ func encodeSegment(b *walBatch) []byte {
 		raw = binary.BigEndian.AppendUint32(raw, n)
 		raw = append(raw, b.pages[n]...)
 	}
-	return segEncoder.EncodeAll(raw, nil)
+	return raw
 }
 
 // applySegment writes a segment's pages into the database file at f and sets
 // the file to the size the commit left it. Nothing has the file open while this
 // runs: it is part of rebuilding the database before SQLite opens it.
-func applySegment(f *os.File, encoded []byte) error {
-	raw, err := segDecoder.DecodeAll(encoded, nil)
-	if err != nil {
-		return fmt.Errorf("decompress: %w", err)
-	}
+func applySegment(f *os.File, raw []byte) error {
 	if !bytes.HasPrefix(raw, segmentMagic) || len(raw) < len(segmentMagic)+12 {
 		return errors.New("not a segment")
 	}

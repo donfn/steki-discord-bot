@@ -27,9 +27,10 @@ const (
 	// gcPercent collects sooner than the default 100, trading a little CPU
 	// (the bot idles near zero) for a smaller resident set.
 	gcPercent = 40
-	// seedWait is how long a service waits for its shard to appear: the web
-	// service creates them all from the old database on its first boot.
-	seedWait = 3 * time.Minute
+	// seedWait is how long a service waits for its shard to appear: on its first
+	// boot the web service moves the material into its folder and then creates
+	// the shards from the old database.
+	seedWait = 30 * time.Minute
 )
 
 // TuneRuntime sets the garbage collector's targets, unless the operator has
