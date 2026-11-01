@@ -1,7 +1,7 @@
 # blastdoor parses strangers' files with libheif, and its packages only change
 # when its image is built. Changing the stamp makes Railway rebuild it with the
-# current packages. The stekibot service's watch paths ignore the stamp, so the
-# bot does not restart for this.
+# current packages. No other service's watch paths include the stamp, so none
+# of them restarts for this.
 name: Rebuild blastdoor
 
 on:

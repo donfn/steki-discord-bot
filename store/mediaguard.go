@@ -25,7 +25,7 @@ func FlagTrips(windowStart *time.Time, now time.Time, window time.Duration) bool
 // the member's second such post within window it closes the window, records
 // tokenID as the outstanding verification link and returns true. A member
 // still inside a post-captcha exemption is never tripped.
-func (s *Store) RecordFlaggedPost(ctx context.Context, userID, guildID, tokenID string, now time.Time, window time.Duration) (bool, error) {
+func (s *Guard) RecordFlaggedPost(ctx context.Context, userID, guildID, tokenID string, now time.Time, window time.Duration) (bool, error) {
 	// Transactions begin IMMEDIATE, so this read-then-write cannot interleave
 	// with another writer: the lock a SELECT ... FOR UPDATE would take is held
 	// from the start.
@@ -77,7 +77,7 @@ func (s *Store) RecordFlaggedPost(ctx context.Context, userID, guildID, tokenID 
 }
 
 // SetGuardDM remembers which DM carries the member's verification link.
-func (s *Store) SetGuardDM(ctx context.Context, userID, tokenID string, dm GuardDM) error {
+func (s *Guard) SetGuardDM(ctx context.Context, userID, tokenID string, dm GuardDM) error {
 	_, err := s.db.ExecContext(ctx, `
 		update media_guard set dm_channel_id = ?3, dm_message_id = ?4, updated_at = ?5
 		where user_id = ?1 and token_id = ?2`,
@@ -87,7 +87,7 @@ func (s *Store) SetGuardDM(ctx context.Context, userID, tokenID string, dm Guard
 
 // GuardTokenActive reports whether tokenID is the member's outstanding,
 // unused verification link.
-func (s *Store) GuardTokenActive(ctx context.Context, userID, tokenID string) (bool, error) {
+func (s *Guard) GuardTokenActive(ctx context.Context, userID, tokenID string) (bool, error) {
 	var ok bool
 	err := s.db.QueryRowContext(ctx, `
 		select exists (select 1 from media_guard where user_id = ?1 and token_id = ?2)`,
@@ -98,7 +98,7 @@ func (s *Store) GuardTokenActive(ctx context.Context, userID, tokenID string) (b
 // ConsumeGuardToken marks tokenID used and exempts the member until
 // exemptUntil. It returns ErrNotFound when the link was already used or has
 // been superseded by a newer one, which makes every link single-use.
-func (s *Store) ConsumeGuardToken(ctx context.Context, userID, tokenID string, exemptUntil time.Time) (GuardDM, error) {
+func (s *Guard) ConsumeGuardToken(ctx context.Context, userID, tokenID string, exemptUntil time.Time) (GuardDM, error) {
 	var dm GuardDM
 	var ch, msg *string
 	err := s.db.QueryRowContext(ctx, `
@@ -125,7 +125,7 @@ func (s *Store) ConsumeGuardToken(ctx context.Context, userID, tokenID string, e
 // ForceRestriction records an outstanding verification link without counting
 // a post, for detections strong enough to restrict on their own (the same
 // message across many channels). It ignores any post-captcha exemption.
-func (s *Store) ForceRestriction(ctx context.Context, userID, guildID, tokenID string, now time.Time) error {
+func (s *Guard) ForceRestriction(ctx context.Context, userID, guildID, tokenID string, now time.Time) error {
 	_, err := s.db.ExecContext(ctx, `
 		insert into media_guard (user_id, guild_id, token_id, restricted_at, updated_at)
 		values (?1, ?2, ?3, ?4, ?5)
@@ -151,7 +151,7 @@ type GuardState struct {
 
 // GuardStatus returns a member's media guard state, or ErrNotFound when they
 // have never posted an attachment or a link.
-func (s *Store) GuardStatus(ctx context.Context, userID string) (*GuardState, error) {
+func (s *Guard) GuardStatus(ctx context.Context, userID string) (*GuardState, error) {
 	var g GuardState
 	err := s.db.QueryRowContext(ctx, `
 		select window_start, exempt_until, restricted_at, token_id is not null
@@ -166,7 +166,7 @@ func (s *Store) GuardStatus(ctx context.Context, userID string) (*GuardState, er
 
 // ClearExemption ends a member's post-captcha grace period early, reporting
 // whether one was running.
-func (s *Store) ClearExemption(ctx context.Context, userID string) (bool, error) {
+func (s *Guard) ClearExemption(ctx context.Context, userID string) (bool, error) {
 	now := ms(time.Now())
 	res, err := s.db.ExecContext(ctx, `
 		update media_guard set exempt_until = null, updated_at = ?2
@@ -176,4 +176,13 @@ func (s *Store) ClearExemption(ctx context.Context, userID string) (bool, error)
 	}
 	n, err := res.RowsAffected()
 	return n > 0, err
+}
+
+// ForgetMember erases a member's guard state and audit trail, for /reg forget.
+func (s *Guard) ForgetMember(ctx context.Context, userID string) error {
+	if _, err := s.db.ExecContext(ctx, `delete from media_guard where user_id = ?1`, userID); err != nil {
+		return err
+	}
+	_, err := s.ForgetEvents(ctx, userID)
+	return err
 }

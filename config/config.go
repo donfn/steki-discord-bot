@@ -1,4 +1,6 @@
-// Package config loads and validates the bot's runtime configuration.
+// Package config loads and validates each service's runtime configuration. A
+// service reads only the variables it needs, so a secret it does not hold cannot
+// leak from it.
 //
 // Everything that is fixed for the Steki guild (channel, category and role IDs)
 // lives as a constant here rather than as an environment variable: those IDs
@@ -11,6 +13,7 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -26,30 +29,78 @@ const (
 	RegisterCategoryID = "890021609631531009"
 )
 
-// MinSecretLen is the shortest JWT_SECRET the bot starts with.
+// MinSecretLen is the shortest secret a service starts with.
 const MinSecretLen = 32
 
-// Config holds everything the bot needs to run.
-type Config struct {
+// Bucket holds the S3 connection details of the bucket. On Railway they are
+// references to the web service's variables, which in turn reference the bucket.
+type Bucket struct {
+	Endpoint, Region, Name, AccessKeyID, SecretAccessKey string
+	// PathStyle is for servers without virtual-hosted buckets, such as a local
+	// MinIO.
+	PathStyle bool
+}
+
+// Enabled reports whether the bucket is fully configured.
+func (b Bucket) Enabled() bool {
+	return b.Endpoint != "" && b.Name != "" && b.AccessKeyID != "" && b.SecretAccessKey != ""
+}
+
+// Common is what every service needs.
+type Common struct {
 	DiscordToken string
+	// InternalSecret signs requests between the services and the links the
+	// registration and moderation services send.
+	InternalSecret string
+	// Bucket holds the databases.
+	Bucket   Bucket
+	LogLevel slog.Level
+	Port     string
+
+	// Deployment identifies this deployment to the databases' fencing.
+	Deployment string
+	// DataDir is the scratch directory the databases' working copies live in.
+	DataDir string
+	// CreateEmptyDB lets a fresh local setup start with empty databases.
+	CreateEmptyDB bool
+
+	PostHogKey  string
+	PostHogHost string
+}
+
+// Registration configures the registration service.
+type Registration struct {
+	Common
 	ResendAPIKey string
-
-	// DatabasePath is the SQLite file. ImportDatabaseURL, when set, is a
-	// Postgres database whose contents are copied into it once, on the first
-	// boot that finds the file empty.
-	DatabasePath      string
-	ImportDatabaseURL string
-
 	EmailFrom    string
-	URLBlacklist []string
-	LogLevel     slog.Level
-	Port         string
+	PublicURL    string
+	// ModerationURL and WebURL are the other services' internal APIs.
+	ModerationURL string
+	WebURL        string
+}
 
-	// JWTSecret signs the registration and media guard links and keys their
-	// captcha. PublicURL is where those links point. Registration depends on
-	// both, so both are required.
+// Moderation configures the moderation service.
+type Moderation struct {
+	Common
+	URLBlacklist []string
+	PublicURL    string
+	// RegistrationURL and WebURL are the other services' internal APIs.
+	RegistrationURL string
+	WebURL          string
+}
+
+// Web configures the web service: the public pages, the MCP server and the
+// course material.
+type Web struct {
+	Common
+	// JWTSecret signs the material links, sessions and MCP tokens. No other
+	// service holds it.
 	JWTSecret string
 	PublicURL string
+
+	// LegacyDatabasePath is the old single database on the volume, split into
+	// shards once. It is empty once the volume is detached.
+	LegacyDatabasePath string
 
 	// RailwayToken is a project token. When set, the bot writes the HTTP
 	// shield's IP challenges and bans to its service's edge rules, and turns
@@ -59,14 +110,9 @@ type Config struct {
 	RailwayServiceID     string
 	RailwayEnvironmentID string
 
-	// Bucket is the S3-compatible bucket PDFs are backed up to. The material
-	// backup, the sticky messages and the material page are all off unless
-	// every field is set.
-	Bucket Bucket
-
 	// DiscordClientID and DiscordClientSecret are the Discord OAuth2
 	// application's credentials, which the MCP server logs members in with.
-	// The MCP server is off unless both are set (and the bucket is).
+	// The MCP server is off unless both are set.
 	DiscordClientID     string
 	DiscordClientSecret string
 
@@ -77,139 +123,162 @@ type Config struct {
 	GoogleAIModel string
 
 	// BlastdoorURL is the isolated service that decodes uploaded PNG, WebP and
-	// HEIC images and compresses the files in the bucket. Without it those
-	// uploads are refused and bucket files cannot be stored or read.
+	// HEIC images and compresses the files in the bucket.
 	BlastdoorURL string
 
-	// PostHogKey is the PostHog project API key. With it, the gateway events
-	// and the pages the bot serves are reported to PostHog from the server;
-	// without it analytics is off. PostHogHost is the ingestion endpoint.
-	PostHogKey  string
-	PostHogHost string
+	// RegistrationURL and ModerationURL are the other services' internal APIs.
+	RegistrationURL string
+	ModerationURL   string
 }
 
 // MCPEnabled reports whether the MCP server has the Discord login it needs.
-func (c *Config) MCPEnabled() bool {
+func (c *Web) MCPEnabled() bool {
 	return c.DiscordClientID != "" && c.DiscordClientSecret != ""
 }
 
-// Bucket holds the S3 connection details of the backup bucket. On Railway
-// they are references to the steki-backups bucket's own variables.
-type Bucket struct {
-	Endpoint, Region, Name, AccessKeyID, SecretAccessKey string
-}
+func env(key string) string { return strings.TrimSpace(os.Getenv(key)) }
 
-// Enabled reports whether the bucket is fully configured.
-func (b Bucket) Enabled() bool {
-	return b.Endpoint != "" && b.Name != "" && b.AccessKeyID != "" && b.SecretAccessKey != ""
-}
+// loader gathers every missing variable, so a misconfigured deploy fails on boot
+// with a complete list rather than one variable at a time.
+type loader struct{ missing []string }
 
-// Load reads configuration from the environment, falling back to a .env file
-// when one is present. It returns an error naming every missing required
-// variable at once, so a misconfigured deploy fails on boot with a complete
-// list rather than one variable at a time.
-func Load() (*Config, error) {
-	_ = godotenv.Load()
-
-	cfg := &Config{
-		DiscordToken: os.Getenv("DISCORD_TOKEN"),
-		ResendAPIKey: os.Getenv("RESEND_API_KEY"),
-
-		// The Postgres URL the bot used to require is now only a source to
-		// copy from; the variable keeps its name so the existing Railway
-		// reference (${{Postgres.DATABASE_URL}}) can stay in place for that.
-		ImportDatabaseURL: strings.TrimSpace(os.Getenv("DATABASE_URL")),
-		EmailFrom:         envOr("EMAIL_FROM", "Steki <steki@poiw.org>"),
-		LogLevel:          parseLevel(os.Getenv("LOG_LEVEL")),
-		Port:              envOr("PORT", "8080"),
-		JWTSecret:         strings.TrimSpace(os.Getenv("JWT_SECRET")),
-		PublicURL:         publicURL(),
-
-		RailwayToken:         strings.TrimSpace(os.Getenv("RAILWAY_TOKEN")),
-		RailwayServiceID:     strings.TrimSpace(os.Getenv("RAILWAY_SERVICE_ID")),
-		RailwayEnvironmentID: strings.TrimSpace(os.Getenv("RAILWAY_ENVIRONMENT_ID")),
-
-		DiscordClientID:     strings.TrimSpace(os.Getenv("DISCORD_CLIENT_ID")),
-		DiscordClientSecret: strings.TrimSpace(os.Getenv("DISCORD_CLIENT_SECRET")),
-
-		GoogleAIToken: strings.TrimSpace(os.Getenv("GOOGLE_AI_TOKEN")),
-		GoogleAIModel: strings.TrimSpace(os.Getenv("GOOGLE_AI_MODEL")),
-		BlastdoorURL:  strings.TrimSpace(os.Getenv("BLASTDOOR_URL")),
-
-		PostHogKey:  strings.TrimSpace(os.Getenv("POSTHOG_API_KEY")),
-		PostHogHost: envOr("POSTHOG_HOST", "https://eu.i.posthog.com"),
-
-		Bucket: Bucket{
-			Endpoint:        strings.TrimSpace(os.Getenv("BUCKET_ENDPOINT")),
-			Region:          envOr("BUCKET_REGION", "auto"),
-			Name:            strings.TrimSpace(os.Getenv("BUCKET_NAME")),
-			AccessKeyID:     strings.TrimSpace(os.Getenv("BUCKET_ACCESS_KEY_ID")),
-			SecretAccessKey: strings.TrimSpace(os.Getenv("BUCKET_SECRET_ACCESS_KEY")),
-		},
+func (l *loader) need(key string) string {
+	v := env(key)
+	if v == "" {
+		l.missing = append(l.missing, key)
 	}
+	return v
+}
 
+func (l *loader) err() error {
+	if len(l.missing) == 0 {
+		return nil
+	}
+	return fmt.Errorf("missing required environment variables: %s", strings.Join(l.missing, ", "))
+}
+
+func (l *loader) common() Common {
+	_ = godotenv.Load()
+	deployment := env("RAILWAY_DEPLOYMENT_ID")
+	if deployment == "" {
+		deployment = fmt.Sprintf("local-%d", os.Getpid())
+	}
+	return Common{
+		DiscordToken:   l.need("DISCORD_TOKEN"),
+		InternalSecret: l.need("INTERNAL_SECRET"),
+		Bucket: Bucket{
+			Endpoint:        l.need("BUCKET_ENDPOINT"),
+			Region:          envOr("BUCKET_REGION", "auto"),
+			Name:            l.need("BUCKET_NAME"),
+			AccessKeyID:     l.need("BUCKET_ACCESS_KEY_ID"),
+			SecretAccessKey: l.need("BUCKET_SECRET_ACCESS_KEY"),
+			PathStyle:       env("BUCKET_PATH_STYLE") == "1",
+		},
+		LogLevel:      parseLevel(os.Getenv("LOG_LEVEL")),
+		Port:          envOr("PORT", "8080"),
+		Deployment:    deployment,
+		DataDir:       filepath.Join(os.TempDir(), "steki-db"),
+		CreateEmptyDB: env("DB_CREATE_EMPTY") == "1",
+		PostHogKey:    env("POSTHOG_API_KEY"),
+		PostHogHost:   envOr("POSTHOG_HOST", "https://eu.i.posthog.com"),
+	}
+}
+
+func checkSecret(name, v string) error {
+	// Every link and token is signed from these, so a guessable one hands out
+	// members' identities. 32 hex characters (openssl rand -hex 16) is the least
+	// that holds up.
+	if len(v) < MinSecretLen {
+		return fmt.Errorf("%s must be at least %d characters: generate one with `openssl rand -hex 32`", name, MinSecretLen)
+	}
+	return nil
+}
+
+func checkPublicURL(v string) error {
+	u, err := url.Parse(v)
+	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" ||
+		(u.Scheme != "https" && !(u.Scheme == "http" && (u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1"))) {
+		return fmt.Errorf("PUBLIC_URL must be an https origin (got %q)", v)
+	}
+	return nil
+}
+
+// LoadRegistration reads the registration service's configuration.
+func LoadRegistration() (*Registration, error) {
+	var l loader
+	cfg := &Registration{
+		Common:        l.common(),
+		ResendAPIKey:  l.need("RESEND_API_KEY"),
+		EmailFrom:     envOr("EMAIL_FROM", "Steki <steki@poiw.org>"),
+		PublicURL:     strings.TrimRight(l.need("PUBLIC_URL"), "/"),
+		ModerationURL: l.need("MODERATION_URL"),
+		WebURL:        l.need("WEB_URL"),
+	}
+	if err := l.err(); err != nil {
+		return nil, err
+	}
+	if err := checkSecret("INTERNAL_SECRET", cfg.InternalSecret); err != nil {
+		return nil, err
+	}
+	return cfg, checkPublicURL(cfg.PublicURL)
+}
+
+// LoadModeration reads the moderation service's configuration.
+func LoadModeration() (*Moderation, error) {
+	var l loader
+	cfg := &Moderation{
+		Common:          l.common(),
+		PublicURL:       strings.TrimRight(l.need("PUBLIC_URL"), "/"),
+		RegistrationURL: l.need("REGISTRATION_URL"),
+		WebURL:          l.need("WEB_URL"),
+	}
 	for _, entry := range strings.Split(os.Getenv("URL_BLACKLIST"), ",") {
 		if entry = strings.TrimSpace(entry); entry != "" {
 			cfg.URLBlacklist = append(cfg.URLBlacklist, strings.ToLower(entry))
 		}
 	}
-
-	var missing []string
-	if cfg.DiscordToken == "" {
-		missing = append(missing, "DISCORD_TOKEN")
-	}
-	if path, err := databasePath(); err != nil {
+	if err := l.err(); err != nil {
 		return nil, err
-	} else {
-		cfg.DatabasePath = path
 	}
-	if cfg.ResendAPIKey == "" {
-		missing = append(missing, "RESEND_API_KEY")
+	if err := checkSecret("INTERNAL_SECRET", cfg.InternalSecret); err != nil {
+		return nil, err
 	}
-	if cfg.JWTSecret == "" {
-		missing = append(missing, "JWT_SECRET")
-	}
-	if cfg.PublicURL == "" {
-		missing = append(missing, "PUBLIC_URL (or a Railway public domain)")
-	}
-	if len(missing) > 0 {
-		return nil, fmt.Errorf("missing required environment variables: %s", strings.Join(missing, ", "))
-	}
-
-	// Every link, session token and MCP access token is signed from this one
-	// secret, so a guessable one hands out every member's identity. 32 hex
-	// characters (openssl rand -hex 16) is the least that holds up.
-	if len(cfg.JWTSecret) < MinSecretLen {
-		return nil, fmt.Errorf("JWT_SECRET must be at least %d characters: generate one with `openssl rand -hex 32`", MinSecretLen)
-	}
-
-	u, err := url.Parse(cfg.PublicURL)
-	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" ||
-		(u.Scheme != "https" && !(u.Scheme == "http" && (u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1"))) {
-		return nil, fmt.Errorf("PUBLIC_URL must be an https origin (got %q)", cfg.PublicURL)
-	}
-
-	return cfg, nil
+	return cfg, checkPublicURL(cfg.PublicURL)
 }
 
-// databasePath is where the SQLite file lives: DATABASE_PATH when set, else
-// steki.db inside the Railway volume, else a file in the working directory.
-//
-// On Railway without a volume the container's disk is wiped by every deploy,
-// so a database there would silently vanish; that is refused rather than
-// allowed to happen.
-func databasePath() (string, error) {
-	if v := strings.TrimSpace(os.Getenv("DATABASE_PATH")); v != "" {
-		return v, nil
+// LoadWeb reads the web service's configuration.
+func LoadWeb() (*Web, error) {
+	var l loader
+	cfg := &Web{
+		Common:               l.common(),
+		JWTSecret:            l.need("JWT_SECRET"),
+		PublicURL:            publicURL(),
+		RailwayToken:         env("RAILWAY_TOKEN"),
+		RailwayServiceID:     env("RAILWAY_SERVICE_ID"),
+		RailwayEnvironmentID: env("RAILWAY_ENVIRONMENT_ID"),
+		DiscordClientID:      env("DISCORD_CLIENT_ID"),
+		DiscordClientSecret:  env("DISCORD_CLIENT_SECRET"),
+		GoogleAIToken:        env("GOOGLE_AI_TOKEN"),
+		GoogleAIModel:        env("GOOGLE_AI_MODEL"),
+		BlastdoorURL:         env("BLASTDOOR_URL"),
+		RegistrationURL:      l.need("REGISTRATION_URL"),
+		ModerationURL:        l.need("MODERATION_URL"),
 	}
-	if m := strings.TrimSpace(os.Getenv("RAILWAY_VOLUME_MOUNT_PATH")); m != "" {
-		return strings.TrimRight(m, "/") + "/steki.db", nil
+	if m := env("RAILWAY_VOLUME_MOUNT_PATH"); m != "" {
+		cfg.LegacyDatabasePath = filepath.Join(m, "steki.db")
 	}
-	if os.Getenv("RAILWAY_ENVIRONMENT_ID") != "" {
-		return "", fmt.Errorf("no volume is attached to this Railway service, and the database " +
-			"would be erased on every deploy: attach a volume, or set DATABASE_PATH to a file on one")
+	if cfg.PublicURL == "" {
+		l.missing = append(l.missing, "PUBLIC_URL (or a Railway public domain)")
 	}
-	return "steki.db", nil
+	if err := l.err(); err != nil {
+		return nil, err
+	}
+	for name, v := range map[string]string{"JWT_SECRET": cfg.JWTSecret, "INTERNAL_SECRET": cfg.InternalSecret} {
+		if err := checkSecret(name, v); err != nil {
+			return nil, err
+		}
+	}
+	return cfg, checkPublicURL(cfg.PublicURL)
 }
 
 // publicURL is PUBLIC_URL when set, otherwise the domain Railway injects for

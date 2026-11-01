@@ -1,0 +1,33 @@
+# Point the web service at this file: Settings > Config-as-code.
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+watchPatterns = [
+  "cmd/web/**",
+  "services/web/**",
+  "verify/**",
+  "mcp/**",
+  "materials/**",
+  "usernotes/**",
+  "shield/**",
+  "Dockerfile",
+  "docker-entrypoint.sh",
+  "go.mod",
+  "go.sum",
+  "analytics/**",
+  "bot/**",
+  "brand/**",
+  "config/**",
+  "dc/**",
+  "moderation/**",
+  "rpc/**",
+  "s3db/**",
+  "store/**",
+  "tokens/**",
+]
+
+[deploy]
+healthcheckPath = "/healthz"
+# A service stops cleanly when a newer deployment takes its databases over, and
+# must not be restarted into its successor's way.
+restartPolicyType = "ON_FAILURE"

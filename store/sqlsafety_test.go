@@ -21,8 +21,8 @@ var sqlWord = regexp.MustCompile(`(?i)\b(select|insert|update|delete|where|value
 //
 // It cannot follow a string through every variable, so it is a guard against
 // the usual slip, not a proof. Two places are out of its reach on purpose:
-// migrate runs the embedded migration files, and pgimport.go copies a fixed
-// list of tables out of Postgres and goes away once the import is done.
+// migrate runs the embedded migration files, and legacy.go copies a fixed list
+// of tables out of the old single database.
 func TestSQLIsNeverBuiltFromRuntimeValues(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
@@ -33,7 +33,7 @@ func TestSQLIsNeverBuiltFromRuntimeValues(t *testing.T) {
 	consts := map[string]bool{}
 	for _, e := range entries {
 		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || name == "pgimport.go" {
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || name == "legacy.go" {
 			continue
 		}
 		f, err := parser.ParseFile(fset, name, nil, 0)

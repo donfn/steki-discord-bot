@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func addTestMaterial(t *testing.T, s *Store, id, msg, home string, bot bool, posted time.Time) {
+func addTestMaterial(t *testing.T, s *Library, id, msg, home string, bot bool, posted time.Time) {
 	t.Helper()
 	ok, err := s.AddMaterial(context.Background(), &Material{
 		AttachmentID: id, MessageID: msg, ChannelID: home, HomeChannelID: home, GuildID: "g",
@@ -20,7 +20,7 @@ func addTestMaterial(t *testing.T, s *Store, id, msg, home string, bot bool, pos
 }
 
 func TestMaterialLifecycle(t *testing.T) {
-	s := openTestStore(t)
+	s := openTestLibrary(t)
 	ctx := context.Background()
 	now := time.Now()
 	addTestMaterial(t, s, "1", "m1", "c", false, now.Add(-3*time.Hour))
@@ -90,7 +90,7 @@ func TestMaterialLifecycle(t *testing.T) {
 }
 
 func TestMaterialBacklogPaging(t *testing.T) {
-	s := openTestStore(t)
+	s := openTestLibrary(t)
 	ctx := context.Background()
 	base := time.Now().Add(-time.Hour)
 	for i := 0; i < 7; i++ {
@@ -130,7 +130,7 @@ func TestMaterialBacklogPaging(t *testing.T) {
 	}
 }
 
-func mustBacklog(t *testing.T, s *Store) []*Material {
+func mustBacklog(t *testing.T, s *Library) []*Material {
 	t.Helper()
 	rows, err := s.MaterialBacklog(context.Background(), 3, Cursor{}, 100, nil)
 	if err != nil {
@@ -140,7 +140,7 @@ func mustBacklog(t *testing.T, s *Store) []*Material {
 }
 
 func TestScanStateAndSticky(t *testing.T) {
-	s := openTestStore(t)
+	s := openTestLibrary(t)
 	ctx := context.Background()
 	if st, err := s.MaterialScan(ctx, "c"); err != nil || st != (ScanState{}) {
 		t.Fatalf("fresh scan state %+v %v", st, err)

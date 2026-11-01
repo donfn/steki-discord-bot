@@ -8,10 +8,12 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"steki-bot/tokens"
 )
 
 func TestMCPGuidePage(t *testing.T) {
-	tk := NewTokens("test-secret-test-secret-test-secret!")
+	tk := tokens.New("test-secret-test-secret-test-secret!", "test-secret-test-secret-test-secret!")
 	s := NewServer(tk, nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	s.EnableMCPGuide("https://bot.example/mcp")
 	mux := http.NewServeMux()

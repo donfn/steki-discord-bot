@@ -1,0 +1,27 @@
+# Point the registration service at this file: Settings > Config-as-code.
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "cmd/registration/Dockerfile"
+watchPatterns = [
+  "cmd/registration/**",
+  "services/registration/**",
+  "mail/**",
+  "go.mod",
+  "go.sum",
+  "analytics/**",
+  "bot/**",
+  "brand/**",
+  "config/**",
+  "dc/**",
+  "moderation/**",
+  "rpc/**",
+  "s3db/**",
+  "store/**",
+  "tokens/**",
+]
+
+[deploy]
+healthcheckPath = "/healthz"
+# A service stops cleanly when a newer deployment takes its databases over, and
+# must not be restarted into its successor's way.
+restartPolicyType = "ON_FAILURE"

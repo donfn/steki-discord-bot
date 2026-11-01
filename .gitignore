@@ -1,5 +1,8 @@
-# Compiled binary
+# Compiled binaries
 steki-bot
+/registration
+/moderation
+/web
 *.exe
 
 # Environment

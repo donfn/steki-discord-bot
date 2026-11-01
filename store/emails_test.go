@@ -72,7 +72,7 @@ func TestIsLegacyHash(t *testing.T) {
 }
 
 // verifiedMember makes userID a verified member holding email.
-func verifiedMember(t *testing.T, s *Store, userID, email string) {
+func verifiedMember(t *testing.T, s *Registry, userID, email string) {
 	t.Helper()
 	ctx := context.Background()
 	if err := s.UpsertMemberJoin(ctx, userID, userID); err != nil {
@@ -88,7 +88,7 @@ func verifiedMember(t *testing.T, s *Store, userID, email string) {
 }
 
 func TestUpdateVerifiedEmailCorrectsTheAddress(t *testing.T) {
-	s := openTestStore(t)
+	s := openTestRegistry(t)
 	ctx := context.Background()
 	verifiedMember(t, s, "u1", "th1@edu.hmu.gr")
 
@@ -112,7 +112,7 @@ func TestUpdateVerifiedEmailCorrectsTheAddress(t *testing.T) {
 }
 
 func TestUpdateVerifiedEmailRefusesATakenAddress(t *testing.T) {
-	s := openTestStore(t)
+	s := openTestRegistry(t)
 	ctx := context.Background()
 	if err := s.AddVerifiedEmail(ctx, "a@x.gr", nil, SourceModerator); err != nil {
 		t.Fatal(err)
@@ -132,7 +132,7 @@ func TestUpdateVerifiedEmailRefusesATakenAddress(t *testing.T) {
 }
 
 func TestUpdateVerifiedEmailMovesAndDropsTheOwner(t *testing.T) {
-	s := openTestStore(t)
+	s := openTestRegistry(t)
 	ctx := context.Background()
 	verifiedMember(t, s, "u1", "th1@edu.hmu.gr")
 
@@ -155,7 +155,7 @@ func TestUpdateVerifiedEmailMovesAndDropsTheOwner(t *testing.T) {
 }
 
 func TestLegacyHashReadAndUpdate(t *testing.T) {
-	s := openTestStore(t)
+	s := openTestRegistry(t)
 	ctx := context.Background()
 	hash := LegacyHash("old@edu.hmu.gr")
 

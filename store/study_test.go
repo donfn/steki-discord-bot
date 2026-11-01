@@ -9,7 +9,7 @@ import (
 )
 
 func TestStudyNotes(t *testing.T) {
-	s := openTestStore(t)
+	s := openTestLibrary(t)
 	ctx := context.Background()
 
 	for _, d := range []string{`{"d":1}`, `{"d":1,"t":"Κεφ. 2"}`} { // the latest save wins
@@ -41,7 +41,7 @@ func TestStudyNotes(t *testing.T) {
 }
 
 func TestStudyNotesQuota(t *testing.T) {
-	s := openTestStore(t)
+	s := openTestLibrary(t)
 	ctx := context.Background()
 
 	// A note that fits is stored, and replacing it with another of the same

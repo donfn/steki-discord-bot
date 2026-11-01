@@ -42,7 +42,7 @@ type Refresher func(ctx context.Context, m *store.Material) (string, error)
 
 // Worker copies discovered materials into the bucket and screens them.
 type Worker struct {
-	st       *store.Store
+	st       *store.Library
 	bucket   *Bucket
 	screener Screener
 	refresh  Refresher
@@ -77,7 +77,7 @@ type Worker struct {
 }
 
 // NewWorker returns a Worker. Call Run to start it.
-func NewWorker(st *store.Store, bucket *Bucket, screener Screener, refresh Refresher,
+func NewWorker(st *store.Library, bucket *Bucket, screener Screener, refresh Refresher,
 	changed func(homeChannelID string), held func(), courses func(ctx context.Context) ([]string, error),
 	logger *slog.Logger) *Worker {
 	ps, _ := screener.(PreScreener)

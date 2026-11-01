@@ -1,7 +1,7 @@
 // Package materials backs up the PDFs and JPEGs members post to the steki-backups
 // bucket and decides which of them the material page may list.
 //
-// Discovery lives with the Discord handlers (events), which know channels and
+// Discovery lives with the Discord handlers (services/web), which know channels and
 // messages. This package takes it from a row in the materials table: the
 // Worker copies the file into the bucket, then hands it to a Screener, whose
 // verdict decides whether it is listed. The bucket keeps every file that was

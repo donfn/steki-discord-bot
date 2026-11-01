@@ -61,7 +61,7 @@ func (u EmailUse) BlocksUser(userID string) bool {
 // account. It tries the plaintext table first, then falls back to the imported
 // legacy hashes, so addresses registered before the Postgres migration still
 // cannot be reused.
-func (s *Store) CheckEmail(ctx context.Context, email string) (EmailUse, error) {
+func (s *Registry) CheckEmail(ctx context.Context, email string) (EmailUse, error) {
 	email = NormalizeEmail(email)
 
 	var owner *string
@@ -87,7 +87,7 @@ func (s *Store) CheckEmail(ctx context.Context, email string) (EmailUse, error) 
 }
 
 // AddVerifiedEmail records an address, optionally bound to an owner.
-func (s *Store) AddVerifiedEmail(ctx context.Context, email string, userID *string, source string) error {
+func (s *Registry) AddVerifiedEmail(ctx context.Context, email string, userID *string, source string) error {
 	email = NormalizeEmail(email)
 	_, err := s.db.ExecContext(ctx, `
 		insert into verified_emails (email, user_id, domain, source, verified_at)
@@ -100,7 +100,7 @@ func (s *Store) AddVerifiedEmail(ctx context.Context, email string, userID *stri
 
 // RemoveVerifiedEmail deletes an address and any legacy hash of it, so a
 // moderator freeing an address frees it in both representations.
-func (s *Store) RemoveVerifiedEmail(ctx context.Context, email string) (bool, error) {
+func (s *Registry) RemoveVerifiedEmail(ctx context.Context, email string) (bool, error) {
 	email = NormalizeEmail(email)
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -136,7 +136,7 @@ func (s *Store) RemoveVerifiedEmail(ctx context.Context, email string) (bool, er
 
 // RemoveLegacyHash deletes a raw hash, for the rare case where only the hash is
 // known. Mirrors the old `removeHash` admin command.
-func (s *Store) RemoveLegacyHash(ctx context.Context, hash string) (bool, error) {
+func (s *Registry) RemoveLegacyHash(ctx context.Context, hash string) (bool, error) {
 	res, err := s.db.ExecContext(ctx,
 		`delete from legacy_email_hashes where sha256 = ?1`,
 		strings.ToLower(strings.TrimSpace(hash)))
@@ -148,7 +148,7 @@ func (s *Store) RemoveLegacyHash(ctx context.Context, hash string) (bool, error)
 }
 
 // WhoIs returns the stored record for an address.
-func (s *Store) WhoIs(ctx context.Context, email string) (*VerifiedEmail, error) {
+func (s *Registry) WhoIs(ctx context.Context, email string) (*VerifiedEmail, error) {
 	email = NormalizeEmail(email)
 	v, err := scanVerifiedEmail(s.db.QueryRowContext(ctx, `
 		select email, user_id, domain, source, verified_at
@@ -168,7 +168,7 @@ func scanVerifiedEmail(row scanner) (*VerifiedEmail, error) {
 }
 
 // EmailsForUser lists every address bound to a Discord account.
-func (s *Store) EmailsForUser(ctx context.Context, userID string) ([]*VerifiedEmail, error) {
+func (s *Registry) EmailsForUser(ctx context.Context, userID string) ([]*VerifiedEmail, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		select email, user_id, domain, source, verified_at
 		from verified_emails where user_id = ?1 order by verified_at asc`, userID)
@@ -189,7 +189,7 @@ func (s *Store) EmailsForUser(ctx context.Context, userID string) ([]*VerifiedEm
 }
 
 // AddLegacyHash stores an imported hash that could not be resolved to plaintext.
-func (s *Store) AddLegacyHash(ctx context.Context, hash string, userID *string, source string) error {
+func (s *Registry) AddLegacyHash(ctx context.Context, hash string, userID *string, source string) error {
 	_, err := s.db.ExecContext(ctx, `
 		insert into legacy_email_hashes (sha256, user_id, source, imported_at)
 		values (?1, ?2, ?3, ?4)
@@ -200,7 +200,7 @@ func (s *Store) AddLegacyHash(ctx context.Context, hash string, userID *string, 
 }
 
 // GetLegacyHash returns the stored record for a hash.
-func (s *Store) GetLegacyHash(ctx context.Context, hash string) (*LegacyHashRecord, error) {
+func (s *Registry) GetLegacyHash(ctx context.Context, hash string) (*LegacyHashRecord, error) {
 	var r LegacyHashRecord
 	err := s.db.QueryRowContext(ctx, `
 		select sha256, user_id, source, imported_at
@@ -214,7 +214,7 @@ func (s *Store) GetLegacyHash(ctx context.Context, hash string) (*LegacyHashReco
 }
 
 // LegacyHashesForUser lists every imported hash bound to a Discord account.
-func (s *Store) LegacyHashesForUser(ctx context.Context, userID string) ([]*LegacyHashRecord, error) {
+func (s *Registry) LegacyHashesForUser(ctx context.Context, userID string) ([]*LegacyHashRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		select sha256, user_id, source, imported_at
 		from legacy_email_hashes where user_id = ?1 order by imported_at asc`, userID)
@@ -236,7 +236,7 @@ func (s *Store) LegacyHashesForUser(ctx context.Context, userID string) ([]*Lega
 
 // SetLegacyHashOwner binds a hash to an account, or to nobody when owner is
 // nil. It reports whether the hash exists.
-func (s *Store) SetLegacyHashOwner(ctx context.Context, hash string, owner *string) (bool, error) {
+func (s *Registry) SetLegacyHashOwner(ctx context.Context, hash string, owner *string) (bool, error) {
 	res, err := s.db.ExecContext(ctx,
 		`update legacy_email_hashes set user_id = ?2 where sha256 = ?1`,
 		strings.ToLower(strings.TrimSpace(hash)), owner)
@@ -261,7 +261,7 @@ type EmailEdit struct {
 // A member who verified with this address keeps it only while they remain the
 // owner: when the owner changes, or the address is corrected, their link to it
 // follows or is dropped, so no member points at an address another account owns.
-func (s *Store) UpdateVerifiedEmail(ctx context.Context, email string, edit EmailEdit) (*VerifiedEmail, error) {
+func (s *Registry) UpdateVerifiedEmail(ctx context.Context, email string, edit EmailEdit) (*VerifiedEmail, error) {
 	email = NormalizeEmail(email)
 	target := email
 	if edit.NewEmail != "" {
@@ -338,7 +338,7 @@ type EmailStats struct {
 }
 
 // EmailStats counts stored addresses.
-func (s *Store) EmailStats(ctx context.Context) (EmailStats, error) {
+func (s *Registry) EmailStats(ctx context.Context) (EmailStats, error) {
 	var st EmailStats
 	err := s.db.QueryRowContext(ctx, `
 		select

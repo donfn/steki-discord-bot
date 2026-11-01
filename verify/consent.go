@@ -5,51 +5,31 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"time"
 
 	"steki-bot/analytics"
+	"steki-bot/brand"
 )
 
-// Consent is what the link page shows the member before they accept: who they
-// are on Discord and which address they are about to connect.
-type Consent struct {
-	Username   string
-	AvatarURL  string
-	Email      string
-	University string // a key of Universities
-}
+// Consent is what the link page shows the member before they accept.
+type Consent = brand.Consent
 
 // University is a school whose students can register.
-type University struct {
-	Name string
-	Logo string // path under /verify/uni/
-}
+type University = brand.University
 
 // Logo is the Steki logo PNG.
-func Logo() []byte { return logoPNG }
+func Logo() []byte { return brand.Logo() }
 
 // UniLogo is the PNG of a University's Logo, or nil.
-func UniLogo(name string) []byte {
-	b, _ := uniFS.ReadFile("uni/" + name)
-	return b
-}
+func UniLogo(name string) []byte { return brand.UniLogo(name) }
 
 // Universities are keyed by the value of Consent.University.
-var Universities = map[string]University{
-	"hmu": {Name: "Ελληνικό Μεσογειακό Πανεπιστήμιο", Logo: "hmu.png"},
-	"uoc": {Name: "Πανεπιστήμιο Κρήτης", Logo: "uoc.png"},
-}
+var Universities = brand.Universities
 
 // Consenter is the bot side of the registration link: it describes a pending
 // link and, once the member accepts, binds the address and lets them in.
 type Consenter interface {
 	Pending(ctx context.Context, c *Claims) (*Consent, error)
 	Accept(ctx context.Context, c *Claims) error
-}
-
-// IssueLink signs a registration email link for one registration attempt.
-func (t *Tokens) IssueLink(userID, guildID, linkID string, expires time.Time) (string, error) {
-	return t.Issue(userID, guildID, ReasonLink, linkID, expires)
 }
 
 // linkClaims parses a registration link token; media guard tokens are refused.

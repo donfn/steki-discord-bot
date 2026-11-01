@@ -25,7 +25,7 @@ func TestFlagTrips(t *testing.T) {
 // TestMediaGuardFlow runs against a real, throwaway SQLite database.
 func TestMediaGuardFlow(t *testing.T) {
 	ctx := context.Background()
-	s := openTestStore(t)
+	s := openTestGuard(t)
 
 	t0 := time.Now()
 	post := func(user, token string, at time.Time) bool {

@@ -16,12 +16,14 @@ import (
 	"testing"
 	"time"
 
+	"steki-bot/tokens"
+
 	altcha "github.com/altcha-org/altcha-lib-go/v2"
 	"github.com/golang-jwt/jwt/v5"
 )
 
 func TestTokenRoundTrip(t *testing.T) {
-	tk := NewTokens("secret")
+	tk := tokens.New("secret", "secret")
 	raw, err := tk.Issue("u1", "g1", "", "jti1", time.Now().Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
@@ -36,9 +38,9 @@ func TestTokenRoundTrip(t *testing.T) {
 }
 
 func TestTokenRejectsForgedExpiredAndNone(t *testing.T) {
-	tk := NewTokens("secret")
+	tk := tokens.New("secret", "secret")
 
-	forged, _ := NewTokens("other").Issue("u1", "g1", "", "j", time.Now().Add(time.Hour))
+	forged, _ := tokens.New("other", "other").Issue("u1", "g1", "", "j", time.Now().Add(time.Hour))
 	if _, err := tk.Parse(forged); err == nil {
 		t.Error("accepted a token signed with another secret")
 	}
@@ -49,7 +51,7 @@ func TestTokenRejectsForgedExpiredAndNone(t *testing.T) {
 	}
 
 	none := jwt.NewWithClaims(jwt.SigningMethodNone, Claims{GuildID: "g1", RegisteredClaims: jwt.RegisteredClaims{
-		Issuer: issuer, Subject: "u1", ID: "j", ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		Issuer: "steki-bot", Subject: "u1", ID: "j", ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
 	}})
 	raw, _ := none.SignedString(jwt.UnsafeAllowNoneSignatureType)
 	if _, err := tk.Parse(raw); err == nil {
@@ -131,7 +133,7 @@ func (e *testEnv) MemberProfile(_ context.Context, _, userID string) (Profile, e
 
 func newEnv(t *testing.T) *testEnv {
 	t.Helper()
-	e := &testEnv{tk: NewTokens("secret"), fl: &fakeLifter{active: "jti1"}, fc: &fakeConsenter{active: "link1"},
+	e := &testEnv{tk: tokens.New("secret", "secret"), fl: &fakeLifter{active: "jti1"}, fc: &fakeConsenter{active: "link1"},
 		fm: newFakeMaterials()}
 	mux := http.NewServeMux()
 	v := NewServer(e.tk, e.fl, e.fc, e.fm, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -164,7 +166,7 @@ func solveAt(t *testing.T, srv *httptest.Server, path, token string) string {
 	if err := json.NewDecoder(res.Body).Decode(&ch); err != nil {
 		t.Fatal(err)
 	}
-	if ch.Parameters.Algorithm != challengeAlgorithm || ch.Parameters.Cost != challengeCost {
+	if ch.Parameters.Algorithm != tokens.ChallengeAlgorithm || ch.Parameters.Cost != tokens.ChallengeCost {
 		t.Fatalf("challenge parameters = %+v", ch.Parameters)
 	}
 	sol, err := altcha.SolveChallenge(altcha.SolveChallengeOptions{Challenge: ch, DeriveKey: altcha.DeriveKeyPBKDF2()})

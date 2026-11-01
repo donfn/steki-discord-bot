@@ -1,39 +1,145 @@
 # Steki Discord Bot
 
-Registration and moderation bot for the Steki Discord server. New members are
-given a private `register-<id>` channel and send their student email there. The
-bot emails them a link (via Resend) to a consent page that shows their Discord
-avatar beside the address and the university's logo; accepting it, behind an
-invisible ALTCHA proof of work, binds the address and grants the role at once.
-State lives in an embedded SQLite file, so there is no database server to run.
+The bot of the Steki Discord server, as three services and one helper. Discord sees
+a single bot: each service keeps its own gateway connection and ignores what is not
+its own.
+
+| Service | Does | Holds | Public |
+|---------|------|-------|--------|
+| `registration` | register channels, the email link, the reaper, `/reg`, `/email` | Resend key, members' addresses | no |
+| `moderation` | screens messages, media guard, ghost role, edit and delete logs, `/guard`, `/member`, `/rules`, `/bot`; installs the slash commands | message cache, phishing list | no |
+| `web` | public pages, MCP server, course material, IP shield, `/materials`, `/mcp` | `JWT_SECRET`, OAuth, Gemini and Railway tokens | yes |
+| `blastdoor` | parses uploaded images, compresses files, in a sandbox | nothing | no |
+
+New members get a private `register-<id>` channel and give their student email
+there. The registration service emails a link (via Resend) to a consent page that
+shows their Discord avatar beside the address and the university's logo; accepting
+it, behind an invisible ALTCHA proof of work, binds the address and grants the role.
+The page is served by `web` and answered by `registration`.
+
+`TestServicesStayInTheirLane` fails if a service starts linking code outside its
+scope, `TestSecretsStayWithTheirService` if it starts reading another's secret, and
+`TestEveryCommandHasOneOwner` if a command has no owner or two.
+
+## Talking between services
+
+Nothing shares a database. A service reaches another's data only through its
+internal API (`rpc/`): signed JSON on port 8081, which has no public route. Requests
+are signed with a key derived from `INTERNAL_SECRET` and refused after a minute, so
+nothing else on the private network can call them; blastdoor has no secret.
+
+Links are signed with two keys. Email and captcha links use a key derived from
+`INTERNAL_SECRET`, since `registration` and `moderation` issue them. Everything only
+`web` issues uses `JWT_SECRET`, so a compromised `registration` or `moderation`
+cannot forge a material link or an MCP token.
+
+Screening is no longer a step before recording: `moderation` and `web` see each
+message at the same moment. What `moderation` deletes is hidden by the delete event;
+for what it only restricts the author over, it tells `web` to drop the message.
+
+## The database
+
+Each shard is a SQLite file on the container's scratch disk with one writing
+process; the bucket holds the truth (`s3db/`). No volume.
+
+| Shard | Owner | Holds | A write returns |
+|-------|-------|-------|-----------------|
+| `registry` | registration | addresses, members, registrations, bans | once in the bucket |
+| `guard` | moderation | media guard | once in the bucket |
+| `activity` | moderation | when members last spoke | at once; shipped every 30 s |
+| `library` | web | materials, reports, stickies, IP blocks | once in the bucket |
+
+```
+db/<shard>/manifest.json   the commit point: which objects make the database
+db/<shard>/snap/…          whole images (zstd), the current one and three before it
+db/<shard>/seg/…           the pages changed since the current image
+db/<shard>/daily/…         one image a day, kept for two weeks
+```
+
+- **Commit.** SQLite commits to its write-ahead log as usual. One goroutine reads the
+  committed frames out of the log, uploads them as a segment and adds it to the
+  manifest. A wrapper around the SQL driver holds each write's result back until
+  then, so the store's SQL knows nothing of this. Writes waiting together share an
+  upload. Reads never wait, so they keep working while the bucket is down.
+- **Fencing.** A starting service raises the manifest's epoch, and every manifest
+  write is conditional on the etag it last saw. An older deployment's next write is
+  refused and it shuts down; if restarted, it finds itself on the retired list and
+  stays out. A service refuses to start on a bucket that does not refuse a stale
+  conditional write (`s3db.Verify`).
+- **Compaction.** Automatic checkpoints are off, so the main file only changes when
+  the engine says so, which makes it a stable image to compress while writes carry
+  on. If the log ever restarts with frames unshipped, no segment is written until a
+  new image exists.
+- **Failure.** With the bucket down a write returns an error saying it is not yet
+  durable, and shipping keeps retrying. A missing or damaged object, or a shard that
+  does not exist, stops the service: it never starts from less than the whole
+  database, since an empty registry would let members reuse taken addresses.
+- **Notes.** Members' page notes keep their own per-member object (`usernotes/`),
+  uploaded every 15 s while open and on shutdown; a killed container can lose up to
+  that much of one member's typing.
+
+The bucket's credentials reach every object, so a compromised service could read
+other shards from the bucket directly. Railway has no per-prefix credentials;
+separate buckets would be the way to close that.
 
 ## Configuration
 
-Three variables are required (plus a public URL); the rest have sane defaults.
-See `.env.example`.
+Each service reads only its own variables and refuses to start with a list of any
+that are missing. See `.env.example`.
 
-| Variable        | Required | Purpose                                            |
-|-----------------|----------|----------------------------------------------------|
-| `DISCORD_TOKEN` | yes      | Bot token                                          |
-| `DATABASE_PATH` | no       | SQLite file. Defaults to `steki.db` inside the Railway volume (`RAILWAY_VOLUME_MOUNT_PATH`), or the working directory off Railway. On Railway the bot refuses to start without a volume, since the database would be erased on every deploy |
-| `DATABASE_URL`  | no       | Old Postgres DSN, read only to copy its data across once (see [Moving off Postgres](#moving-off-postgres)) |
-| `RESEND_API_KEY`| yes      | Resend API key                                     |
-| `JWT_SECRET`    | yes      | Signs every link, session and MCP token (at least 32 characters: `openssl rand -hex 32`) |
-| `PUBLIC_URL`    | on Railway, no | Base URL of the pages; defaults to `RAILWAY_PUBLIC_DOMAIN` |
-| `EMAIL_FROM`    | no       | Verified sender (default `Steki <steki@poiw.org>`) |
-| `URL_BLACKLIST` | no       | Comma-separated link substrings to block           |
-| `LOG_LEVEL`     | no       | `debug`/`info`/`warn`/`error` (default `info`)     |
-| `PORT`          | no       | HTTP port for the pages and `/healthz` (default `8080`) |
-| `RAILWAY_TOKEN` | no       | Railway project token; writes IP challenges and bans to the edge rules and enables automatic Under Attack Mode (see below). Railway sets `RAILWAY_SERVICE_ID` and `RAILWAY_ENVIRONMENT_ID` itself |
-| `BUCKET_NAME`, `BUCKET_ENDPOINT`, `BUCKET_REGION`, `BUCKET_ACCESS_KEY_ID`, `BUCKET_SECRET_ACCESS_KEY` | no | S3 bucket for course material (see below). On Railway these reference the `steki-backups` bucket's variables |
+| Variable | registration | moderation | web |
+|----------|:---:|:---:|:---:|
+| `DISCORD_TOKEN`, `INTERNAL_SECRET`, `BUCKET_*` | ✓ | ✓ | ✓ |
+| `PUBLIC_URL` | ✓ | ✓ | from its domain |
+| `REGISTRATION_URL` | | ✓ | ✓ |
+| `MODERATION_URL` | ✓ | | ✓ |
+| `WEB_URL` | ✓ | ✓ | |
+| `RESEND_API_KEY`, `EMAIL_FROM` | ✓ | | |
+| `URL_BLACKLIST` | | ✓ | |
+| `JWT_SECRET`, `BLASTDOOR_URL` | | | ✓ |
+| `DISCORD_CLIENT_ID/SECRET`, `GOOGLE_AI_*`, `RAILWAY_TOKEN` | | | optional |
+| `LOG_LEVEL`, `POSTHOG_*` | optional | optional | optional |
 
 Discord channel, category and role IDs are compile-time constants in
-`config/config.go` and `events/constants.go`. The guild ID is learned from the
-gateway at runtime.
+`config/config.go` and `bot/constants.go`. The guild ID is learned from the gateway.
+
+Each service's build and deploy settings are in `cmd/<service>/railway.toml`,
+including watch patterns, so a change only redeploys the services built from it.
+
+## Moving from the single bot
+
+The existing `stekibot` service becomes `web`; the others reference its variables.
+
+1. Rename `stekibot` to `web`. On it add `INTERNAL_SECRET` (`openssl rand -hex 32`),
+   `REGISTRATION_URL=http://${{registration.RAILWAY_PRIVATE_DOMAIN}}:8081` and
+   `MODERATION_URL=http://${{moderation.RAILWAY_PRIVATE_DOMAIN}}:8081`. Point its
+   config file at `cmd/web/railway.toml`. Keep the volume attached.
+2. Create `registration` and `moderation` from the same repository, with config files
+   `cmd/<service>/railway.toml`, no public domain and no serverless. Give each:
+   `DISCORD_TOKEN=${{web.DISCORD_TOKEN}}`, `INTERNAL_SECRET=${{web.INTERNAL_SECRET}}`,
+   the five `BUCKET_*=${{web.BUCKET_*}}`, `PUBLIC_URL=https://${{web.RAILWAY_PUBLIC_DOMAIN}}`,
+   `WEB_URL=http://${{web.RAILWAY_PRIVATE_DOMAIN}}:8081`, and the other's URL. On top:
+   registration `RESEND_API_KEY=${{web.RESEND_API_KEY}}`, `EMAIL_FROM=${{web.EMAIL_FROM}}`;
+   moderation `URL_BLACKLIST=${{web.URL_BLACKLIST}}`.
+   If a reference to a sealed variable arrives empty, the service names it at boot;
+   enter the value directly on the service.
+3. `web` never reads `RESEND_API_KEY`, `EMAIL_FROM` or `URL_BLACKLIST`, but while the
+   others reference them they stay in its environment. To get them out of the public
+   container, enter them directly on the service that uses them (a sealed value cannot
+   be copied, so take a new Resend key) and delete them from `web`.
+4. Deploy. On its first boot `web` splits `/data/steki.db` into the shards, checking
+   row counts, and moves leftover note copies off the volume. The others wait up to
+   three minutes for their shards. The split only reads the old file and skips shards
+   that exist, so rebooting is safe.
+5. Check the logs for `split the old database into a shard` four times, run `/bot stats`
+   and `/reg reconcile` (joins during the switch were missed), and try a registration.
+6. After a while, detach the volume. The old file stops being read as soon as the
+   shards exist. Rolling back to the old bot before that means losing what was written
+   to the shards since; after it, the volume is gone too.
 
 ## Course material
 
-With the `BUCKET_*` variables set, every PDF and JPEG posted in a course channel
+Every PDF and JPEG posted in a course channel
 or one of its threads is copied to the `steki-backups` bucket, under a folder
 per channel name (`<channel>/<thread>/<attachment id>-<file name>`). New posts
 are picked up live. The history before the bot, and anything posted while it was
@@ -43,7 +149,7 @@ itself. Deleting a message hides its files from the material page but never
 removes them from the bucket.
 
 Each channel in the course categories (`courseCategoryIDs` in
-`events/materials.go`) keeps a bot message at its bottom saying how many files
+`services/web/materials.go`) keeps a bot message at its bottom saying how many files
 members have shared, with two buttons:
 
 - **Προβολή υλικού μαθήματος** answers, to that member alone, with one short
@@ -73,7 +179,7 @@ it, stops the stickies until the next restart and tells the moderators.
 A file is listed only after it is backed up and approved by the screener
 (`materials.Screener`). The current `BasicScreener` only checks that the content
 really is a PDF or JPEG; a real screening pipeline plugs in by implementing that
-interface and passing it to `materials.NewWorker` in `events/handler.go`. It may
+interface and passing it to `materials.NewWorker` in `services/web/handler.go`. It may
 return `pending` to decide asynchronously; rejected files stay in the bucket.
 
 The bot needs Read Message History everywhere it should back up, and Manage
@@ -120,55 +226,37 @@ if Railway refuses. The Railway CLI is installed in the image for this.
 ## Running locally
 
 ```bash
-cp .env.example .env   # fill in the required values
-go run .
+cp .env.example .env   # fill in the values, with a local MinIO as the bucket
 ```
 
-The schema is created automatically on first boot (embedded migrations in
-`store/migrations`). The database is the file `steki.db` next to where you run
-it; delete it to start over. The store's tests run against throwaway SQLite
-files, so `go test ./...` needs no database.
+Set `BUCKET_PATH_STYLE=1` for MinIO and `DB_CREATE_EMPTY=1` to start with empty
+databases. Run one service with `go run ./cmd/registration` (or `moderation`, `web`).
+Every service's internal API uses port 8081, so run them one at a time or in
+containers. Never point a local run at the production bucket: taking a shard over
+fences the live service.
+
+`go test ./...` needs nothing else. `STEKI_TEST_S3="endpoint region key secret bucket"`
+also runs the engine against a real S3 server.
+
+To read a shard's data outside a service, fetch its manifest and objects: an image
+is a zstd-compressed SQLite file, or take `daily/<date>.zst` for a day's copy.
 
 ## Memory footprint
 
-The whole deployment is the bot process and one SQLite file on a volume; there
-is no database service. What keeps the process small:
+Three processes cost more than one: each holds a gateway connection and its own
+state cache, under the same soft limits. The earlier 50 MB target for the whole
+deployment no longer holds, which is the price of the separation.
 
-- **SQLite instead of Postgres.** The database runs inside the bot with two
-  connections and a 1 MiB page cache each, replacing a separate Postgres
-  service that idled at 50-70 MB.
-- **A soft Go heap limit of 24 MiB and `GOGC=40`** (`tuneRuntime` in `main.go`);
+- **A soft Go heap limit of 24 MiB and `GOGC=40`** per service (`bot.TuneRuntime`);
   `GOMEMLIMIT` and `GOGC` in the environment override them.
-- **Only the discordgo state the bot reads is tracked**: channels, roles and
-  members. Presences, voice, emojis, stickers and threads are switched off, and
-  the unused emoji intent is not requested.
-- **A fixed ring of the last 1500 messages** (`events/msgcache.go`) backs the
-  edit and delete logs, instead of discordgo's cache of 200 messages for every
-  channel.
-- **The phishing feeds are streamed into a sorted slice of 64-bit hashes**, 8
-  bytes a domain rather than a map of strings (about 0.7 MB instead of 7.5 MB
-  for 90,000 domains), and never held as a full list while refreshing.
-- **`/reg reconcile` keeps a trimmed copy of each member** rather than the
-  whole decoded payload.
-- **Every in-memory table has a bound and a way out**: rate counters, replay
-  sets and sessions are swept or capped, locks are dropped when released, and
-  PostHog's queue holds at most 1,000 events while it cannot be reached (events
-  are dropped after that; `Capture` never blocks).
-
-## Moving off Postgres
-
-Earlier versions kept their data in Railway Postgres. To move it:
-
-1. Attach a volume to the bot service (any mount path, e.g. `/data`).
-2. Keep `DATABASE_URL` pointing at the Postgres service (it already does, via
-   `${{Postgres.DATABASE_URL}}`) and deploy this version.
-3. On that first boot, with an empty SQLite file, the bot copies all seven tables
-   in one consistent snapshot, checks the row counts, and records the import in
-   `schema_migrations` so it never runs again. If the copy fails the bot does not
-   start, because an empty database would let members reuse taken addresses.
-4. Once the log shows `imported postgres data`, remove `DATABASE_URL` and delete
-   the Postgres service. The import code in `store/pgimport.go` and the pgx
-   dependency can then be deleted too.
+- **Each service subscribes only to the gateway intents it reads**, and only the
+  discordgo state any of them reads is tracked: channels, roles and members.
+- **A fixed ring of the last 1500 messages** (`services/moderation/msgcache.go`)
+  backs the edit and delete logs, in the moderation service only.
+- **The phishing feeds are streamed into a sorted slice of 64-bit hashes**, in the
+  moderation service only; `web` asks it about upload titles.
+- **Every in-memory table has a bound and a way out**: rate counters, replay sets and
+  sessions are swept or capped, and PostHog's queue holds at most 1,000 events.
 
 ## How it stays stable
 

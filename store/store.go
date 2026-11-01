@@ -1,13 +1,13 @@
-// Package store is the bot's persistence layer, backed by an embedded SQLite
-// database file.
+// Package store is the services' persistence layer: SQLite databases kept in the
+// bucket by package s3db, one per concern, each written by a single service.
+//
+// Each database has its own Go type, so a service holding one cannot even compile
+// a query against another's tables. Across services data moves only through
+// their internal APIs.
 //
 // Every exported method takes a context and runs a single statement or an
-// explicit transaction; there is no ORM and no query builder. Callers are
-// expected to pass a context with a deadline — Handler does this via WithTimeout.
-//
-// SQLite runs inside the bot's own process, so there is no database server to
-// keep resident: the whole footprint is the page cache of the two connections
-// below, a megabyte each. Timestamps are stored as integer Unix milliseconds.
+// explicit transaction; there is no ORM and no query builder. Timestamps are
+// stored as integer Unix milliseconds.
 package store
 
 import (
@@ -18,17 +18,15 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/url"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
-	_ "modernc.org/sqlite" // registers the "sqlite" driver
+	"steki-bot/s3db"
 )
 
-//go:embed migrations/*.sql
+//go:embed migrations
 var migrationFS embed.FS
 
 var (
@@ -40,83 +38,123 @@ var (
 	ErrEmailTaken = errors.New("store: email already used by another account")
 )
 
-// Store owns the database handle.
-type Store struct {
+// base is what every shard's type shares: the handle, the audit trail and the
+// health checks.
+type base struct {
 	db   *sql.DB
-	path string
+	size func() int64
 	log  *slog.Logger
 }
 
-// pragmas are applied to every connection the pool opens.
-var pragmas = []string{
-	"busy_timeout(5000)",
-	"journal_mode(WAL)",
-	"synchronous(NORMAL)",
-	"foreign_keys(1)",
-	// 1 MiB of page cache per connection (a negative size is in KiB), and no
-	// memory-mapped I/O, so the cache is the only memory the file costs.
-	"cache_size(-1024)",
-	"mmap_size(0)",
-	// Keep the write-ahead log from growing past a few megabytes on disk.
-	"journal_size_limit(4194304)",
-	"wal_autocheckpoint(200)",
-}
-
-// Open creates the database file and its directory when they do not exist,
-// then applies any pending migrations.
-func Open(ctx context.Context, path string, logger *slog.Logger) (*Store, error) {
-	if dir := filepath.Dir(path); dir != "." {
-		if err := os.MkdirAll(dir, 0o750); err != nil {
-			return nil, fmt.Errorf("create database directory: %w", err)
-		}
-	}
-
-	q := url.Values{"_pragma": pragmas, "_txlock": {"immediate"}}
-	db, err := sql.Open("sqlite", "file:"+path+"?"+q.Encode())
-	if err != nil {
-		return nil, fmt.Errorf("open database: %w", err)
-	}
-	// Writers are serialised by SQLite anyway; a second connection lets reads
-	// proceed beside one. More would only cost memory.
-	db.SetMaxOpenConns(2)
-	db.SetMaxIdleConns(2)
-	db.SetConnMaxLifetime(0)
-
-	s := &Store{db: db, path: path, log: logger}
-	if err := db.PingContext(ctx); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("database unreachable: %w", err)
-	}
-	if err := s.migrate(ctx); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("migrate: %w", err)
-	}
-	return s, nil
-}
-
 // DBStats reports connection usage, for /bot stats.
-func (s *Store) DBStats() sql.DBStats { return s.db.Stats() }
+func (s *base) DBStats() sql.DBStats { return s.db.Stats() }
 
-// FileSize is the database file's size on disk, write-ahead log included.
-func (s *Store) FileSize() int64 {
-	var n int64
-	for _, suffix := range []string{"", "-wal"} {
-		if fi, err := os.Stat(s.path + suffix); err == nil {
-			n += fi.Size()
-		}
+// FileSize is the database's size on disk, write-ahead log included.
+func (s *base) FileSize() int64 {
+	if s.size == nil {
+		return 0
 	}
-	return n
+	return s.size()
 }
-
-// Close checkpoints and closes the database.
-func (s *Store) Close() { _ = s.db.Close() }
 
 // Ping reports whether the database is currently usable.
-func (s *Store) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
+func (s *base) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
+
+// Registry is the registration service's shard: members, their registrations,
+// the addresses they used, and the addresses closed to them.
+type Registry struct{ base }
+
+// Guard is the moderation service's shard: the media guard's state.
+type Guard struct{ base }
+
+// Activity is the moderation service's index of when members last spoke. It
+// changes on every message and losing its last moments costs nothing, so it is
+// apart from Guard, on a shard that does not hold statements back for the bucket.
+type Activity struct{ base }
+
+// Library is the web service's shard: course material, reports and IP blocks.
+type Library struct{ base }
+
+// Shard names, which are also their directories under db/ in the bucket and
+// under migrations/ here.
+const (
+	ShardRegistry = "registry"
+	ShardGuard    = "guard"
+	ShardActivity = "activity"
+	ShardLibrary  = "library"
+)
+
+// ShardOptions says how to reach the bucket.
+type ShardOptions struct {
+	Objects s3db.Objects
+	Dir     string // scratch directory, one subdirectory per shard
+	Owner   string // this deployment
+	// CreateEmpty makes a shard that is not in the bucket. Only a fresh local
+	// setup wants this: in production an absent shard must stop the service, as
+	// an empty registry would let members reuse addresses that are taken.
+	CreateEmpty bool
+	OnFenced    func()
+	Log         *slog.Logger
+}
+
+// activityShipEvery is how much of the activity index a crash can lose.
+const activityShipEvery = 30 * time.Second
+
+func openShard(ctx context.Context, name string, lazy time.Duration, o ShardOptions) (*s3db.Shard, base, error) {
+	sh, err := s3db.Open(ctx, s3db.Options{
+		Name: name, Dir: filepath.Join(o.Dir, name), Objects: o.Objects, Log: o.Log,
+		Owner: o.Owner, Lazy: lazy, Create: o.CreateEmpty, OnFenced: o.OnFenced,
+	})
+	if err != nil {
+		return nil, base{}, err
+	}
+	b := base{db: sh.DB(), size: sh.FileSize, log: o.Log}
+	if err := b.migrate(ctx, name); err != nil {
+		_ = sh.Close()
+		return nil, base{}, fmt.Errorf("migrate %s: %w", name, err)
+	}
+	return sh, b, nil
+}
+
+// OpenRegistry opens the registration service's shard.
+func OpenRegistry(ctx context.Context, o ShardOptions) (*Registry, *s3db.Shard, error) {
+	sh, b, err := openShard(ctx, ShardRegistry, 0, o)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &Registry{b}, sh, nil
+}
+
+// OpenGuard opens the media guard's shard.
+func OpenGuard(ctx context.Context, o ShardOptions) (*Guard, *s3db.Shard, error) {
+	sh, b, err := openShard(ctx, ShardGuard, 0, o)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &Guard{b}, sh, nil
+}
+
+// OpenActivity opens the activity index's shard.
+func OpenActivity(ctx context.Context, o ShardOptions) (*Activity, *s3db.Shard, error) {
+	sh, b, err := openShard(ctx, ShardActivity, activityShipEvery, o)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &Activity{b}, sh, nil
+}
+
+// OpenLibrary opens the web service's shard.
+func OpenLibrary(ctx context.Context, o ShardOptions) (*Library, *s3db.Shard, error) {
+	sh, b, err := openShard(ctx, ShardLibrary, 0, o)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &Library{b}, sh, nil
+}
 
 // migrate applies every embedded migration that has not been applied yet,
 // in filename order, each in its own transaction.
-func (s *Store) migrate(ctx context.Context) error {
+func (s *base) migrate(ctx context.Context, shard string) error {
 	if _, err := s.db.ExecContext(ctx, `
 		create table if not exists schema_migrations (
 			version    text primary key,
@@ -145,7 +183,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		return err
 	}
 
-	entries, err := migrationFS.ReadDir("migrations")
+	entries, err := migrationFS.ReadDir("migrations/" + shard)
 	if err != nil {
 		return err
 	}
@@ -161,7 +199,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		if applied[name] {
 			continue
 		}
-		body, err := migrationFS.ReadFile("migrations/" + name)
+		body, err := migrationFS.ReadFile("migrations/" + shard + "/" + name)
 		if err != nil {
 			return err
 		}
@@ -182,7 +220,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		if err := tx.Commit(); err != nil {
 			return fmt.Errorf("commit %s: %w", name, err)
 		}
-		s.log.Info("applied migration", "version", name)
+		s.log.Info("applied migration", "shard", shard, "version", name)
 	}
 	return nil
 }

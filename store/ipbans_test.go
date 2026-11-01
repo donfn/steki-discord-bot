@@ -7,7 +7,7 @@ import (
 )
 
 func TestIPBans(t *testing.T) {
-	s := openTestStore(t)
+	s := openTestLibrary(t)
 	ctx := context.Background()
 	now := time.Now().Truncate(time.Millisecond)
 

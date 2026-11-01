@@ -287,7 +287,7 @@ func (s *pageSocket) run(ctx context.Context) {
 	}
 	c, err := s.v.tokens.Parse(in.Token)
 	if err != nil || c.Reason != ReasonSocket || c.ChannelID == "" ||
-		!s.v.tokens.spendUntil("socket:"+c.ID, c.ExpiresAt.Add(time.Minute)) {
+		!s.v.tokens.SpendUntil("socket:"+c.ID, c.ExpiresAt.Add(time.Minute)) {
 		s.close(socketExpired, "expired")
 		return
 	}

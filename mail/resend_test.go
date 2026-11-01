@@ -71,10 +71,10 @@ func TestRenderHeaderDrawsAPNG(t *testing.T) {
 	l := testLink()
 	l.AvatarURL = "" // no network: the fallback disc is drawn
 	var err error
-	if l.Logo, err = os.ReadFile("../verify/logo.png"); err != nil {
+	if l.Logo, err = os.ReadFile("../brand/logo.png"); err != nil {
 		t.Fatal(err)
 	}
-	if l.UniLogo, err = os.ReadFile("../verify/uni/hmu.png"); err != nil {
+	if l.UniLogo, err = os.ReadFile("../brand/uni/hmu.png"); err != nil {
 		t.Fatal(err)
 	}
 	b, err := renderHeader(t.Context(), l)

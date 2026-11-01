@@ -28,7 +28,7 @@ type MemberActivity struct {
 // listedAt is the moment before the list was fetched. A row written after it
 // (a join or a message that arrived while the list was loading) is kept even
 // though the list cannot name it.
-func (s *Store) SyncMemberActivity(ctx context.Context, listedAt time.Time, entries []ActivityEntry) error {
+func (s *Activity) SyncMemberActivity(ctx context.Context, listedAt time.Time, entries []ActivityEntry) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -61,7 +61,7 @@ func (s *Store) SyncMemberActivity(ctx context.Context, listedAt time.Time, entr
 }
 
 // MemberActivities returns the whole index.
-func (s *Store) MemberActivities(ctx context.Context) ([]MemberActivity, error) {
+func (s *Activity) MemberActivities(ctx context.Context) ([]MemberActivity, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`select user_id, joined_at, last_message_at, ghost from member_activity order by user_id`)
 	if err != nil {
@@ -83,7 +83,7 @@ func (s *Store) MemberActivities(ctx context.Context) ([]MemberActivity, error) 
 // does not know yet is added, with joinedAt as the start of their clock. The
 // ghost flag is cleared unless keepGhost says they still hold the role, which
 // the caller removes before clearing it with SetGhost.
-func (s *Store) RecordMessage(ctx context.Context, userID string, at, joinedAt time.Time, keepGhost bool) error {
+func (s *Activity) RecordMessage(ctx context.Context, userID string, at, joinedAt time.Time, keepGhost bool) error {
 	_, err := s.db.ExecContext(ctx, `
 		insert into member_activity (user_id, joined_at, last_message_at, synced_at)
 		values (?1, ?2, ?3, ?3)
@@ -97,7 +97,7 @@ func (s *Store) RecordMessage(ctx context.Context, userID string, at, joinedAt t
 
 // RecordJoin adds a member who just joined, or restarts the clock of one who
 // came back. Leaving removed their role, so the flag starts clear.
-func (s *Store) RecordJoin(ctx context.Context, userID string, joinedAt time.Time) error {
+func (s *Activity) RecordJoin(ctx context.Context, userID string, joinedAt time.Time) error {
 	_, err := s.db.ExecContext(ctx, `
 		insert into member_activity (user_id, joined_at, synced_at) values (?1, ?2, ?3)
 		on conflict (user_id) do update set
@@ -109,14 +109,14 @@ func (s *Store) RecordJoin(ctx context.Context, userID string, joinedAt time.Tim
 }
 
 // DeleteMemberActivity forgets a member who left.
-func (s *Store) DeleteMemberActivity(ctx context.Context, userID string) error {
+func (s *Activity) DeleteMemberActivity(ctx context.Context, userID string) error {
 	_, err := s.db.ExecContext(ctx, `delete from member_activity where user_id = ?1`, userID)
 	return err
 }
 
 // GhostCandidates lists up to limit members who are not flagged as ghosts yet
 // but whose last message, or failing that their join, is older than cutoff.
-func (s *Store) GhostCandidates(ctx context.Context, cutoff time.Time, limit int) ([]string, error) {
+func (s *Activity) GhostCandidates(ctx context.Context, cutoff time.Time, limit int) ([]string, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		select user_id from member_activity
 		where ghost = 0 and max(joined_at, coalesce(last_message_at, 0)) < ?1
@@ -138,7 +138,7 @@ func (s *Store) GhostCandidates(ctx context.Context, cutoff time.Time, limit int
 }
 
 // SetGhost records whether a member now holds the ghost role.
-func (s *Store) SetGhost(ctx context.Context, userID string, ghost bool) error {
+func (s *Activity) SetGhost(ctx context.Context, userID string, ghost bool) error {
 	_, err := s.db.ExecContext(ctx,
 		`update member_activity set ghost = ?2 where user_id = ?1`, userID, ghost)
 	return err

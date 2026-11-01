@@ -7,7 +7,7 @@ import (
 )
 
 func TestMaterialReviewFlow(t *testing.T) {
-	s := openTestStore(t)
+	s := openTestLibrary(t)
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	addTestMaterial(t, s, "1", "m1", "c", false, now.Add(-3*time.Hour)) // new, not yet looked at
@@ -96,7 +96,7 @@ func TestMaterialReviewFlow(t *testing.T) {
 // The content check covers course channels only: an image posted elsewhere is
 // neither screened early, held back from the bucket, nor part of a rescan.
 func TestContentCheckIsLimitedToCourseChannels(t *testing.T) {
-	s := openTestStore(t)
+	s := openTestLibrary(t)
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	addTestMaterial(t, s, "1", "m1", "course", false, now.Add(-2*time.Hour))
@@ -126,7 +126,7 @@ func TestContentCheckIsLimitedToCourseChannels(t *testing.T) {
 }
 
 func TestRemoveMaterial(t *testing.T) {
-	s := openTestStore(t)
+	s := openTestLibrary(t)
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	addTestMaterial(t, s, "1", "m1", "c", false, now)
@@ -161,7 +161,7 @@ func TestRemoveMaterial(t *testing.T) {
 }
 
 func TestBanEmails(t *testing.T) {
-	s := openTestStore(t)
+	s := openTestRegistry(t)
 	ctx := context.Background()
 	uid := "u1"
 	if err := s.AddVerifiedEmail(ctx, "Ann@Uni.gr", &uid, "moderator"); err != nil {
@@ -207,7 +207,7 @@ func TestBanEmails(t *testing.T) {
 }
 
 func TestCourseMaterialStats(t *testing.T) {
-	s := openTestStore(t)
+	s := openTestLibrary(t)
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	addTestMaterial(t, s, "1", "m1", "c", false, now.Add(-2*time.Hour))

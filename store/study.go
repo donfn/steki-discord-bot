@@ -23,7 +23,7 @@ type StudyNote struct {
 }
 
 // StudyNotes lists what a member saved, for every file.
-func (s *Store) StudyNotes(ctx context.Context, userID string) ([]StudyNote, error) {
+func (s *Library) StudyNotes(ctx context.Context, userID string) ([]StudyNote, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`select attachment_id, kind, data from study_notes where user_id = ?1`, userID)
 	if err != nil {
@@ -43,14 +43,14 @@ func (s *Store) StudyNotes(ctx context.Context, userID string) ([]StudyNote, err
 
 // ClearStudyNotes removes what a member saved, once it has moved to their own
 // database in the bucket.
-func (s *Store) ClearStudyNotes(ctx context.Context, userID string) error {
+func (s *Library) ClearStudyNotes(ctx context.Context, userID string) error {
 	_, err := s.db.ExecContext(ctx, `delete from study_notes where user_id = ?1`, userID)
 	return err
 }
 
 // SetStudyNote saves a member's state of one kind for one file, replacing
 // what was there. Empty data deletes it.
-func (s *Store) SetStudyNote(ctx context.Context, userID, attachmentID, kind, data string) error {
+func (s *Library) SetStudyNote(ctx context.Context, userID, attachmentID, kind, data string) error {
 	if data == "" {
 		_, err := s.db.ExecContext(ctx, `delete from study_notes
 			where user_id = ?1 and attachment_id = ?2 and kind = ?3`, userID, attachmentID, kind)

@@ -90,7 +90,7 @@ func collectMaterials(rows *sql.Rows) ([]*Material, error) {
 // AddMaterial records a newly seen attachment, pending backup and screening.
 // It reports false when the attachment was already known, which makes the
 // history scan and the live path safe to overlap.
-func (s *Store) AddMaterial(ctx context.Context, m *Material) (bool, error) {
+func (s *Library) AddMaterial(ctx context.Context, m *Material) (bool, error) {
 	res, err := s.db.ExecContext(ctx, `
 		insert into materials (attachment_id, message_id, channel_id, home_channel_id, guild_id,
 			uploader_id, uploader_bot, filename, content_type, size, caption, source_url,
@@ -125,7 +125,7 @@ func (Cursor) Next(m *Material) Cursor { return Cursor{postedAt: ms(m.PostedAt),
 // A JPEG in one of courseIDs (the channels the content check covers) is copied
 // only once the check approved it, so flagged ones never reach the bucket;
 // everything else is copied as soon as it is seen and screened afterwards.
-func (s *Store) MaterialBacklog(ctx context.Context, maxAttempts int, cur Cursor, limit int, courseIDs []string) ([]*Material, error) {
+func (s *Library) MaterialBacklog(ctx context.Context, maxAttempts int, cur Cursor, limit int, courseIDs []string) ([]*Material, error) {
 	rows, err := s.db.QueryContext(ctx, `select `+materialColumns+` from materials
 		where backed_up_at is null and backup_attempts < ?1
 			and (posted_at, attachment_id) > (?2, ?3)
@@ -141,7 +141,7 @@ func (s *Store) MaterialBacklog(ctx context.Context, maxAttempts int, cur Cursor
 // BackedUpKeys lists the bucket keys of the backed-up materials after the
 // attachment ID, whatever their status: the bucket keeps deleted ones too. It
 // returns the keys and the ID to continue from.
-func (s *Store) BackedUpKeys(ctx context.Context, after string, limit int) ([]string, string, error) {
+func (s *Library) BackedUpKeys(ctx context.Context, after string, limit int) ([]string, string, error) {
 	rows, err := s.db.QueryContext(ctx, `select attachment_id, object_key from materials
 		where backed_up_at is not null and attachment_id > ?1
 		order by attachment_id limit ?2`, after, limit)
@@ -161,7 +161,7 @@ func (s *Store) BackedUpKeys(ctx context.Context, after string, limit int) ([]st
 }
 
 // MarkBackedUp records a successful copy to the bucket.
-func (s *Store) MarkBackedUp(ctx context.Context, attachmentID string, at time.Time) error {
+func (s *Library) MarkBackedUp(ctx context.Context, attachmentID string, at time.Time) error {
 	_, err := s.db.ExecContext(ctx, `update materials
 		set backed_up_at = ?2, backup_error = null where attachment_id = ?1`,
 		attachmentID, ms(at))
@@ -169,7 +169,7 @@ func (s *Store) MarkBackedUp(ctx context.Context, attachmentID string, at time.T
 }
 
 // MarkBackupFailed counts a failed copy and keeps its reason.
-func (s *Store) MarkBackupFailed(ctx context.Context, attachmentID, reason string) error {
+func (s *Library) MarkBackupFailed(ctx context.Context, attachmentID, reason string) error {
 	_, err := s.db.ExecContext(ctx, `update materials
 		set backup_attempts = backup_attempts + 1, backup_error = ?2 where attachment_id = ?1`,
 		attachmentID, reason)
@@ -178,7 +178,7 @@ func (s *Store) MarkBackupFailed(ctx context.Context, attachmentID, reason strin
 
 // SetMaterialSource replaces an attachment's download URL. Discord's CDN
 // links are signed and expire, so a retry fetches a fresh one.
-func (s *Store) SetMaterialSource(ctx context.Context, attachmentID, url string) error {
+func (s *Library) SetMaterialSource(ctx context.Context, attachmentID, url string) error {
 	_, err := s.db.ExecContext(ctx,
 		`update materials set source_url = ?2 where attachment_id = ?1`, attachmentID, url)
 	return err
@@ -189,7 +189,7 @@ func (s *Store) SetMaterialSource(ctx context.Context, attachmentID, url string)
 // bucket. With rescan it also lists the listed JPEGs of courseIDs the content
 // check has never seen, which is how files uploaded before it existed get
 // checked. Channels outside courseIDs are never part of the content check.
-func (s *Store) ScreeningBacklog(ctx context.Context, cur Cursor, limit int, courseIDs []string, rescan bool) ([]*Material, error) {
+func (s *Library) ScreeningBacklog(ctx context.Context, cur Cursor, limit int, courseIDs []string, rescan bool) ([]*Material, error) {
 	rows, err := s.db.QueryContext(ctx, `select `+materialColumns+` from materials
 		where deleted_at is null and (posted_at, attachment_id) > (?2, ?3)
 			and ((status = ?1 and (backed_up_at is not null
@@ -205,7 +205,7 @@ func (s *Store) ScreeningBacklog(ctx context.Context, cur Cursor, limit int, cou
 }
 
 // SetScreening records a screening verdict.
-func (s *Store) SetScreening(ctx context.Context, attachmentID, status, note string) error {
+func (s *Library) SetScreening(ctx context.Context, attachmentID, status, note string) error {
 	_, err := s.db.ExecContext(ctx, `update materials
 		set status = ?2, screen_note = ?3, screened_at = ?4 where attachment_id = ?1`,
 		attachmentID, status, nullStr(note), ms(time.Now()))
@@ -213,7 +213,7 @@ func (s *Store) SetScreening(ctx context.Context, attachmentID, status, note str
 }
 
 // MarkVisionChecked records that the content check passed a file.
-func (s *Store) MarkVisionChecked(ctx context.Context, attachmentID string) error {
+func (s *Library) MarkVisionChecked(ctx context.Context, attachmentID string) error {
 	_, err := s.db.ExecContext(ctx, `update materials set vision_at = ?2 where attachment_id = ?1`,
 		attachmentID, ms(time.Now()))
 	return err
@@ -222,7 +222,7 @@ func (s *Store) MarkVisionChecked(ctx context.Context, attachmentID string) erro
 // HoldMaterial takes a flagged file off the page and out of the backup queue
 // until an admin decides. The caller has already removed any bucket copy, so
 // backed_up_at is cleared.
-func (s *Store) HoldMaterial(ctx context.Context, attachmentID, note string) error {
+func (s *Library) HoldMaterial(ctx context.Context, attachmentID, note string) error {
 	now := ms(time.Now())
 	_, err := s.db.ExecContext(ctx, `update materials
 		set status = ?2, screen_note = ?3, screened_at = ?4, vision_at = ?4,
@@ -232,7 +232,7 @@ func (s *Store) HoldMaterial(ctx context.Context, attachmentID, note string) err
 }
 
 // ReviewsToAnnounce lists held files whose admin card is not posted yet.
-func (s *Store) ReviewsToAnnounce(ctx context.Context, limit int) ([]*Material, error) {
+func (s *Library) ReviewsToAnnounce(ctx context.Context, limit int) ([]*Material, error) {
 	rows, err := s.db.QueryContext(ctx, `select `+materialColumns+` from materials
 		where status = ?1 and review_message_id is null and deleted_at is null
 		order by posted_at, attachment_id limit ?2`, MaterialReview, limit)
@@ -243,7 +243,7 @@ func (s *Store) ReviewsToAnnounce(ctx context.Context, limit int) ([]*Material, 
 }
 
 // SetReviewMessage remembers the admin card of a held file.
-func (s *Store) SetReviewMessage(ctx context.Context, attachmentID, messageID string) error {
+func (s *Library) SetReviewMessage(ctx context.Context, attachmentID, messageID string) error {
 	_, err := s.db.ExecContext(ctx, `update materials set review_message_id = ?2 where attachment_id = ?1`,
 		attachmentID, messageID)
 	return err
@@ -253,7 +253,7 @@ func (s *Store) SetReviewMessage(ctx context.Context, attachmentID, messageID st
 // back to the backup queue, rejected ones stay out for good. It reports false
 // when the file was no longer awaiting a decision, so two admins clicking at
 // once cannot both win. The file's row is returned either way.
-func (s *Store) ResolveReview(ctx context.Context, attachmentID string, approve bool, note string) (*Material, bool, error) {
+func (s *Library) ResolveReview(ctx context.Context, attachmentID string, approve bool, note string) (*Material, bool, error) {
 	status := MaterialRejected
 	if approve {
 		status = MaterialApproved
@@ -281,7 +281,7 @@ func jsonList(ids []string) string {
 }
 
 // MaterialsOfMessage lists the files recorded for a message, deleted or not.
-func (s *Store) MaterialsOfMessage(ctx context.Context, messageID string) ([]*Material, error) {
+func (s *Library) MaterialsOfMessage(ctx context.Context, messageID string) ([]*Material, error) {
 	rows, err := s.db.QueryContext(ctx, `select `+materialColumns+` from materials
 		where message_id = ?1 order by attachment_id`, messageID)
 	if err != nil {
@@ -294,7 +294,7 @@ func (s *Store) MaterialsOfMessage(ctx context.Context, messageID string) ([]*Ma
 // leaves the backup queue and cannot come back, since the row stays and the
 // history scan never re-adds a known attachment. The caller has already
 // removed the bucket copy.
-func (s *Store) RemoveMaterial(ctx context.Context, attachmentID, note string) error {
+func (s *Library) RemoveMaterial(ctx context.Context, attachmentID, note string) error {
 	_, err := s.db.ExecContext(ctx, `update materials
 		set status = ?2, screen_note = ?3, screened_at = ?4, backed_up_at = null
 		where attachment_id = ?1`, attachmentID, MaterialRejected, nullStr(note), ms(time.Now()))
@@ -303,7 +303,7 @@ func (s *Store) RemoveMaterial(ctx context.Context, attachmentID, note string) e
 
 // CountUnchecked counts the listed JPEGs of courseIDs the content check has
 // not seen.
-func (s *Store) CountUnchecked(ctx context.Context, courseIDs []string) (int, error) {
+func (s *Library) CountUnchecked(ctx context.Context, courseIDs []string) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, `select count(*) from materials
 		where status = 'approved' and content_type = 'image/jpeg' and backed_up_at is not null
@@ -315,7 +315,7 @@ func (s *Store) CountUnchecked(ctx context.Context, courseIDs []string) (int, er
 // DeleteMaterialsByMessage hides every material of the given messages from
 // the page. The bucket objects are kept. It returns the home channels that
 // had a matching material, whose stickies need a new count.
-func (s *Store) DeleteMaterialsByMessage(ctx context.Context, messageIDs ...string) ([]string, error) {
+func (s *Library) DeleteMaterialsByMessage(ctx context.Context, messageIDs ...string) ([]string, error) {
 	if len(messageIDs) == 0 {
 		return nil, nil
 	}
@@ -328,7 +328,7 @@ func (s *Store) DeleteMaterialsByMessage(ctx context.Context, messageIDs ...stri
 
 // DeleteMaterialsRemovedFrom hides the materials of a message that are no
 // longer among keep, which is what an edit that removes an attachment leaves.
-func (s *Store) DeleteMaterialsRemovedFrom(ctx context.Context, messageID string, keep []string) ([]string, error) {
+func (s *Library) DeleteMaterialsRemovedFrom(ctx context.Context, messageID string, keep []string) ([]string, error) {
 	args := []any{ms(time.Now()), messageID}
 	query := deleteLive + `message_id = ?`
 	if len(keep) > 0 {
@@ -356,7 +356,7 @@ const (
 // deleteMaterials soft-deletes the live rows a query built from deleteLive and
 // returnHome matches, and returns their home channels. The deletion time is the
 // first of args, the condition's parameters follow.
-func (s *Store) deleteMaterials(ctx context.Context, query string, args []any) ([]string, error) {
+func (s *Library) deleteMaterials(ctx context.Context, query string, args []any) ([]string, error) {
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -382,7 +382,7 @@ const visibleMaterial = `status = 'approved' and backed_up_at is not null and de
 
 // ChannelMaterials lists what the page of a course channel shows, newest
 // first.
-func (s *Store) ChannelMaterials(ctx context.Context, homeChannelID string) ([]*Material, error) {
+func (s *Library) ChannelMaterials(ctx context.Context, homeChannelID string) ([]*Material, error) {
 	rows, err := s.db.QueryContext(ctx, `select `+materialColumns+` from materials
 		where home_channel_id = ?1 and `+visibleMaterial+`
 		order by posted_at desc`, homeChannelID)
@@ -394,7 +394,7 @@ func (s *Store) ChannelMaterials(ctx context.Context, homeChannelID string) ([]*
 
 // ChannelMaterial returns one material the page of homeChannelID may serve,
 // or ErrNotFound, so a token for one channel cannot fetch another's files.
-func (s *Store) ChannelMaterial(ctx context.Context, homeChannelID, attachmentID string) (*Material, error) {
+func (s *Library) ChannelMaterial(ctx context.Context, homeChannelID, attachmentID string) (*Material, error) {
 	return scanMaterial(s.db.QueryRowContext(ctx, `select `+materialColumns+` from materials
 		where attachment_id = ?1 and home_channel_id = ?2 and `+visibleMaterial,
 		attachmentID, homeChannelID))
@@ -402,7 +402,7 @@ func (s *Store) ChannelMaterial(ctx context.Context, homeChannelID, attachmentID
 
 // CountMemberMaterials counts the listed files members (not bots) posted in a
 // course channel, for its sticky message.
-func (s *Store) CountMemberMaterials(ctx context.Context, homeChannelID string) (int, error) {
+func (s *Library) CountMemberMaterials(ctx context.Context, homeChannelID string) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, `select count(*) from materials
 		where home_channel_id = ?1 and uploader_bot = 0 and `+visibleMaterial,
@@ -419,7 +419,7 @@ type CourseStat struct {
 
 // CourseMaterialStats counts the listed material of every course channel, by
 // home channel ID. Channels without material are absent.
-func (s *Store) CourseMaterialStats(ctx context.Context) (map[string]CourseStat, error) {
+func (s *Library) CourseMaterialStats(ctx context.Context) (map[string]CourseStat, error) {
 	rows, err := s.db.QueryContext(ctx, `select home_channel_id, count(*), coalesce(sum(size), 0), max(posted_at)
 		from materials where `+visibleMaterial+` group by home_channel_id`)
 	if err != nil {
@@ -445,7 +445,7 @@ type MaterialStats struct {
 
 // MaterialStats counts materials by state. Failed are the ones that ran out
 // of backup attempts.
-func (s *Store) MaterialStats(ctx context.Context, maxAttempts int) (MaterialStats, error) {
+func (s *Library) MaterialStats(ctx context.Context, maxAttempts int) (MaterialStats, error) {
 	var st MaterialStats
 	err := s.db.QueryRowContext(ctx, `select
 			count(*),
@@ -466,7 +466,7 @@ type ScanState struct {
 
 // MaterialScan returns a channel's scan state; a channel never scanned has
 // the zero state.
-func (s *Store) MaterialScan(ctx context.Context, channelID string) (ScanState, error) {
+func (s *Library) MaterialScan(ctx context.Context, channelID string) (ScanState, error) {
 	var st ScanState
 	var high, low sql.NullString
 	err := s.db.QueryRowContext(ctx,
@@ -480,7 +480,7 @@ func (s *Store) MaterialScan(ctx context.Context, channelID string) (ScanState, 
 }
 
 // SetMaterialScan saves a channel's scan state.
-func (s *Store) SetMaterialScan(ctx context.Context, channelID string, st ScanState) error {
+func (s *Library) SetMaterialScan(ctx context.Context, channelID string, st ScanState) error {
 	_, err := s.db.ExecContext(ctx, `
 		insert into material_scan (channel_id, high_id, low_id, done, updated_at)
 		values (?1, ?2, ?3, ?4, ?5)
@@ -492,7 +492,7 @@ func (s *Store) SetMaterialScan(ctx context.Context, channelID string, st ScanSt
 
 // Sticky returns the message currently kept at the bottom of a channel, or
 // ErrNotFound.
-func (s *Store) Sticky(ctx context.Context, channelID string) (string, error) {
+func (s *Library) Sticky(ctx context.Context, channelID string) (string, error) {
 	var id string
 	err := s.db.QueryRowContext(ctx,
 		`select message_id from stickies where channel_id = ?1`, channelID).Scan(&id)
@@ -500,13 +500,13 @@ func (s *Store) Sticky(ctx context.Context, channelID string) (string, error) {
 }
 
 // DeleteSticky forgets the sticky of a channel that no longer has one.
-func (s *Store) DeleteSticky(ctx context.Context, channelID string) error {
+func (s *Library) DeleteSticky(ctx context.Context, channelID string) error {
 	_, err := s.db.ExecContext(ctx, `delete from stickies where channel_id = ?1`, channelID)
 	return err
 }
 
 // SetSticky records the message now kept at the bottom of a channel.
-func (s *Store) SetSticky(ctx context.Context, channelID, messageID string) error {
+func (s *Library) SetSticky(ctx context.Context, channelID, messageID string) error {
 	_, err := s.db.ExecContext(ctx, `
 		insert into stickies (channel_id, message_id, posted_at) values (?1, ?2, ?3)
 		on conflict (channel_id) do update set message_id = excluded.message_id,

@@ -10,7 +10,7 @@ import (
 //
 // Audit writes must never break the flow they describe, so callers generally
 // log the returned error and carry on rather than aborting.
-func (s *Store) LogEvent(ctx context.Context, userID, regID, kind string, detail map[string]any, actorID string) error {
+func (s *base) LogEvent(ctx context.Context, userID, regID, kind string, detail map[string]any, actorID string) error {
 	if detail == nil {
 		detail = map[string]any{}
 	}
@@ -26,7 +26,7 @@ func (s *Store) LogEvent(ctx context.Context, userID, regID, kind string, detail
 }
 
 // History returns a member's audit trail, newest first.
-func (s *Store) History(ctx context.Context, userID string, limit int) ([]*Event, error) {
+func (s *base) History(ctx context.Context, userID string, limit int) ([]*Event, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		select id, user_id, reg_id, kind, detail, actor_id, created_at
 		from registration_events
@@ -56,7 +56,7 @@ func (s *Store) History(ctx context.Context, userID string, limit int) ([]*Event
 
 // CountEventsByKind counts events of each kind since a point in time, for the
 // stats command.
-func (s *Store) CountEventsByKind(ctx context.Context, since time.Time) (map[string]int, error) {
+func (s *base) CountEventsByKind(ctx context.Context, since time.Time) (map[string]int, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		select kind, count(*) from registration_events
 		where created_at >= ?1
@@ -76,4 +76,13 @@ func (s *Store) CountEventsByKind(ctx context.Context, since time.Time) (map[str
 		out[kind] = n
 	}
 	return out, rows.Err()
+}
+
+// ForgetEvents erases a member's audit trail.
+func (s *base) ForgetEvents(ctx context.Context, userID string) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `delete from registration_events where user_id = ?1`, userID)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }

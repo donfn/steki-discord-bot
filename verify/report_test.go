@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"steki-bot/tokens"
 )
 
 // fakeReporter lets the tests choose what a report comes to.
@@ -28,7 +30,7 @@ func (f *fakeReporter) Report(_ context.Context, userID, channelID, fileID, reas
 // newReportEnv is newEnv with a material source that takes reports.
 func newReportEnv(t *testing.T) (*testEnv, *fakeReporter) {
 	t.Helper()
-	e := &testEnv{tk: NewTokens("secret"), fl: &fakeLifter{active: "jti1"}, fc: &fakeConsenter{active: "link1"},
+	e := &testEnv{tk: tokens.New("secret", "secret"), fl: &fakeLifter{active: "jti1"}, fc: &fakeConsenter{active: "link1"},
 		fm: newFakeMaterials()}
 	fr := &fakeReporter{fakeMaterials: e.fm, res: &ReportResult{Pulled: true, Note: "δεν είναι υλικό", Left: 4}}
 	mux := http.NewServeMux()

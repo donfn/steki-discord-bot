@@ -1,18 +1,12 @@
 #!/bin/sh
-# Starts as root only long enough to hand the data directory to the bot's user:
-# Railway mounts volumes owned by root, and SQLite needs to create its file and
-# journal there. The bot itself then runs unprivileged.
+# Starts as root only long enough to hand the old volume to the service's user:
+# Railway mounts volumes owned by root, and the first boot reads the old database
+# from it to split it into shards. Once the volume is detached, none of this runs
+# and the entrypoint can be dropped for USER in the Dockerfile.
 set -e
 
-dir=""
-if [ -n "$DATABASE_PATH" ]; then
-    dir=$(dirname "$DATABASE_PATH")
-elif [ -n "$RAILWAY_VOLUME_MOUNT_PATH" ]; then
-    dir="$RAILWAY_VOLUME_MOUNT_PATH"
-fi
-if [ -n "$dir" ]; then
-    mkdir -p "$dir"
-    chown -R steki:steki "$dir"
+if [ -n "$RAILWAY_VOLUME_MOUNT_PATH" ]; then
+    chown -R steki:steki "$RAILWAY_VOLUME_MOUNT_PATH"
 fi
 
-exec su-exec steki ./steki-bot
+exec su-exec steki ./web

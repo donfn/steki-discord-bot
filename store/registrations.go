@@ -39,7 +39,7 @@ func collectRegistrations(rows *sql.Rows) ([]*Registration, error) {
 // UpsertMemberJoin records that a member joined. On a rejoin it bumps
 // join_count and clears left_at, which is what makes repeat joiners visible to
 // moderators.
-func (s *Store) UpsertMemberJoin(ctx context.Context, userID, username string) error {
+func (s *Registry) UpsertMemberJoin(ctx context.Context, userID, username string) error {
 	_, err := s.db.ExecContext(ctx, `
 		insert into members (user_id, username, first_seen_at, last_join_at)
 		values (?1, ?2, ?3, ?3)
@@ -54,7 +54,7 @@ func (s *Store) UpsertMemberJoin(ctx context.Context, userID, username string) e
 
 // EnsureMember creates a bare member row if one does not exist, without
 // touching join counters. Used by backfills and moderator commands.
-func (s *Store) EnsureMember(ctx context.Context, userID, username string) error {
+func (s *Registry) EnsureMember(ctx context.Context, userID, username string) error {
 	now := ms(time.Now())
 	_, err := s.db.ExecContext(ctx, `
 		insert into members (user_id, username, first_seen_at, last_join_at)
@@ -65,14 +65,14 @@ func (s *Store) EnsureMember(ctx context.Context, userID, username string) error
 }
 
 // MarkMemberLeft stamps left_at.
-func (s *Store) MarkMemberLeft(ctx context.Context, userID string) error {
+func (s *Registry) MarkMemberLeft(ctx context.Context, userID string) error {
 	_, err := s.db.ExecContext(ctx,
 		`update members set left_at = ?2 where user_id = ?1`, userID, ms(time.Now()))
 	return err
 }
 
 // GetMember returns a member or ErrNotFound.
-func (s *Store) GetMember(ctx context.Context, userID string) (*Member, error) {
+func (s *Registry) GetMember(ctx context.Context, userID string) (*Member, error) {
 	var m Member
 	err := s.db.QueryRowContext(ctx, `
 		select user_id, username, first_seen_at, last_join_at, join_count,
@@ -91,7 +91,7 @@ func (s *Store) GetMember(ctx context.Context, userID string) (*Member, error) {
 // partial unique index registrations_one_open_per_user, so two concurrent
 // GUILD_MEMBER_ADD events for the same user cannot produce two rows — and
 // therefore cannot produce two register channels.
-func (s *Store) EnsureOpenRegistration(ctx context.Context, userID, guildID string) (*Registration, bool, error) {
+func (s *Registry) EnsureOpenRegistration(ctx context.Context, userID, guildID string) (*Registration, bool, error) {
 	row := s.db.QueryRowContext(ctx, `
 		insert into registrations (id, user_id, guild_id, last_activity_at, created_at)
 		values (?1, ?2, ?3, ?4, ?4)
@@ -114,21 +114,21 @@ func (s *Store) EnsureOpenRegistration(ctx context.Context, userID, guildID stri
 }
 
 // OpenRegistration returns the member's current open registration.
-func (s *Store) OpenRegistration(ctx context.Context, userID string) (*Registration, error) {
+func (s *Registry) OpenRegistration(ctx context.Context, userID string) (*Registration, error) {
 	return scanRegistration(s.db.QueryRowContext(ctx,
 		`select `+regColumns+` from registrations
 		 where user_id = ?1 and outcome is null`, userID))
 }
 
 // RegistrationByChannel looks up the open registration attached to a channel.
-func (s *Store) RegistrationByChannel(ctx context.Context, channelID string) (*Registration, error) {
+func (s *Registry) RegistrationByChannel(ctx context.Context, channelID string) (*Registration, error) {
 	return scanRegistration(s.db.QueryRowContext(ctx,
 		`select `+regColumns+` from registrations
 		 where channel_id = ?1 and outcome is null`, channelID))
 }
 
 // AttachChannel records the channel and category a registration was given.
-func (s *Store) AttachChannel(ctx context.Context, regID, channelID, categoryID string) error {
+func (s *Registry) AttachChannel(ctx context.Context, regID, channelID, categoryID string) error {
 	_, err := s.db.ExecContext(ctx, `
 		update registrations
 		set channel_id = ?2, category_id = nullif(?3, ''), last_activity_at = ?4
@@ -138,7 +138,7 @@ func (s *Store) AttachChannel(ctx context.Context, regID, channelID, categoryID 
 
 // Touch refreshes last_activity_at and clears any nudge, so a member who comes
 // back after the 1h nudge starts the idle clock over.
-func (s *Store) Touch(ctx context.Context, regID string) error {
+func (s *Registry) Touch(ctx context.Context, regID string) error {
 	_, err := s.db.ExecContext(ctx, `
 		update registrations
 		set last_activity_at = ?2, nudged_at = null
@@ -148,7 +148,7 @@ func (s *Store) Touch(ctx context.Context, regID string) error {
 
 // BeginCodeStep stores the submitted address and the freshly generated code,
 // and moves the registration to the awaiting_code step.
-func (s *Store) BeginCodeStep(ctx context.Context, regID, email, code string, expiresAt time.Time) error {
+func (s *Registry) BeginCodeStep(ctx context.Context, regID, email, code string, expiresAt time.Time) error {
 	_, err := s.db.ExecContext(ctx, `
 		update registrations set
 			step             = ?2,
@@ -165,7 +165,7 @@ func (s *Store) BeginCodeStep(ctx context.Context, regID, email, code string, ex
 }
 
 // IncrementFailedAttempts records a wrong code and returns the new count.
-func (s *Store) IncrementFailedAttempts(ctx context.Context, regID string) (int, error) {
+func (s *Registry) IncrementFailedAttempts(ctx context.Context, regID string) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, `
 		update registrations
@@ -180,7 +180,7 @@ func (s *Store) IncrementFailedAttempts(ctx context.Context, regID string) (int,
 
 // ResetToEmailStep destroys the stored code after too many wrong guesses and
 // sends the member back to step one.
-func (s *Store) ResetToEmailStep(ctx context.Context, regID string) error {
+func (s *Registry) ResetToEmailStep(ctx context.Context, regID string) error {
 	_, err := s.db.ExecContext(ctx, `
 		update registrations set
 			code = null, code_expires_at = null,
@@ -193,7 +193,7 @@ func (s *Store) ResetToEmailStep(ctx context.Context, regID string) error {
 // ResetCodeSends zeroes the registration's email count. It is separate from
 // ResetToEmailStep because members can restart on their own, and that must not
 // lift the cap.
-func (s *Store) ResetCodeSends(ctx context.Context, regID string) error {
+func (s *Registry) ResetCodeSends(ctx context.Context, regID string) error {
 	_, err := s.db.ExecContext(ctx, `
 		update registrations set code_sent_count = 0 where id = ?1`, regID)
 	return err
@@ -201,7 +201,7 @@ func (s *Store) ResetCodeSends(ctx context.Context, regID string) error {
 
 // CloseRegistration marks a registration terminal. Closing frees the partial
 // unique index so the member may later open a new one.
-func (s *Store) CloseRegistration(ctx context.Context, regID, outcome string) error {
+func (s *Registry) CloseRegistration(ctx context.Context, regID, outcome string) error {
 	_, err := s.db.ExecContext(ctx, `
 		update registrations
 		set outcome = ?2, completed_at = ?3
@@ -210,7 +210,7 @@ func (s *Store) CloseRegistration(ctx context.Context, regID, outcome string) er
 }
 
 // CloseOpenForUser closes whatever registration a user currently has open.
-func (s *Store) CloseOpenForUser(ctx context.Context, userID, outcome string) error {
+func (s *Registry) CloseOpenForUser(ctx context.Context, userID, outcome string) error {
 	_, err := s.db.ExecContext(ctx, `
 		update registrations
 		set outcome = ?2, completed_at = ?3
@@ -224,7 +224,7 @@ func (s *Store) CloseOpenForUser(ctx context.Context, userID, outcome string) er
 // lets the member register with a different one or someone else with theirs;
 // without it, the member keeps their claim and can re-register with it. It
 // returns how many addresses were released.
-func (s *Store) ClearVerification(ctx context.Context, userID string, release bool) (int64, error) {
+func (s *Registry) ClearVerification(ctx context.Context, userID string, release bool) (int64, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
@@ -281,7 +281,7 @@ func (r ForgetResult) Found() bool {
 // row, their registrations, their audit trail, and their media-guard and
 // help-channel state. The addresses bound to them stay recorded, because an
 // address is spent for good, but lose their owner.
-func (s *Store) ForgetMember(ctx context.Context, userID string) (ForgetResult, error) {
+func (s *Registry) ForgetMember(ctx context.Context, userID string) (ForgetResult, error) {
 	var out ForgetResult
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -297,7 +297,6 @@ func (s *Store) ForgetMember(ctx context.Context, userID string) (ForgetResult, 
 		{`update legacy_email_hashes set user_id = null where user_id = ?1`, &out.EmailsUnlinked},
 		{`delete from registration_events where user_id = ?1`, &out.Events},
 		{`delete from help_access where user_id = ?1`, nil},
-		{`delete from media_guard where user_id = ?1`, nil},
 		{`delete from registrations where user_id = ?1`, &out.Registrations},
 		{`delete from members where user_id = ?1`, &out.Members},
 	}
@@ -318,7 +317,7 @@ func (s *Store) ForgetMember(ctx context.Context, userID string) (ForgetResult, 
 }
 
 // MarkNudged stamps the 1h in-channel nudge so it is sent only once.
-func (s *Store) MarkNudged(ctx context.Context, regID string) error {
+func (s *Registry) MarkNudged(ctx context.Context, regID string) error {
 	_, err := s.db.ExecContext(ctx,
 		`update registrations set nudged_at = ?2 where id = ?1`, regID, ms(time.Now()))
 	return err
@@ -331,7 +330,7 @@ func (s *Store) MarkNudged(ctx context.Context, regID string) error {
 // It returns ErrEmailTaken when the address is already bound to a different
 // account. The submit-time dedup check cannot rule that out on its own, since
 // two members may submit the same address before either enters their code.
-func (s *Store) MarkVerified(ctx context.Context, regID, userID, email string) error {
+func (s *Registry) MarkVerified(ctx context.Context, regID, userID, email string) error {
 	email = NormalizeEmail(email)
 	now := ms(time.Now())
 
@@ -376,7 +375,7 @@ func (s *Store) MarkVerified(ctx context.Context, regID, userID, email string) e
 
 // ListNudgeCandidates returns open registrations idle longer than idle that
 // have not yet been nudged.
-func (s *Store) ListNudgeCandidates(ctx context.Context, idle time.Duration, limit int) ([]*Registration, error) {
+func (s *Registry) ListNudgeCandidates(ctx context.Context, idle time.Duration, limit int) ([]*Registration, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		select `+regColumns+` from registrations
 		where outcome is null
@@ -392,7 +391,7 @@ func (s *Store) ListNudgeCandidates(ctx context.Context, idle time.Duration, lim
 }
 
 // ListKickCandidates returns open registrations idle longer than idle.
-func (s *Store) ListKickCandidates(ctx context.Context, idle time.Duration, limit int) ([]*Registration, error) {
+func (s *Registry) ListKickCandidates(ctx context.Context, idle time.Duration, limit int) ([]*Registration, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		select `+regColumns+` from registrations
 		where outcome is null
@@ -407,7 +406,7 @@ func (s *Store) ListKickCandidates(ctx context.Context, idle time.Duration, limi
 
 // ListOpen returns every open registration, oldest activity first. Used
 // by /reg reconcile and /reg stuck.
-func (s *Store) ListOpen(ctx context.Context) ([]*Registration, error) {
+func (s *Registry) ListOpen(ctx context.Context) ([]*Registration, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		select `+regColumns+` from registrations
 		where outcome is null
@@ -419,7 +418,7 @@ func (s *Store) ListOpen(ctx context.Context) ([]*Registration, error) {
 }
 
 // IncrementKicked bumps a member's kick counter.
-func (s *Store) IncrementKicked(ctx context.Context, userID string) error {
+func (s *Registry) IncrementKicked(ctx context.Context, userID string) error {
 	_, err := s.db.ExecContext(ctx,
 		`update members set kicked_count = kicked_count + 1 where user_id = ?1`, userID)
 	return err

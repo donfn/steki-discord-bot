@@ -6,10 +6,11 @@ RUN go mod download
 COPY . .
 # -s -w drop the symbol table and DWARF data: a smaller image and fewer pages
 # for the loader to map, with no effect on behaviour.
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o steki-bot .
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o web ./cmd/web
 
 FROM alpine:3.22
-# The Railway CLI lets the bot switch on Under Attack Mode when it sees a flood.
+# This is the web service's image. The Railway CLI lets it switch on Under Attack
+# Mode when it sees a flood; no other service has the CLI or its token.
 # su-exec lets the entrypoint drop root after preparing the data volume.
 # The download is checked against a pinned SHA-256, so a changed release asset
 # stops the build instead of landing in the image. Update both together.
@@ -22,10 +23,11 @@ RUN apk add --no-cache ca-certificates su-exec \
  && rm /tmp/railway.tgz \
  && adduser -D -u 10001 steki
 WORKDIR /app
-COPY --from=builder /app/steki-bot .
+COPY --from=builder /app/web .
 COPY docker-entrypoint.sh .
 RUN chmod +x docker-entrypoint.sh
-# The entrypoint runs as root to chown the volume, then execs the bot as the
-# unprivileged "steki" user.
-EXPOSE 8080
+# The entrypoint runs as root to chown the old volume, then execs the service as
+# the unprivileged "steki" user.
+# 8080 is public; 8081 is the internal API, reachable only on the private network.
+EXPOSE 8080 8081
 ENTRYPOINT ["./docker-entrypoint.sh"]

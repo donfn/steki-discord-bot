@@ -8,7 +8,7 @@ import (
 )
 
 func TestReportLimitAndDuplicates(t *testing.T) {
-	s := openTestStore(t)
+	s := openTestLibrary(t)
 	ctx := context.Background()
 	now := time.Now()
 
@@ -47,7 +47,7 @@ func TestReportLimitAndDuplicates(t *testing.T) {
 const store5 = ReportsPerWeek
 
 func TestDroppedReportGivesTheSlotBack(t *testing.T) {
-	s := openTestStore(t)
+	s := openTestLibrary(t)
 	ctx := context.Background()
 	now := time.Now()
 	var ids []int64
@@ -77,7 +77,7 @@ func TestDroppedReportGivesTheSlotBack(t *testing.T) {
 }
 
 func TestPullAndResolveReported(t *testing.T) {
-	s := openTestStore(t)
+	s := openTestLibrary(t)
 	ctx := context.Background()
 	now := time.Now()
 	addTestMaterial(t, s, "1", "m1", "c", false, now)
@@ -122,7 +122,7 @@ func TestPullAndResolveReported(t *testing.T) {
 }
 
 func TestReportsToAnnounce(t *testing.T) {
-	s := openTestStore(t)
+	s := openTestLibrary(t)
 	ctx := context.Background()
 	id, _, _ := s.ReserveReport(ctx, "a", "u1", "λόγος", time.Now())
 	if rows, _ := s.ReportsToAnnounce(ctx, 10); len(rows) != 0 {

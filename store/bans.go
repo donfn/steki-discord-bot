@@ -16,7 +16,7 @@ type BanResult struct {
 // ones recorded as verified, the imported hashes bound to them, and extra, an
 // address a moderator knows about that the bot does not. It must run before
 // the member's data is erased, since that unlinks their addresses.
-func (s *Store) BanEmails(ctx context.Context, userID, extra, reason, by string) (BanResult, error) {
+func (s *Registry) BanEmails(ctx context.Context, userID, extra, reason, by string) (BanResult, error) {
 	var res BanResult
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -95,7 +95,7 @@ func (s *Store) BanEmails(ctx context.Context, userID, extra, reason, by string)
 }
 
 // IsEmailBanned reports whether an address may not register.
-func (s *Store) IsEmailBanned(ctx context.Context, email string) (bool, error) {
+func (s *Registry) IsEmailBanned(ctx context.Context, email string) (bool, error) {
 	var banned bool
 	err := s.db.QueryRowContext(ctx,
 		`select exists (select 1 from banned_emails where hash = ?1)`, LegacyHash(email)).Scan(&banned)
@@ -104,7 +104,7 @@ func (s *Store) IsEmailBanned(ctx context.Context, email string) (bool, error) {
 
 // UnbanEmails lifts the ban on every address closed with a member's ban, and
 // on email as well when one is given. It returns how many it lifted.
-func (s *Store) UnbanEmails(ctx context.Context, userID, email string) (int, error) {
+func (s *Registry) UnbanEmails(ctx context.Context, userID, email string) (int, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err

@@ -50,7 +50,7 @@ type Report struct {
 // week's reports or reported the file before. It is one statement, so
 // parallel requests cannot go past the limit. left is how many reports the
 // member has after this one.
-func (s *Store) ReserveReport(ctx context.Context, attachmentID, reporterID, reason string, now time.Time) (id int64, left int, err error) {
+func (s *Library) ReserveReport(ctx context.Context, attachmentID, reporterID, reason string, now time.Time) (id int64, left int, err error) {
 	cut := ms(now.Add(-ReportWindow))
 	res, err := s.db.ExecContext(ctx, `insert into material_reports (attachment_id, reporter_id, reason, created_at)
 		select ?1, ?2, ?3, ?4
@@ -92,7 +92,7 @@ func (s *Store) ReserveReport(ctx context.Context, attachmentID, reporterID, rea
 }
 
 // SettleReport records the verdict on a report.
-func (s *Store) SettleReport(ctx context.Context, id int64, status, note string) error {
+func (s *Library) SettleReport(ctx context.Context, id int64, status, note string) error {
 	_, err := s.db.ExecContext(ctx, `update material_reports set status = ?2, verdict_note = ?3 where id = ?1`,
 		id, status, nullStr(note))
 	return err
@@ -100,7 +100,7 @@ func (s *Store) SettleReport(ctx context.Context, id int64, status, note string)
 
 // DropReport deletes a report whose check could not run, which gives the
 // member the report back.
-func (s *Store) DropReport(ctx context.Context, id int64) error {
+func (s *Library) DropReport(ctx context.Context, id int64) error {
 	_, err := s.db.ExecContext(ctx, `delete from material_reports where id = ?1 and status = ?2`, id, ReportChecking)
 	return err
 }
@@ -108,7 +108,7 @@ func (s *Store) DropReport(ctx context.Context, id int64) error {
 // PullReported takes an approved, listed file off the page for a valid
 // report. It reports false when the file was not listed any more (somebody
 // reported it first, or it was removed meanwhile).
-func (s *Store) PullReported(ctx context.Context, homeChannelID, attachmentID, note string) (*Material, bool, error) {
+func (s *Library) PullReported(ctx context.Context, homeChannelID, attachmentID, note string) (*Material, bool, error) {
 	res, err := s.db.ExecContext(ctx, `update materials
 		set status = ?3, screen_note = ?4, screened_at = ?5
 		where attachment_id = ?1 and home_channel_id = ?2 and `+visibleMaterial,
@@ -125,7 +125,7 @@ func (s *Store) PullReported(ctx context.Context, homeChannelID, attachmentID, n
 }
 
 // MaterialByID returns a material whatever its state, or ErrNotFound.
-func (s *Store) MaterialByID(ctx context.Context, attachmentID string) (*Material, error) {
+func (s *Library) MaterialByID(ctx context.Context, attachmentID string) (*Material, error) {
 	return scanMaterial(s.db.QueryRowContext(ctx, `select `+materialColumns+` from materials
 		where attachment_id = ?1`, attachmentID))
 }
@@ -145,7 +145,7 @@ func scanReport(row scanner) (*Report, error) {
 
 // ReportsToAnnounce lists settled reports, valid or not, whose admin card is
 // not posted yet.
-func (s *Store) ReportsToAnnounce(ctx context.Context, limit int) ([]*Report, error) {
+func (s *Library) ReportsToAnnounce(ctx context.Context, limit int) ([]*Report, error) {
 	rows, err := s.db.QueryContext(ctx, `select `+reportColumns+` from material_reports
 		where status in (?1, ?2) and card_message_id is null order by id limit ?3`, ReportValid, ReportInvalid, limit)
 	if err != nil {
@@ -164,7 +164,7 @@ func (s *Store) ReportsToAnnounce(ctx context.Context, limit int) ([]*Report, er
 }
 
 // SetReportCard remembers the admin card of a report.
-func (s *Store) SetReportCard(ctx context.Context, id int64, messageID string) error {
+func (s *Library) SetReportCard(ctx context.Context, id int64, messageID string) error {
 	_, err := s.db.ExecContext(ctx, `update material_reports set card_message_id = ?2 where id = ?1`, id, messageID)
 	return err
 }
@@ -173,7 +173,7 @@ func (s *Store) SetReportCard(ctx context.Context, id int64, messageID string) e
 // it down for good, otherwise it goes back on the page. It reports false when
 // the file was no longer awaiting a decision, so two admins clicking at once
 // cannot both win. The file's row is returned either way.
-func (s *Store) ResolveReport(ctx context.Context, attachmentID string, remove bool, note string) (*Material, bool, error) {
+func (s *Library) ResolveReport(ctx context.Context, attachmentID string, remove bool, note string) (*Material, bool, error) {
 	status := MaterialApproved
 	if remove {
 		status = MaterialRejected

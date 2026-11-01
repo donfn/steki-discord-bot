@@ -15,15 +15,35 @@ import (
 	"time"
 
 	"steki-bot/analytics"
+	"steki-bot/brand"
+	"steki-bot/tokens"
 )
 
 // ErrLinkUsed is returned by a Lifter or Consenter when the link was already
 // used or has been replaced by a newer one.
-var ErrLinkUsed = errors.New("verify: link already used")
+var ErrLinkUsed = tokens.ErrLinkUsed
 
 // ErrEmailTaken is returned by a Consenter when the address was bound to
 // another account after the email was sent.
-var ErrEmailTaken = errors.New("verify: address already in use")
+var ErrEmailTaken = tokens.ErrEmailTaken
+
+// The token types and reasons live in package tokens; these names are how the
+// pages have always spoken of them.
+type (
+	Claims  = tokens.Claims
+	Profile = tokens.Profile
+	Tokens  = tokens.Tokens
+)
+
+const (
+	ReasonMedia     = tokens.ReasonMedia
+	ReasonDuplicate = tokens.ReasonDuplicate
+	ReasonManual    = tokens.ReasonManual
+	ReasonLink      = tokens.ReasonLink
+	ReasonMaterials = tokens.ReasonMaterials
+	ReasonMCPGuide  = tokens.ReasonMCPGuide
+	ReasonSocket    = tokens.ReasonSocket
+)
 
 // Lifter is the bot side of the media guard: it knows which links are still
 // outstanding and how to lift a timeout on Discord.
@@ -40,10 +60,6 @@ const (
 var (
 	//go:embed page.html link.html materials.html mcp_guide.html
 	pagesFS embed.FS
-	//go:embed logo.png
-	logoPNG []byte
-	//go:embed uni
-	uniFS embed.FS
 
 	guardTmpl = template.Must(template.ParseFS(pagesFS, "page.html"))
 	linkTmpl  = template.Must(template.ParseFS(pagesFS, "link.html"))
@@ -106,7 +122,7 @@ func (v *Server) spendLink(c *Claims) bool {
 	if c.ExpiresAt != nil {
 		until = c.ExpiresAt.Add(time.Minute)
 	}
-	if !v.tokens.spendUntil("link:"+c.ID, until) {
+	if !v.tokens.SpendUntil("link:"+c.ID, until) {
 		return false
 	}
 	if v.watcher != nil {
@@ -142,11 +158,11 @@ func (v *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /verify/logo.png", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
 		w.Header().Set("Cache-Control", "public, max-age=86400")
-		_, _ = w.Write(logoPNG)
+		_, _ = w.Write(brand.Logo())
 	})
 	mux.HandleFunc("GET /verify/uni/{file}", func(w http.ResponseWriter, r *http.Request) {
-		b, err := uniFS.ReadFile("uni/" + r.PathValue("file"))
-		if err != nil {
+		b := brand.UniLogo(r.PathValue("file"))
+		if b == nil {
 			http.NotFound(w, r)
 			return
 		}
@@ -262,7 +278,7 @@ func (v *Server) challenge(w http.ResponseWriter, r *http.Request) {
 
 // writeChallenge answers the widget with a challenge bound to linkID.
 func (v *Server) writeChallenge(w http.ResponseWriter, linkID string) {
-	ch, err := v.tokens.newChallenge(linkID)
+	ch, err := v.tokens.NewChallenge(linkID)
 	if err != nil {
 		v.log.Error("verify: create challenge", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": stateError})
@@ -291,7 +307,7 @@ func (v *Server) readSolve(w http.ResponseWriter, r *http.Request, parse func(st
 		writeJSON(w, http.StatusGone, map[string]string{"error": stateInvalid})
 		return nil, false
 	}
-	if !v.tokens.checkSolution(req.Payload, c.ID) {
+	if !v.tokens.CheckSolution(req.Payload, c.ID) {
 		analytics.Tag(r.Context(), "captcha", "failed")
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "captcha"})
 		return nil, false

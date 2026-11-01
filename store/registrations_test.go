@@ -13,7 +13,7 @@ import (
 func nopLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
 
 func TestRegistrationLifecycle(t *testing.T) {
-	s := openTestStore(t)
+	s := openTestRegistry(t)
 	ctx := context.Background()
 
 	if err := s.UpsertMemberJoin(ctx, "u1", "alice"); err != nil {
@@ -87,7 +87,7 @@ func TestRegistrationLifecycle(t *testing.T) {
 }
 
 func TestEnsureOpenRegistrationIsRaceFree(t *testing.T) {
-	s := openTestStore(t)
+	s := openTestRegistry(t)
 	ctx := context.Background()
 	if err := s.EnsureMember(ctx, "racer", "r"); err != nil {
 		t.Fatal(err)
@@ -120,7 +120,7 @@ func TestEnsureOpenRegistrationIsRaceFree(t *testing.T) {
 }
 
 func TestMarkVerifiedRefusesAnAddressTakenByAnotherAccount(t *testing.T) {
-	s := openTestStore(t)
+	s := openTestRegistry(t)
 	ctx := context.Background()
 	for _, u := range []string{"a", "b"} {
 		if err := s.UpsertMemberJoin(ctx, u, u); err != nil {
@@ -146,7 +146,7 @@ func TestMarkVerifiedRefusesAnAddressTakenByAnotherAccount(t *testing.T) {
 }
 
 func TestIdleCandidatesAndCloseOutcomes(t *testing.T) {
-	s := openTestStore(t)
+	s := openTestRegistry(t)
 	ctx := context.Background()
 	if err := s.EnsureMember(ctx, "idle", "i"); err != nil {
 		t.Fatal(err)
@@ -198,7 +198,7 @@ func TestIdleCandidatesAndCloseOutcomes(t *testing.T) {
 }
 
 func TestRejoinBumpsCountAndClearsLeft(t *testing.T) {
-	s := openTestStore(t)
+	s := openTestRegistry(t)
 	ctx := context.Background()
 	_ = s.UpsertMemberJoin(ctx, "u", "old")
 	_ = s.MarkMemberLeft(ctx, "u")
@@ -213,7 +213,7 @@ func TestRejoinBumpsCountAndClearsLeft(t *testing.T) {
 }
 
 func TestEmailDedupAndRelease(t *testing.T) {
-	s := openTestStore(t)
+	s := openTestRegistry(t)
 	ctx := context.Background()
 	_ = s.UpsertMemberJoin(ctx, "owner", "o")
 	reg, _, _ := s.EnsureOpenRegistration(ctx, "owner", "g")
@@ -267,7 +267,7 @@ func TestEmailDedupAndRelease(t *testing.T) {
 }
 
 func TestVerifiedEmailDeleteDetachesMember(t *testing.T) {
-	s := openTestStore(t)
+	s := openTestRegistry(t)
 	ctx := context.Background()
 	_ = s.UpsertMemberJoin(ctx, "u", "u")
 	reg, _, _ := s.EnsureOpenRegistration(ctx, "u", "g")
@@ -283,7 +283,7 @@ func TestVerifiedEmailDeleteDetachesMember(t *testing.T) {
 }
 
 func TestAuditTrailRoundTrip(t *testing.T) {
-	s := openTestStore(t)
+	s := openTestRegistry(t)
 	ctx := context.Background()
 
 	if err := s.LogEvent(ctx, "u", "", EventJoined, nil, ""); err != nil {
@@ -316,7 +316,7 @@ func TestAuditTrailRoundTrip(t *testing.T) {
 }
 
 func TestHelpAccessLifecycle(t *testing.T) {
-	s := openTestStore(t)
+	s := openTestRegistry(t)
 	ctx := context.Background()
 	_ = s.UpsertMemberJoin(ctx, "h", "h")
 	reg, _, _ := s.EnsureOpenRegistration(ctx, "h", "g")
@@ -347,19 +347,16 @@ func TestHelpAccessLifecycle(t *testing.T) {
 }
 
 func TestMigrationsAreIdempotent(t *testing.T) {
-	path := t.TempDir() + "/steki.db"
-	ctx := context.Background()
+	b := openTestBase(t, ShardRegistry)
 	for range 2 {
-		s, err := Open(ctx, path, nopLogger())
-		if err != nil {
+		if err := b.migrate(context.Background(), ShardRegistry); err != nil {
 			t.Fatal(err)
 		}
-		s.Close()
 	}
 }
 
 func TestForgetMemberErasesTheMemberButKeepsTheirAddress(t *testing.T) {
-	s := openTestStore(t)
+	s := openTestRegistry(t)
 	ctx := context.Background()
 	verifiedMember(t, s, "u1", "th1@edu.hmu.gr")
 	verifiedMember(t, s, "u2", "th2@edu.hmu.gr")
@@ -373,9 +370,6 @@ func TestForgetMemberErasesTheMemberButKeepsTheirAddress(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := s.RecordHelpAccess(ctx, "u1"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.db.ExecContext(ctx, `insert into media_guard (user_id, guild_id) values ('u1', 'g1')`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -395,9 +389,6 @@ func TestForgetMemberErasesTheMemberButKeepsTheirAddress(t *testing.T) {
 	}
 	if ok, _ := s.HasHelpAccess(ctx, "u1"); ok {
 		t.Error("help access survived")
-	}
-	if g, err := s.GuardStatus(ctx, "u1"); err == nil && (g.RestrictedAt != nil || g.LinkPending) {
-		t.Errorf("guard state survived: %+v", g)
 	}
 	use, err := s.CheckEmail(ctx, "th1@edu.hmu.gr")
 	if err != nil || !use.InUse || use.UserID != nil {

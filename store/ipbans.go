@@ -25,7 +25,7 @@ type IPBan struct {
 }
 
 // RecordIPBan stores a block and prunes the ones that ended long ago.
-func (s *Store) RecordIPBan(ctx context.Context, b IPBan) error {
+func (s *Library) RecordIPBan(ctx context.Context, b IPBan) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -46,7 +46,7 @@ func (s *Store) RecordIPBan(ctx context.Context, b IPBan) error {
 
 // ActiveIPBans returns the blocks still running at now, oldest first, so a
 // later block of an address replaces an earlier one when they are replayed.
-func (s *Store) ActiveIPBans(ctx context.Context, now time.Time) ([]IPBan, error) {
+func (s *Library) ActiveIPBans(ctx context.Context, now time.Time) ([]IPBan, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		select ip, kind, reason, started_at, until from ip_bans
 		where until > ?1 order by started_at, id`, ms(now))

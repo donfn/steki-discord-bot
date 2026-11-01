@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"steki-bot/tokens"
 )
 
 type fakeMaterials struct {
@@ -487,7 +489,7 @@ func TestFilesCarryASandboxPolicy(t *testing.T) {
 }
 
 func TestGuardOnlyTakesRestrictionTokens(t *testing.T) {
-	v := &Server{tokens: NewTokens("secret")}
+	v := &Server{tokens: tokens.New("secret", "secret")}
 	exp := time.Now().Add(time.Minute)
 	for _, reason := range []string{"", ReasonMedia, ReasonDuplicate, ReasonManual} {
 		tok, _ := v.tokens.Issue("u1", "g1", reason, "j1", exp)
@@ -518,7 +520,7 @@ func TestCourseName(t *testing.T) {
 
 // Discord refuses a link button whose URL is over 512 characters.
 func TestMaterialLinkFitsAButton(t *testing.T) {
-	tk := NewTokens("test-secret")
+	tk := tokens.New("test-secret", "test-secret")
 	id := strings.Repeat("a", 32)
 	tok, err := tk.IssueMaterials("123456789012345678", "123456789012345678", "123456789012345678", id, "123456789012345678", time.Now().Add(time.Minute))
 	if err != nil {

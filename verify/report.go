@@ -16,7 +16,7 @@ import (
 // A member can report a file on the material page. The report is checked
 // straight away, by the same pipeline that screens uploads: if the reason
 // holds and matches the file, the file is pulled from the page on the spot and
-// the admins get a card to decide. See events/reports.go.
+// the admins get a card to decide. See services/web/reports.go.
 
 const (
 	// reportTimeout bounds one report, mostly the model reading the file.

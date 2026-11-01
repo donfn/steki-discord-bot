@@ -8,7 +8,7 @@ import (
 
 func TestSyncMemberActivity(t *testing.T) {
 	ctx := context.Background()
-	s := openTestStore(t)
+	s := openTestActivity(t)
 
 	joined := time.Now().Add(-200 * 24 * time.Hour).Truncate(time.Millisecond)
 	older := time.Now().Add(-40 * 24 * time.Hour).Truncate(time.Millisecond)
@@ -71,7 +71,7 @@ func TestSyncMemberActivity(t *testing.T) {
 // survive.
 func TestSyncKeepsRowsWrittenDuringTheListing(t *testing.T) {
 	ctx := context.Background()
-	s := openTestStore(t)
+	s := openTestActivity(t)
 	joined := time.Now().Add(-time.Hour)
 
 	if err := s.SyncMemberActivity(ctx, time.Now().Add(-time.Minute), []ActivityEntry{
@@ -94,7 +94,7 @@ func TestSyncKeepsRowsWrittenDuringTheListing(t *testing.T) {
 
 func TestActivityEvents(t *testing.T) {
 	ctx := context.Background()
-	s := openTestStore(t)
+	s := openTestActivity(t)
 	now := time.Now()
 	old := now.AddDate(0, -5, 0)
 	cutoff := now.AddDate(0, -3, 0)

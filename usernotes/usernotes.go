@@ -3,9 +3,11 @@
 //
 // A database is fetched when the member's page loads and uploaded again when
 // the last of their sockets closes. In between, the working copy lives on the
-// volume: a save is acknowledged once it is committed there, so a restart or a
-// failed upload loses nothing. A working copy with nobody using it is therefore
-// always something still to upload, and sweep retries those.
+// scratch disk: a save is acknowledged once it is committed there, sweep uploads
+// open databases with new saves every sweepEvery, and shutting down uploads the
+// rest, so only a killed container loses anything, and at most that long of it.
+// A working copy with nobody using it is always something still to upload, and
+// sweep retries those.
 package usernotes
 
 import (
@@ -34,7 +36,7 @@ const (
 	pageGrace = 2 * time.Minute
 
 	bucketTimeout = 2 * time.Minute
-	sweepEvery    = time.Minute
+	sweepEvery    = 15 * time.Second
 	contentType   = "application/vnd.sqlite3"
 )
 
@@ -85,7 +87,7 @@ type entry struct {
 	lease   *time.Timer
 }
 
-// New returns a Manager keeping working copies in dir, on the volume.
+// New returns a Manager keeping working copies in dir.
 func New(bucket Bucket, legacy Legacy, dir string, log *slog.Logger) (*Manager, error) {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return nil, err
@@ -106,6 +108,10 @@ func (m *Manager) Run(ctx context.Context) {
 		m.sweep(ctx)
 		select {
 		case <-ctx.Done():
+			// The working copies do not survive the container.
+			final, cancel := context.WithTimeout(context.Background(), bucketTimeout)
+			defer cancel()
+			m.sweep(final)
 			return
 		case <-t.C:
 		}
@@ -128,8 +134,24 @@ func (m *Manager) sweep(ctx context.Context) {
 			}
 		}
 		m.settle(ctx, e)
+		m.checkpoint(ctx, e)
 		m.leave(e)
 	}
+}
+
+// checkpoint uploads an open database with new saves. The entry's lock keeps
+// saves out, and every save is a finished transaction, so the file is whole.
+func (m *Manager) checkpoint(ctx context.Context, e *entry) {
+	if e.db == nil || !e.dirty {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, bucketTimeout)
+	defer cancel()
+	if err := m.bucket.PutFile(ctx, objectKey(e.user), m.path(e.user), contentType); err != nil {
+		m.log.Warn("usernotes: checkpoint; will retry", "user_id", e.user, "error", err)
+		return
+	}
+	e.dirty = false
 }
 
 func (m *Manager) enter(user string) *entry {
