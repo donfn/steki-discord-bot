@@ -60,6 +60,7 @@ func NewHandler(cfg *config.Registration, st *store.Registry, an *analytics.Clie
 // Register subscribes the handler to the gateway events it serves.
 func (h *Handler) Register(s *discordgo.Session) {
 	h.Core.Register(s)
+	h.SkipMemberCache(s)
 	h.OnHome = func(s *discordgo.Session) { h.startMaintenance(s) }
 	s.AddHandler(bot.Guard(h.Core, "message_create", h.onMessage))
 	s.AddHandler(bot.Guard(h.Core, "member_add", h.onMemberAdd))

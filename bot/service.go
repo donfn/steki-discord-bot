@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"runtime/debug"
 	"sync"
 	"syscall"
@@ -24,24 +25,35 @@ const (
 	// the heap grow to twice that between cycles and the scavenger returns the
 	// slack slowly. GOMEMLIMIT in the environment overrides it.
 	memoryLimit = 24 << 20
+	// maxProcs caps the scheduler: the services idle and wait on the network,
+	// and every P keeps a cache of spans for each size class, which a container
+	// reporting the host's cores would multiply. GOMAXPROCS overrides it.
+	maxProcs = 2
 	// gcPercent collects sooner than the default 100, trading a little CPU
 	// (the bot idles near zero) for a smaller resident set.
 	gcPercent = 40
-	// seedWait is how long a service waits for its shard to appear: on its first
-	// boot the web service moves the material into its folder and then creates
-	// the shards from the old database.
-	seedWait = 30 * time.Minute
 )
 
-// TuneRuntime sets the garbage collector's targets, unless the operator has
-// set GOGC or GOMEMLIMIT, which then win.
+// TuneRuntime sets the garbage collector's targets and the scheduler's width,
+// unless the operator has set GOGC, GOMEMLIMIT or GOMAXPROCS, which then win.
 func TuneRuntime() {
+	if os.Getenv("GOMAXPROCS") == "" {
+		runtime.GOMAXPROCS(min(maxProcs, runtime.NumCPU()))
+	}
 	if os.Getenv("GOGC") == "" {
 		debug.SetGCPercent(gcPercent)
 	}
 	if os.Getenv("GOMEMLIMIT") == "" {
 		debug.SetMemoryLimit(memoryLimit)
 	}
+}
+
+// Running logs that the service is up and hands the memory booting used back to
+// the OS: it allocates a good deal that is dead for good, and the scavenger would
+// otherwise return it slowly.
+func Running(logger *slog.Logger) {
+	logger.Info("running")
+	debug.FreeOSMemory()
 }
 
 // NewLogger returns the service's JSON logger and makes it the default.
@@ -77,23 +89,6 @@ func OpenBucket(ctx context.Context, c config.Common) (s3db.Objects, error) {
 		return nil, fmt.Errorf("the bucket cannot hold the databases: %w", err)
 	}
 	return objects, nil
-}
-
-// WaitForShard retries open while the shard has not been created yet.
-func WaitForShard[T any](ctx context.Context, logger *slog.Logger, name string, open func(context.Context) (T, error)) (T, error) {
-	deadline := time.Now().Add(seedWait)
-	for {
-		v, err := open(ctx)
-		if err == nil || !errors.Is(err, s3db.ErrNotSeeded) || time.Now().After(deadline) {
-			return v, err
-		}
-		logger.Warn("waiting for the web service to create the shard", "shard", name)
-		select {
-		case <-ctx.Done():
-			return v, ctx.Err()
-		case <-time.After(5 * time.Second):
-		}
-	}
 }
 
 // ShardOptions fills in what every shard shares.

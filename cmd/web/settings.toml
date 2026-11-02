@@ -12,7 +12,6 @@ watchPatterns = [
   "usernotes/**",
   "shield/**",
   "Dockerfile",
-  "docker-entrypoint.sh",
   "go.mod",
   "go.sum",
   "analytics/**",

@@ -56,17 +56,9 @@ type Note struct {
 	File, Kind, Data string
 }
 
-// Legacy reads and clears the notes saved before they moved to the bucket. Each
-// member's are imported the first time they have no database yet.
-type Legacy interface {
-	LegacyNotes(ctx context.Context, userID string) ([]Note, error)
-	ClearLegacyNotes(ctx context.Context, userID string) error
-}
-
 // Manager opens, closes and uploads the members' databases.
 type Manager struct {
 	bucket Bucket
-	legacy Legacy
 	dir    string
 	log    *slog.Logger
 
@@ -88,7 +80,7 @@ type entry struct {
 }
 
 // New returns a Manager keeping working copies in dir.
-func New(bucket Bucket, legacy Legacy, dir string, log *slog.Logger) (*Manager, error) {
+func New(bucket Bucket, dir string, log *slog.Logger) (*Manager, error) {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return nil, err
 	}
@@ -97,7 +89,7 @@ func New(bucket Bucket, legacy Legacy, dir string, log *slog.Logger) (*Manager, 
 	for _, p := range tmp {
 		_ = os.Remove(p)
 	}
-	return &Manager{bucket: bucket, legacy: legacy, dir: dir, log: log, entries: map[string]*entry{}}, nil
+	return &Manager{bucket: bucket, dir: dir, log: log, entries: map[string]*entry{}}, nil
 }
 
 // Run uploads what earlier failed or a restart left behind, until ctx ends.
@@ -215,8 +207,8 @@ func openDB(ctx context.Context, path string) (*sql.DB, error) {
 }
 
 // load opens the member's database: the working copy if one was left, else the
-// bucket's, else a new one holding their legacy notes. A failed fetch is an
-// error and never an empty database, which would overwrite theirs on upload.
+// bucket's, else a new one. A failed fetch is an error and never an empty
+// database, which would overwrite theirs on upload.
 func (m *Manager) load(ctx context.Context, e *entry) error {
 	if !validUser(e.user) {
 		return fmt.Errorf("usernotes: bad user %q", e.user)
@@ -232,24 +224,14 @@ func (m *Manager) load(ctx context.Context, e *entry) error {
 	}
 	tmp := path + ".tmp"
 	defer os.Remove(tmp)
-	found, err := m.download(ctx, e.user, tmp)
-	if err != nil {
+	if err := m.download(ctx, e.user, tmp); err != nil {
 		return fmt.Errorf("fetch: %w", err)
 	}
 	db, err := openDB(ctx, tmp)
 	if err != nil {
 		return fmt.Errorf("open fetched copy: %w", err)
 	}
-	imported := false
-	if !found {
-		imported, err = m.importLegacy(ctx, e.user, db)
-	}
-	if err == nil {
-		err = db.Close()
-	} else {
-		_ = db.Close()
-	}
-	if err != nil {
+	if err := db.Close(); err != nil {
 		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {
@@ -258,45 +240,22 @@ func (m *Manager) load(ctx context.Context, e *entry) error {
 	if e.db, err = openDB(ctx, path); err != nil {
 		return err
 	}
-	e.dirty = imported
 	return nil
 }
 
-func (m *Manager) download(ctx context.Context, user, tmp string) (bool, error) {
+func (m *Manager) download(ctx context.Context, user, tmp string) error {
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
-		return false, err
+		return err
 	}
 	defer f.Close()
 	ctx, cancel := context.WithTimeout(ctx, bucketTimeout)
 	defer cancel()
-	found, err := m.bucket.Fetch(ctx, objectKey(user), f)
+	_, err = m.bucket.Fetch(ctx, objectKey(user), f)
 	if err != nil {
-		return false, err
+		return err
 	}
-	return found, f.Close()
-}
-
-func (m *Manager) importLegacy(ctx context.Context, user string, db *sql.DB) (bool, error) {
-	if m.legacy == nil {
-		return false, nil
-	}
-	old, err := m.legacy.LegacyNotes(ctx, user)
-	if err != nil || len(old) == 0 {
-		return false, err
-	}
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return false, err
-	}
-	defer tx.Rollback()
-	for _, n := range old {
-		if _, err := tx.ExecContext(ctx, `insert or replace into notes (file, kind, data, updated_at)
-			values (?1, ?2, ?3, ?4)`, n.File, n.Kind, n.Data, time.Now().UnixMilli()); err != nil {
-			return false, err
-		}
-	}
-	return true, tx.Commit()
+	return f.Close()
 }
 
 // settle closes and uploads the database if nothing is using it any more. A
@@ -317,11 +276,6 @@ func (m *Manager) settle(ctx context.Context, e *entry) {
 		if err := m.bucket.PutFile(ctx, objectKey(e.user), m.path(e.user), contentType); err != nil {
 			m.log.Error("usernotes: upload; will retry", "user_id", e.user, "error", err)
 			return
-		}
-		if m.legacy != nil {
-			if err := m.legacy.ClearLegacyNotes(ctx, e.user); err != nil {
-				m.log.Warn("usernotes: clear legacy notes", "user_id", e.user, "error", err)
-			}
 		}
 		m.log.Debug("usernotes: uploaded", "user_id", e.user)
 	}

@@ -172,15 +172,6 @@ func Seed(ctx context.Context, o Objects, name, src string) (bool, error) {
 	return true, nil
 }
 
-// Exists reports whether the shard is in the bucket.
-func Exists(ctx context.Context, o Objects, name string) (bool, error) {
-	_, _, err := readManifest(ctx, o, name)
-	if errors.Is(err, ErrNotFound) {
-		return false, nil
-	}
-	return err == nil, err
-}
-
 // Open takes the shard over, rebuilds its file and starts shipping.
 func Open(ctx context.Context, o Options) (*Shard, error) {
 	if o.Log == nil {
@@ -381,7 +372,7 @@ func (s *Shard) dsn(pragmas ...string) string {
 
 func (s *Shard) openDB(ctx context.Context) error {
 	var err error
-	if s.ctl, err = sql.Open("sqlite", s.dsn("busy_timeout(1000)", "journal_mode(WAL)", "wal_autocheckpoint(0)")); err != nil {
+	if s.ctl, err = sql.Open("sqlite", s.dsn("busy_timeout(1000)", "journal_mode(WAL)", "cache_size(-64)", "mmap_size(0)", "wal_autocheckpoint(0)")); err != nil {
 		return err
 	}
 	s.ctl.SetMaxOpenConns(1)

@@ -28,7 +28,7 @@ func (h *Handler) screenInvites(s *discordgo.Session, m *discordgo.Message) bool
 			break
 		}
 	}
-	if !foreign || h.isModerator(s, m.Author.ID, m.ChannelID) {
+	if !foreign || h.isModerator(s, m.Author.ID, m.GuildID, m.ChannelID) {
 		return false
 	}
 

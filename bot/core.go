@@ -263,6 +263,22 @@ func NewSession(token string, intents discordgo.Intent) (*discordgo.Session, err
 	return sess, nil
 }
 
+// SkipMemberCache keeps the guild's member list out of the gateway state. The
+// state would hold every member for the life of the process, and it never leaves
+// room for the lookups the services make (they fall back to the API). A member
+// whose roles change is dropped too, so what a later lookup caches is current.
+func (c *Core) SkipMemberCache(s *discordgo.Session) {
+	s.State.TrackMembers = false
+	s.AddHandler(Guard(c, "member_cache_fill", func(s *discordgo.Session, g *discordgo.GuildCreate) {
+		for _, m := range slices.Clone(g.Members) {
+			_ = s.State.MemberRemove(m)
+		}
+	}))
+	s.AddHandler(Guard(c, "member_cache_update", func(s *discordgo.Session, u *discordgo.GuildMemberUpdate) {
+		_ = s.State.MemberRemove(u.Member)
+	}))
+}
+
 // SlimMember keeps only what reconcile reads: who the member is, their
 // roles and when they joined.
 func SlimMember(m *discordgo.Member) *discordgo.Member {

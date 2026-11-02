@@ -98,10 +98,6 @@ type Web struct {
 	JWTSecret string
 	PublicURL string
 
-	// LegacyDatabasePath is the old single database on the volume, split into
-	// shards once. It is empty once the volume is detached.
-	LegacyDatabasePath string
-
 	// RailwayToken is a project token. When set, the bot writes the HTTP
 	// shield's IP challenges and bans to its service's edge rules, and turns
 	// on Railway's Under Attack Mode if it sees a flood. Optional. Railway
@@ -263,9 +259,6 @@ func LoadWeb() (*Web, error) {
 		BlastdoorURL:         env("BLASTDOOR_URL"),
 		RegistrationURL:      l.need("REGISTRATION_URL"),
 		ModerationURL:        l.need("MODERATION_URL"),
-	}
-	if m := env("RAILWAY_VOLUME_MOUNT_PATH"); m != "" {
-		cfg.LegacyDatabasePath = filepath.Join(m, "steki.db")
 	}
 	if cfg.PublicURL == "" {
 		l.missing = append(l.missing, "PUBLIC_URL (or a Railway public domain)")

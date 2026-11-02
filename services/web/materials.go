@@ -595,25 +595,6 @@ func (src *materialSource) OpenNotes(ctx context.Context, userID string) (func()
 	return src.h.notes.Open(ctx, userID)
 }
 
-// legacyNotes hands usernotes the notes saved in the bot's own database.
-type legacyNotes struct{ st *store.Library }
-
-func (l legacyNotes) LegacyNotes(ctx context.Context, userID string) ([]usernotes.Note, error) {
-	rows, err := l.st.StudyNotes(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]usernotes.Note, 0, len(rows))
-	for _, n := range rows {
-		out = append(out, usernotes.Note{File: n.AttachmentID, Kind: n.Kind, Data: n.Data})
-	}
-	return out, nil
-}
-
-func (l legacyNotes) ClearLegacyNotes(ctx context.Context, userID string) error {
-	return l.st.ClearStudyNotes(ctx, userID)
-}
-
 // CanRead implements verify.AccessChecker with the MCP server's rule: a
 // member who finished registration and can see the channel in Discord.
 func (src *materialSource) CanRead(ctx context.Context, userID, channelID string) error {

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -179,22 +178,11 @@ func TestBucketEndToEnd(t *testing.T) {
 	}
 	read("μάθημα/1-σημειώσεις.pdf", file)
 
-	// An old plain object is readable, then compressed in place, then skipped.
+	// An object stored before compression existed is read as it is.
 	if err := b.put(ctx, "old.pdf", bytes.NewReader(file), int64(len(file)), TypePDF); err != nil {
 		t.Fatal(err)
 	}
 	read("old.pdf", file)
-	before, after, err := b.compressObject(ctx, "old.pdf")
-	if err != nil || before != int64(len(file)) || after != stored("old.pdf") || after >= before {
-		t.Fatalf("%d %d %v", before, after, err)
-	}
-	read("old.pdf", file)
-	if _, _, err := b.compressObject(ctx, "old.pdf"); !errors.Is(err, errObjectDone) {
-		t.Errorf("second pass: %v", err)
-	}
-	if _, _, err := b.compressObject(ctx, "nothing.pdf"); !errors.Is(err, errObjectGone) {
-		t.Errorf("missing: %v", err)
-	}
 
 	// The members' note databases go in as they are, and a missing one is no
 	// error.

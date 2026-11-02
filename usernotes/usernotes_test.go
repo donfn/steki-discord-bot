@@ -50,25 +50,12 @@ func (b *fakeBucket) PutFile(_ context.Context, key, path, _ string) error {
 	return nil
 }
 
-type fakeLegacy struct {
-	notes   []Note
-	cleared bool
-}
-
-func (l *fakeLegacy) LegacyNotes(context.Context, string) ([]Note, error) {
-	if l.cleared {
-		return nil, nil
-	}
-	return l.notes, nil
-}
-func (l *fakeLegacy) ClearLegacyNotes(context.Context, string) error { l.cleared = true; return nil }
-
 const user = "123456789012345678"
 
-func setup(t *testing.T, l Legacy) (*Manager, *fakeBucket) {
+func setup(t *testing.T) (*Manager, *fakeBucket) {
 	t.Helper()
 	b := &fakeBucket{objects: map[string][]byte{}}
-	m, err := New(b, l, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	m, err := New(b, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +68,7 @@ func workingCopies(m *Manager) int {
 }
 
 func TestUploadsWhenLastSocketCloses(t *testing.T) {
-	m, b := setup(t, nil)
+	m, b := setup(t)
 	ctx := context.Background()
 	first, err := m.Open(ctx, user)
 	if err != nil {
@@ -120,7 +107,7 @@ func TestUploadsWhenLastSocketCloses(t *testing.T) {
 }
 
 func TestNewMemberWithoutNotesUploadsNothing(t *testing.T) {
-	m, b := setup(t, nil)
+	m, b := setup(t)
 	release, err := m.Open(context.Background(), user)
 	if err != nil {
 		t.Fatal(err)
@@ -132,7 +119,7 @@ func TestNewMemberWithoutNotesUploadsNothing(t *testing.T) {
 }
 
 func TestPageLoadWithoutSocketEnds(t *testing.T) {
-	m, _ := setup(t, nil)
+	m, _ := setup(t)
 	if _, err := m.Notes(context.Background(), user); err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +133,7 @@ func TestPageLoadWithoutSocketEnds(t *testing.T) {
 }
 
 func TestSocketOutlivesPageLease(t *testing.T) {
-	m, b := setup(t, nil)
+	m, b := setup(t)
 	ctx := context.Background()
 	if _, err := m.Notes(ctx, user); err != nil {
 		t.Fatal(err)
@@ -165,7 +152,7 @@ func TestSocketOutlivesPageLease(t *testing.T) {
 }
 
 func TestFailedFetchNeverStartsEmpty(t *testing.T) {
-	m, b := setup(t, nil)
+	m, b := setup(t)
 	b.failGet = true
 	if _, err := m.Open(context.Background(), user); err == nil {
 		t.Fatal("opened without the member's database")
@@ -176,7 +163,7 @@ func TestFailedFetchNeverStartsEmpty(t *testing.T) {
 }
 
 func TestFailedUploadIsKeptAndRetried(t *testing.T) {
-	m, b := setup(t, nil)
+	m, b := setup(t)
 	ctx := context.Background()
 	release, _ := m.Open(ctx, user)
 	if err := m.Save(ctx, user, "f1", "study", `{"a":1}`); err != nil {
@@ -206,7 +193,7 @@ func TestFailedUploadIsKeptAndRetried(t *testing.T) {
 }
 
 func TestRestartUploadsWhatWasLeft(t *testing.T) {
-	m, b := setup(t, nil)
+	m, b := setup(t)
 	ctx := context.Background()
 	if _, err := m.Open(ctx, user); err != nil {
 		t.Fatal(err)
@@ -217,7 +204,7 @@ func TestRestartUploadsWhatWasLeft(t *testing.T) {
 	// The process dies here, sockets and all.
 	m.entries[user].db.Close()
 
-	next, err := New(b, nil, m.dir, m.log)
+	next, err := New(b, m.dir, m.log)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,28 +217,8 @@ func TestRestartUploadsWhatWasLeft(t *testing.T) {
 	}
 }
 
-func TestLegacyImport(t *testing.T) {
-	l := &fakeLegacy{notes: []Note{{"f1", "study", `{"old":1}`}, {"f1", "ink", `{"1":[]}`}}}
-	m, b := setup(t, l)
-	ctx := context.Background()
-	got, err := m.Notes(ctx, user)
-	if err != nil || len(got) != 2 {
-		t.Fatalf("%+v %v", got, err)
-	}
-	if l.cleared {
-		t.Fatal("cleared before the upload")
-	}
-	m.expire(user)
-	if b.puts != 1 || !l.cleared {
-		t.Errorf("puts %d, cleared %v", b.puts, l.cleared)
-	}
-	if got, _ := m.Notes(ctx, user); len(got) != 2 {
-		t.Errorf("after the move: %+v", got)
-	}
-}
-
 func TestQuotaAndDelete(t *testing.T) {
-	m, _ := setup(t, nil)
+	m, _ := setup(t)
 	ctx := context.Background()
 	release, _ := m.Open(ctx, user)
 	defer release()
@@ -278,7 +245,7 @@ func TestQuotaAndDelete(t *testing.T) {
 }
 
 func TestBadUserRefused(t *testing.T) {
-	m, _ := setup(t, nil)
+	m, _ := setup(t)
 	if _, err := m.Open(context.Background(), "../../etc/x"); err == nil {
 		t.Error("accepted a path as a user")
 	}

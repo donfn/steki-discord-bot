@@ -113,40 +113,6 @@ Each service's build and deploy settings are recorded in `cmd/<service>/settings
 and set on the service in Railway, including watch patterns, so a change only
 redeploys the services built from it.
 
-## Moving from the single bot
-
-The existing `stekibot` service becomes `web`; the others reference its variables.
-
-1. Rename `stekibot` to `web`. On it add `INTERNAL_SECRET` (`openssl rand -hex 32`),
-   `REGISTRATION_URL=http://${{registration.RAILWAY_PRIVATE_DOMAIN}}:8081` and
-   `MODERATION_URL=http://${{moderation.RAILWAY_PRIVATE_DOMAIN}}:8081`. Give it the settings
-   in `cmd/web/settings.toml`. Keep the volume attached.
-2. Create `registration` and `moderation` from the same repository, with the settings in
-   `cmd/<service>/settings.toml`, no public domain and no serverless. Give each:
-   `DISCORD_TOKEN=${{web.DISCORD_TOKEN}}`, `INTERNAL_SECRET=${{web.INTERNAL_SECRET}}`,
-   the five `BUCKET_*=${{web.BUCKET_*}}`, `PUBLIC_URL=https://${{web.RAILWAY_PUBLIC_DOMAIN}}`,
-   `WEB_URL=http://${{web.RAILWAY_PRIVATE_DOMAIN}}:8081`, and the other's URL. On top:
-   registration `RESEND_API_KEY=${{web.RESEND_API_KEY}}`, `EMAIL_FROM=${{web.EMAIL_FROM}}`;
-   moderation `URL_BLACKLIST=${{web.URL_BLACKLIST}}`.
-   If a reference to a sealed variable arrives empty, the service names it at boot;
-   enter the value directly on the service.
-3. `web` never reads `RESEND_API_KEY`, `EMAIL_FROM` or `URL_BLACKLIST`, but while the
-   others reference them they stay in its environment. To get them out of the public
-   container, enter them directly on the service that uses them (a sealed value cannot
-   be copied, so take a new Resend key) and delete them from `web`.
-4. Deploy. On its first boot `web` first moves everything in the bucket except
-   `user-notes/` into `material/`, copying and checking each object before deleting
-   the original, then splits `/data/steki.db` into the shards, checking
-   row counts, and moves leftover note copies off the volume. The others wait up to
-   30 minutes for their shards. The split only reads the old file and skips shards
-   that exist, so rebooting is safe.
-5. Check the logs for `split the old database into a shard` four times, run `/bot stats`
-   and `/reg reconcile` (joins during the switch were missed), and try a registration.
-6. After a while, detach the volume. The old file stops being read as soon as the
-   shards exist. Rolling back to the old bot means losing what was written to the
-   shards since, and moving the material back to the bucket's root, since the old code
-   looks for it there.
-
 ## Course material
 
 Every PDF and JPEG posted in a course channel

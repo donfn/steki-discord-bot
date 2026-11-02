@@ -11,7 +11,6 @@ import (
 	"steki-bot/bot"
 	"steki-bot/config"
 	"steki-bot/rpc"
-	"steki-bot/s3db"
 	"steki-bot/services/moderation"
 	"steki-bot/store"
 )
@@ -43,30 +42,16 @@ func run() error {
 	}
 	fence := bot.NewFence()
 	opts := bot.ShardOptions(cfg.Common, objects, fence, logger)
-	type guardDB struct {
-		st *store.Guard
-		sh *s3db.Shard
-	}
-	guard, err := bot.WaitForShard(ctx, logger, store.ShardGuard, func(ctx context.Context) (guardDB, error) {
-		st, sh, err := store.OpenGuard(ctx, opts)
-		return guardDB{st, sh}, err
-	})
+	guard, guardShard, err := store.OpenGuard(ctx, opts)
 	if err != nil {
 		return err
 	}
-	defer guard.sh.Close()
-	type activityDB struct {
-		st *store.Activity
-		sh *s3db.Shard
-	}
-	activity, err := bot.WaitForShard(ctx, logger, store.ShardActivity, func(ctx context.Context) (activityDB, error) {
-		st, sh, err := store.OpenActivity(ctx, opts)
-		return activityDB{st, sh}, err
-	})
+	defer guardShard.Close()
+	activity, activityShard, err := store.OpenActivity(ctx, opts)
 	if err != nil {
 		return err
 	}
-	defer activity.sh.Close()
+	defer activityShard.Close()
 
 	an, err := analytics.New(cfg.PostHogKey, cfg.PostHogHost, logger)
 	if err != nil {
@@ -78,19 +63,19 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	h := moderation.NewHandler(cfg, guard.st, activity.st, an, logger)
+	h := moderation.NewHandler(cfg, guard, activity, an, logger)
 	h.Register(sess)
 
 	api := rpc.NewServer(cfg.InternalSecret, logger)
 	h.API(api, sess)
 	api.Start(ctx)
-	health := bot.HealthServer(cfg.Port, guard.st.Ping, logger)
+	health := bot.HealthServer(cfg.Port, guard.Ping, logger)
 
 	bot.Stagger(ctx, gatewayDelay)
 	if err := sess.Open(); err != nil {
 		return err
 	}
-	logger.Info("running")
+	bot.Running(logger)
 	bot.WaitForStop(logger, fence)
 
 	if err := sess.Close(); err != nil {

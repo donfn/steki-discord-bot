@@ -37,8 +37,7 @@ type Bucket struct {
 	name   string
 	// codec compresses and decompresses the objects.
 	codec *Converter
-	// writes keeps a delete from being undone: a flagged file removed while
-	// the backfill compresses it must not be written back.
+	// writes keeps a delete from being undone by a store in flight.
 	writes sync.Mutex
 }
 

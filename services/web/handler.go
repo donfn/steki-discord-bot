@@ -59,8 +59,6 @@ type Handler struct {
 	matLive atomic.Bool
 	// notes keeps members' page notes in their own databases in the bucket.
 	notes *usernotes.Manager
-	// compressing is set while /materials compress runs.
-	compressing atomic.Bool
 	// dropped remembers messages the moderation service restricted their author
 	// for, in case its word arrives before the gateway's copy of the message.
 	dropped droppedMessages
@@ -105,7 +103,7 @@ func (h *Handler) Register(s *discordgo.Session) {
 		func(home string) { h.refreshSticky(s, home) },
 		func() { go h.Safely("review_cards", func() { h.announceReviews(s) }) },
 		func(ctx context.Context) ([]string, error) { return h.courseChannelIDs(ctx, s) }, h.Log)
-	notes, err := usernotes.New(h.bucket, legacyNotes{h.st}, filepath.Join(h.cfg.DataDir, "user-notes"), h.Log)
+	notes, err := usernotes.New(h.bucket, filepath.Join(h.cfg.DataDir, "user-notes"), h.Log)
 	if err != nil {
 		h.Log.Error("material page notes off", "error", err)
 	} else {
@@ -225,7 +223,6 @@ var commandRoutes = map[string]commandFunc{
 	"mcp refresh":        (*Handler).cmdMCPRefresh,
 	"materials rescan":   (*Handler).cmdMaterialsRescan,
 	"materials remove":   (*Handler).cmdMaterialsRemove,
-	"materials compress": (*Handler).cmdMaterialsCompress,
 	"materials scan":     (*Handler).cmdMaterialsScan,
 	"materials stickies": (*Handler).cmdMaterialsStickies,
 	"materials cards":    (*Handler).cmdMaterialsCards,

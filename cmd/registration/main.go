@@ -11,7 +11,6 @@ import (
 	"steki-bot/bot"
 	"steki-bot/config"
 	"steki-bot/rpc"
-	"steki-bot/s3db"
 	"steki-bot/services/registration"
 	"steki-bot/store"
 )
@@ -39,18 +38,11 @@ func run() error {
 		return err
 	}
 	fence := bot.NewFence()
-	type opened struct {
-		st *store.Registry
-		sh *s3db.Shard
-	}
-	db, err := bot.WaitForShard(ctx, logger, store.ShardRegistry, func(ctx context.Context) (opened, error) {
-		st, sh, err := store.OpenRegistry(ctx, bot.ShardOptions(cfg.Common, objects, fence, logger))
-		return opened{st, sh}, err
-	})
+	st, shard, err := store.OpenRegistry(ctx, bot.ShardOptions(cfg.Common, objects, fence, logger))
 	if err != nil {
 		return err
 	}
-	defer db.sh.Close()
+	defer shard.Close()
 
 	an, err := analytics.New(cfg.PostHogKey, cfg.PostHogHost, logger)
 	if err != nil {
@@ -62,18 +54,18 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	h := registration.NewHandler(cfg, db.st, an, logger)
+	h := registration.NewHandler(cfg, st, an, logger)
 	h.Register(sess)
 
 	api := rpc.NewServer(cfg.InternalSecret, logger)
 	h.API(api, sess)
 	api.Start(ctx)
-	health := bot.HealthServer(cfg.Port, db.st.Ping, logger)
+	health := bot.HealthServer(cfg.Port, st.Ping, logger)
 
 	if err := sess.Open(); err != nil {
 		return err
 	}
-	logger.Info("running")
+	bot.Running(logger)
 	bot.WaitForStop(logger, fence)
 
 	// Shut down outside-in: stop taking events, then let in-flight work finish

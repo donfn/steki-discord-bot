@@ -78,6 +78,7 @@ func NewHandler(cfg *config.Moderation, st *store.Guard, activity *store.Activit
 // Register subscribes the handler to the gateway events it serves.
 func (h *Handler) Register(s *discordgo.Session) {
 	h.Core.Register(s)
+	h.SkipMemberCache(s)
 	h.OnHome = func(s *discordgo.Session) {
 		h.GoLoop("status", 30*time.Second, func() { h.updateStatus(s) })
 		h.GoLoop("phishing_feed", phishRefreshEvery, h.refreshPhishFeed)

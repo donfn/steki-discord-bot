@@ -324,10 +324,6 @@ func (h *Handler) placeStickies(s *discordgo.Session) {
 	h.Log.Info("sticky: course channels checked", "channels", placed)
 }
 
-// legacyMaterialsButtonID was the custom ID of the first design's
-// "Προβολή υλικού" button, which sat on every old sticky.
-const legacyMaterialsButtonID = "materials:open"
-
 // sweepStickies deletes every sticky copy the bot left in a channel other than
 // the one it tracks: old-design messages whose replacement or deletion failed,
 // and all of them in channels that no longer have a sticky. It looks at the
@@ -355,7 +351,7 @@ func (h *Handler) sweepStickies(ctx context.Context, s *discordgo.Session, chann
 	return nil
 }
 
-// isStickyMessage reports whether m carries a sticky's buttons, old or new.
+// isStickyMessage reports whether m carries a sticky's buttons.
 func isStickyMessage(m *discordgo.Message) bool {
 	for _, c := range m.Components {
 		row, ok := c.(*discordgo.ActionsRow)
@@ -363,8 +359,7 @@ func isStickyMessage(m *discordgo.Message) bool {
 			continue
 		}
 		for _, b := range row.Components {
-			if btn, ok := b.(*discordgo.Button); ok && (btn.CustomID == legacyMaterialsButtonID ||
-				btn.CustomID == viewButtonID || btn.CustomID == uploadButtonID) {
+			if btn, ok := b.(*discordgo.Button); ok && (btn.CustomID == viewButtonID || btn.CustomID == uploadButtonID) {
 				return true
 			}
 		}

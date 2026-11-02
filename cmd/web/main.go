@@ -6,11 +6,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"os"
-	"path/filepath"
 	"sync/atomic"
 	"time"
 
@@ -19,10 +17,8 @@ import (
 	"steki-bot/analytics"
 	"steki-bot/bot"
 	"steki-bot/config"
-	"steki-bot/materials"
 	"steki-bot/mcp"
 	"steki-bot/rpc"
-	"steki-bot/s3db"
 	"steki-bot/services/web"
 	"steki-bot/shield"
 	"steki-bot/store"
@@ -53,19 +49,6 @@ func run() error {
 	objects, err := bot.OpenBucket(ctx, cfg.Common)
 	if err != nil {
 		return err
-	}
-	// Course material used to sit at the bucket's root. It goes into its folder
-	// before anything else happens here, and later boots find nothing to move.
-	if err := moveMaterial(ctx, cfg, logger); err != nil {
-		return err
-	}
-	// The first boot with the old volume attached turns its database into the
-	// shards, which the other services are waiting for. Later boots find them all
-	// there and change nothing.
-	if cfg.LegacyDatabasePath != "" {
-		if err := migrateVolume(ctx, cfg, objects, logger); err != nil {
-			return err
-		}
 	}
 	fence := bot.NewFence()
 	st, shard, err := store.OpenLibrary(ctx, bot.ShardOptions(cfg.Common, objects, fence, logger))
@@ -131,7 +114,7 @@ func run() error {
 	if err := sess.Open(); err != nil {
 		return err
 	}
-	logger.Info("running")
+	bot.Running(logger)
 	bot.WaitForStop(logger, fence)
 
 	// Shut down outside-in: stop taking events, then let in-flight work
@@ -148,76 +131,6 @@ func run() error {
 		logger.Warn("http server shutdown", "error", err)
 	}
 	return nil
-}
-
-// moveMaterial puts everything in the bucket but the databases and the members'
-// notes into the material folder.
-func moveMaterial(ctx context.Context, cfg *config.Web, logger *slog.Logger) error {
-	b := cfg.Bucket
-	bucket, err := materials.NewBucket(b.Endpoint, b.Region, b.AccessKeyID, b.SecretAccessKey, b.Name)
-	if err != nil {
-		return err
-	}
-	keep := []string{"user-notes/", "db/.verify-"}
-	for _, shard := range []string{store.ShardRegistry, store.ShardGuard, store.ShardActivity, store.ShardLibrary} {
-		keep = append(keep, "db/"+shard+"/")
-	}
-	moved, err := bucket.MoveIntoFolder(ctx, keep, logger)
-	if err != nil {
-		return fmt.Errorf("move course material into its folder: %w", err)
-	}
-	if moved > 0 {
-		logger.Warn("moved course material into its folder", "objects", moved)
-	}
-	return nil
-}
-
-// migrateVolume publishes the old volume's database as the shards and uploads the
-// notes it still held working copies of. It is safe to run on every boot with the
-// volume attached: existing shards are skipped and uploaded copies are removed.
-func migrateVolume(ctx context.Context, cfg *config.Web, o s3db.Objects, logger *slog.Logger) error {
-	if _, err := os.Stat(cfg.LegacyDatabasePath); errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err := store.SplitLegacy(ctx, cfg.LegacyDatabasePath, o, cfg.DataDir, logger); err != nil {
-		return fmt.Errorf("split the old database: %w", err)
-	}
-	old, err := filepath.Glob(filepath.Join(filepath.Dir(cfg.LegacyDatabasePath), "user-notes", "*.db"))
-	if err != nil || len(old) == 0 {
-		return err
-	}
-	dir := filepath.Join(cfg.DataDir, "user-notes")
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return err
-	}
-	for _, p := range old {
-		if err := moveFile(p, filepath.Join(dir, filepath.Base(p))); err != nil {
-			return fmt.Errorf("move notes working copy: %w", err)
-		}
-	}
-	logger.Warn("moved notes working copies off the volume", "files", len(old))
-	return nil
-}
-
-// moveFile copies across filesystems and then removes the source.
-func moveFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		return err
-	}
-	if err := out.Close(); err != nil {
-		return err
-	}
-	return os.Remove(src)
 }
 
 // startHTTPServer exposes /healthz, so the platform can tell a wedged process

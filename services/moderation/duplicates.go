@@ -112,7 +112,7 @@ func (h *Handler) screenDuplicates(s *discordgo.Session, m *discordgo.MessageCre
 		return false
 	}
 	copies := h.dups.add(m.Author.ID, dupPost{key: key, channelID: m.ChannelID, messageID: m.ID, at: time.Now()})
-	if copies == nil || h.isModerator(s, m.Author.ID, m.ChannelID) {
+	if copies == nil || h.isModerator(s, m.Author.ID, m.GuildID, m.ChannelID) {
 		return false
 	}
 

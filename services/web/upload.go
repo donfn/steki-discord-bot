@@ -442,14 +442,16 @@ func download(ctx context.Context, url string, size int64) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, size+1))
-	if err != nil {
+	// One allocation of the declared size: ReadAll would grow by doubling and
+	// leave the copies for the collector.
+	buf := bytes.NewBuffer(make([]byte, 0, size+1))
+	if _, err := io.Copy(buf, io.LimitReader(resp.Body, size+1)); err != nil {
 		return nil, err
 	}
-	if int64(len(body)) > size {
+	if int64(buf.Len()) > size {
 		return nil, fmt.Errorf("file is larger than declared")
 	}
-	return body, nil
+	return buf.Bytes(), nil
 }
 
 // formatBytes renders a size in MB for members.

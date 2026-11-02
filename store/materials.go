@@ -138,28 +138,6 @@ func (s *Library) MaterialBacklog(ctx context.Context, maxAttempts int, cur Curs
 	return collectMaterials(rows)
 }
 
-// BackedUpKeys lists the bucket keys of the backed-up materials after the
-// attachment ID, whatever their status: the bucket keeps deleted ones too. It
-// returns the keys and the ID to continue from.
-func (s *Library) BackedUpKeys(ctx context.Context, after string, limit int) ([]string, string, error) {
-	rows, err := s.db.QueryContext(ctx, `select attachment_id, object_key from materials
-		where backed_up_at is not null and attachment_id > ?1
-		order by attachment_id limit ?2`, after, limit)
-	if err != nil {
-		return nil, "", err
-	}
-	defer rows.Close()
-	var keys []string
-	for rows.Next() {
-		var key string
-		if err := rows.Scan(&after, &key); err != nil {
-			return nil, "", err
-		}
-		keys = append(keys, key)
-	}
-	return keys, after, rows.Err()
-}
-
 // MarkBackedUp records a successful copy to the bucket.
 func (s *Library) MarkBackedUp(ctx context.Context, attachmentID string, at time.Time) error {
 	_, err := s.db.ExecContext(ctx, `update materials

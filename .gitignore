@@ -2,6 +2,7 @@
 steki-bot
 /registration
 /moderation
+!/moderation/
 /web
 *.exe
 
@@ -15,10 +16,6 @@ steki-bot
 
 # Go test cache
 *.test
-
-# Build artifacts
-/migrate
-/cmd/migrate/migrate
 
 # macOS
 .DS_Store

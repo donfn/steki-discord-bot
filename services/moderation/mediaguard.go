@@ -36,7 +36,7 @@ func flaggedPost(m *discordgo.Message) bool {
 // screenMedia counts a flagged post and restricts the member on the second
 // one within the window. It reports whether the member was restricted.
 func (h *Handler) screenMedia(s *discordgo.Session, m *discordgo.MessageCreate) bool {
-	if !flaggedPost(m.Message) || h.isModerator(s, m.Author.ID, m.ChannelID) {
+	if !flaggedPost(m.Message) || h.isModerator(s, m.Author.ID, m.GuildID, m.ChannelID) {
 		return false
 	}
 
@@ -62,10 +62,21 @@ func (h *Handler) screenMedia(s *discordgo.Session, m *discordgo.MessageCreate) 
 
 // isModerator exempts members who can moderate the channel anyway; Discord
 // would refuse to time out an administrator in any case.
-func (h *Handler) isModerator(s *discordgo.Session, userID, channelID string) bool {
+func (h *Handler) isModerator(s *discordgo.Session, userID, guildID, channelID string) bool {
 	perms, err := s.State.UserChannelPermissions(userID, channelID)
 	if err != nil {
-		perms, err = s.UserChannelPermissions(userID, channelID)
+		// The state keeps no member list. Fetch this member once and keep them
+		// until their roles change.
+		ctx, cancel := h.Ctx()
+		defer cancel()
+		m, merr := h.GuildMember(ctx, s, guildID, userID)
+		if merr != nil {
+			return false
+		}
+		slim := bot.SlimMember(m)
+		slim.GuildID = guildID
+		_ = s.State.MemberAdd(slim)
+		perms, err = s.State.UserChannelPermissions(userID, channelID)
 		if err != nil {
 			return false
 		}
