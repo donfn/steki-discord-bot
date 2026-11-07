@@ -1,0 +1,23 @@
+name: Test
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+# A new push to a pull request supersedes the run still going for the old one.
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./...
