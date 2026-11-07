@@ -233,6 +233,11 @@ func (h *Handler) onUploadSubmit(s *discordgo.Session, u *uploadSubmit) {
 	}
 	userID := u.Member.User.ID
 	log := h.Log.With("user_id", userID, "channel_id", u.ChannelID)
+	// discordgo cannot decode this form, so it never reaches onInteractionCreate.
+	h.Track("discord_interaction", map[string]any{
+		"guild_id": u.GuildID, "channel_id": u.ChannelID,
+		"kind": discordgo.InteractionModalSubmit.String(), "custom_id": uploadModalID,
+	})
 
 	if err := s.InteractionRespond(i, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,

@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -50,12 +51,30 @@ func InteractionProps(i *discordgo.InteractionCreate) map[string]any {
 	case discordgo.InteractionApplicationCommand:
 		props["command"] = CommandPath(i.ApplicationCommandData())
 	case discordgo.InteractionMessageComponent:
-		props["custom_id"] = i.MessageComponentData().CustomID
+		props["custom_id"] = WidgetName(i.MessageComponentData().CustomID)
 	case discordgo.InteractionModalSubmit:
 		// The upload form's data is not decodable; its id is still on the wire.
 		if d, ok := i.Data.(discordgo.ModalSubmitInteractionData); ok {
-			props["custom_id"] = d.CustomID
+			props["custom_id"] = WidgetName(d.CustomID)
 		}
 	}
 	return props
+}
+
+// WidgetName is a component's custom ID without the attachment it was made
+// for, so every card of a kind counts as one widget: "matrev:ok:123" is
+// "matrev:ok".
+func WidgetName(customID string) string {
+	head, tail, found := strings.Cut(customID, ":")
+	for found {
+		next, rest, more := strings.Cut(tail, ":")
+		if !more {
+			if _, err := strconv.ParseUint(tail, 10, 64); err == nil {
+				return head
+			}
+			break
+		}
+		head, tail, found = head+":"+next, rest, more
+	}
+	return customID
 }
