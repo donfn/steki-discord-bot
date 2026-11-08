@@ -199,6 +199,7 @@ func truncateRunes(s string, n int) string {
 // InviteRegex matches Discord invite links. Group 2 is the code when the host
 // is Discord's own, which lets the bot ask Discord which server it opens;
 // vanity redirectors (discord.me, dsc.gg) cannot be resolved and always count
-// as foreign.
+// as foreign. The host must start a word, optionally behind Discord's own
+// subdomains (ptb., www.), so "evil-discord.gg/x" is not read as discord.gg.
 var InviteRegex = regexp.MustCompile(
-	`(?i)\b(discord(?:app)?\.com/invite|discord\.gg|discord\.me|dsc\.gg)/([a-z0-9-]+)`)
+	`(?i)(?:^|[^\w.-])(?:[a-z0-9-]+\.)*(discord(?:app)?\.com/invite|discord\.gg|discord\.me|dsc\.gg)/([a-z0-9-]+)`)

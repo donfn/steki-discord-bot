@@ -78,6 +78,10 @@ func TestInviteRegex(t *testing.T) {
 		"https://discordapp.com/invite/x-y":      "x-y",
 		"vanity dsc.gg/scam":                     "scam",
 		"no invite https://discord.com/channels": "",
+		"https://ptb.discord.com/invite/sub":     "sub",
+		"evil-discord.gg/trap":                   "",
+		"notdiscord.gg/trap":                     "",
+		"discord.gg.evil.com/trap":               "",
 	}
 	for in, want := range cases {
 		m := inviteRegex.FindStringSubmatch(in)
