@@ -2650,6 +2650,7 @@
   // (Ramer-Douglas-Peucker). Strokes saved before this are thinned the same way
   // when their file is next saved.
   const INK_TOLERANCE = 0.0008;
+  const INK_ROUND = 0.006;
   // Squared distance from (px, py) to the segment a-b.
   function segDist2(px, py, ax, ay, bx, by) {
     const dx = bx - ax, dy = by - ay;
@@ -2689,6 +2690,75 @@
     }
     persist(current.id, 'ink', ink[current.id]);
   }
+  // ── Highlighter snapping (PDF pages) ────────────────────────────────────
+  // A highlighter stroke drawn along a line of the page's text becomes a
+  // straight bar over that text. The lines come from the PDF's own text layer,
+  // in the page's units at scale 1: a run is { x0, x1, y (middle), h (height) }.
+  const runCache = new WeakMap();
+  function textRuns(d, n) {
+    let pages = runCache.get(d);
+    if (!pages) runCache.set(d, (pages = new Map()));
+    if (!pages.has(n)) {
+      pages.set(n, (async () => {
+        const page = await d.getPage(n);
+        const vp = page.getViewport({ scale: 1 });
+        const items = [];
+        for (const it of (await page.getTextContent()).items) {
+          const [a, b, , , e, f] = it.transform || [];
+          // Only upright text on an upright page: a bar is horizontal.
+          if (typeof it.str !== 'string' || !it.str.trim() || vp.rotation % 180 || Math.abs(b) > Math.abs(a) * 0.05 || !(it.height > 0)) continue;
+          const [x, base] = vp.convertToViewportPoint(e, f);
+          const [x1] = vp.convertToViewportPoint(e + it.width, f);
+          const h = it.height * vp.scale;
+          items.push({ x0: Math.min(x, x1), x1: Math.max(x, x1), y: base - 0.35 * h, h });
+        }
+        items.sort((p, q) => p.y - q.y || p.x0 - q.x0);
+        // Items on one line, with no wide gap between them, make one run.
+        const runs = [];
+        for (const it of items) {
+          const r = runs.findLast((o) => Math.abs(o.y - it.y) < 0.5 * it.h && it.x0 - o.x1 < 3 * it.h && it.x1 > o.x0 - 3 * it.h);
+          if (r) { r.x0 = Math.min(r.x0, it.x0); r.x1 = Math.max(r.x1, it.x1); r.h = Math.max(r.h, it.h); }
+          else runs.push({ ...it });
+        }
+        return { runs, w: vp.width, h: vp.height };
+      })());
+    }
+    return pages.get(n);
+  }
+  // snapStroke moves s onto the text run it was drawn along, if there is one:
+  // roughly level, across most of the run's width, and close to its middle.
+  function snapStroke(s, { runs, w, h: H }) {
+    const xs = [], ys = [];
+    for (let i = 0; i < s.p.length; i += 2) { xs.push(s.p[i] * w); ys.push(s.p[i + 1] * H); }
+    const x0 = Math.min(...xs), x1 = Math.max(...xs);
+    const y = ys.reduce((a, v) => a + v, 0) / ys.length;
+    let best = null;
+    for (const r of runs) {
+      const thick = 1.2 * r.h;
+      const overlap = Math.min(x1, r.x1) - Math.max(x0, r.x0);
+      if (Math.abs(y - r.y) > 0.75 * thick || Math.max(...ys) - Math.min(...ys) > thick || overlap < 0.5 * (x1 - x0) || x1 - x0 < r.h) continue;
+      if (!best || Math.abs(y - r.y) < Math.abs(y - best.y)) best = r;
+    }
+    if (!best) return false;
+    // The ends go to the run's ends when they are near, else stay where drawn.
+    const near = 1.5 * best.h;
+    const a = Math.max(x0, best.x0), b = Math.min(x1, best.x1);
+    const r4 = (v) => Math.round(v * 1e4) / 1e4;
+    s.p = [r4((a - best.x0 < near ? best.x0 : a) / w), r4(best.y / H), r4((best.x1 - b < near ? best.x1 : b) / w), r4(best.y / H)];
+    s.w = r4(1.2 * best.h / w);
+    return true;
+  }
+  async function snapHighlight(c, s) {
+    const f = current, page = c.parentElement;
+    if (!doc || !page?.classList.contains('page') || !f) return;
+    try {
+      const runs = await textRuns(doc, Number(page.dataset.n));
+      if (current !== f || !strokesOf(f, c.dataset.page).includes(s) || !snapStroke(s, runs)) return;
+      saveInk();
+      paintInk(c);
+    } catch {}
+  }
+
   function inkLayer(host, page) {
     const c = document.createElement('canvas');
     c.className = 'ink';
@@ -2711,10 +2781,25 @@
     ctx.lineCap = hl ? 'butt' : 'round';
     ctx.lineJoin = 'round';
     const p = s.p;
+    const n = p.length / 2;
     ctx.beginPath();
     ctx.moveTo(p[0] * W, p[1] * H);
-    if (p.length === 2) ctx.lineTo(p[0] * W + 0.5, p[1] * H);
-    for (let i = 2; i < p.length; i += 2) ctx.lineTo(p[i] * W, p[i + 1] * H);
+    if (n === 1) ctx.lineTo(p[0] * W + 0.5, p[1] * H);
+    // Every corner is rounded by a curve that starts and ends on its two
+    // segments, no further than INK_ROUND of the page width from it. Close
+    // points (a stroke as the pen drew it) meet halfway, so the line is smooth;
+    // a thinned stroke's long segments keep their sharp turns.
+    const reach = INK_ROUND * W;
+    const cut = (ax, ay, bx, by) => { const l = Math.hypot(bx - ax, by - ay); return l ? Math.min(0.5, reach / l) : 0.5; };
+    for (let i = 1; i < n - 1; i++) {
+      const ax = p[2 * i - 2] * W, ay = p[2 * i - 1] * H;
+      const x = p[2 * i] * W, y = p[2 * i + 1] * H;
+      const bx = p[2 * i + 2] * W, by = p[2 * i + 3] * H;
+      const tin = cut(x, y, ax, ay), tout = cut(x, y, bx, by);
+      ctx.lineTo(x + (ax - x) * tin, y + (ay - y) * tin);
+      ctx.quadraticCurveTo(x, y, x + (bx - x) * tout, y + (by - y) * tout);
+    }
+    if (n > 1) ctx.lineTo(p[2 * n - 2] * W, p[2 * n - 1] * H);
     ctx.stroke();
     ctx.globalAlpha = 1;
   }
@@ -2857,6 +2942,7 @@
     }
     saveInk();
     if (!d.erase) paintInk(d.c);
+    if (!d.erase && d.s.t === 'hl') snapHighlight(d.c, d.s);
     syncInkButtons();
   }
   // A second finger means a pinch: the line the first one began is not kept.
