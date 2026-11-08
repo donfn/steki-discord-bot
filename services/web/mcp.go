@@ -9,11 +9,11 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/bot"
-	"steki-bot/dc"
-	"steki-bot/mcp"
-	"steki-bot/store"
-	"steki-bot/verify"
+	"steki-bot/internal/bot"
+	"steki-bot/internal/dc"
+	"steki-bot/internal/mcp"
+	"steki-bot/internal/store"
+	"steki-bot/internal/verify"
 )
 
 // The MCP server lets members read the course material from an AI assistant.

@@ -1,49 +1,39 @@
 # services/moderation
 
-Keeps the server clean. It reads every message, so it is deliberately given the least:
-**no member's address, no files, no mail key, no web pages.** To close an address it asks
-`registration` over RPC.
+Screens messages. It reads every message on the server, so it holds the least: no member
+address, no files, no mail key and no web pages. To close an address it asks
+`registration` over RPC. The order of the checks is drawn in the
+[architecture](../../docs/ARCHITECTURE.md#message-screening). Entry point:
+[`cmd/moderation`](../../cmd/moderation/); the service also installs the slash commands
+with Discord on start-up.
 
-Entry point: [`cmd/moderation`](../../cmd/moderation/). It also installs the slash
-commands with Discord on start-up. The screening order is drawn in
-[ARCHITECTURE.md](../../docs/ARCHITECTURE.md#message-screening).
+## Screening
 
-## Screening (`onMessage`)
+`onMessage` applies the checks in order of decisiveness, so that cheap and conclusive
+tests run first:
 
-Strongest signal first, so cheap and decisive checks win:
+1. Links on the blacklist (`URL_BLACKLIST`) or in the phishing feeds: the message is
+   deleted and the sender is timed out.
+2. Invitations to other servers (`invites.go`).
+3. The same text posted in several channels, the usual sign of a hijacked account
+   (`duplicates.go`).
+4. The media guard (`mediaguard.go`), which holds a member's attachments and links until
+   the member passes a captcha. `web` serves the captcha page and this service answers it.
+5. Messages from an author who has just been restricted are removed from the material
+   page by asking `web` (`internal/materials/drop-message`).
 
-1. blacklisted links (`URL_BLACKLIST`) and the phishing feeds: delete, time out the
-   sender
-2. invites to other servers (`invites.go`)
-3. cross-channel duplicates, the signature of a hijacked account (`duplicates.go`)
-4. the **media guard** (`mediaguard.go`): holds a member's attachments or links until
-   they pass a captcha; the captcha page is served by `web` and answered here
-5. what it only restricts the author over, it tells `web` to drop (`materials/drop-message`)
+Edits and deletions are logged from a ring of the last 1500 messages (`msgcache.go`).
 
-Deleted and edited messages are logged from a fixed ring of the last 1500 messages
-(`msgcache.go`).
+## Other duties
 
-## Other jobs
+- The ghost role (`ghosts.go`) marks members silent for three months, using the
+  `activity` shard.
+- The phishing feeds are read as a stream into a sorted slice of 64-bit hashes and
+  refreshed periodically.
+- Join-rate alerts and `/rules post`.
+- Bans (`bans.go`): the Discord ban stops the account, and the request to `registration`
+  stops the person.
+- `/bot stats` reports the health of this service and of the other two.
 
-- **Ghost role** (`ghosts.go`): members silent for three months, from the `activity`
-  shard.
-- **Phishing feeds** streamed into a sorted slice of 64-bit hashes, refreshed
-  periodically.
-- **Join-rate alerts** and `/rules post`.
-- **Bans** (`bans.go`): the Discord ban stops the account; asking `registration` to ban
-  the address stops the person.
-- `/bot stats` shows this service's health and each other service's.
-
-## Files
-
-| File | Holds |
-|---|---|
-| `handler.go` | `Handler`, registration, RPC routes, intents |
-| `message.go`, `message_edits.go`, `msgcache.go` | screening, edit and delete logs |
-| `mediaguard.go`, `guardcmds.go` | the media guard and `/guard` |
-| `duplicates.go`, `invites.go`, `ghosts.go` | the individual checks |
-| `bans.go`, `cmd_bot.go`, `rules.go` | `/member`, `/bot`, `/rules` |
-| `constants.go` | feed refresh interval, join-rate thresholds |
-
-Shared helpers (log channel, blacklist matching, feed streaming) are in
-[`/moderation`](../../moderation/), not here, because other services use them too.
+Helpers shared with other services (log channel, blacklist matching, feed streaming) are
+in [`internal/moderation`](../../internal/moderation/), outside this package.

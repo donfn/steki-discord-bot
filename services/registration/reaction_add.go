@@ -3,7 +3,7 @@ package registration
 import (
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/bot"
+	"steki-bot/internal/bot"
 )
 
 // onReactionAdd implements the legacy restart reaction.

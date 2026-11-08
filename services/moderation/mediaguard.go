@@ -9,11 +9,11 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/bot"
-	"steki-bot/dc"
-	"steki-bot/moderation"
-	"steki-bot/store"
-	"steki-bot/tokens"
+	"steki-bot/internal/bot"
+	"steki-bot/internal/dc"
+	"steki-bot/internal/moderation"
+	"steki-bot/internal/store"
+	"steki-bot/internal/tokens"
 )
 
 // The media guard. Hijacked accounts are used to spray scam images and links

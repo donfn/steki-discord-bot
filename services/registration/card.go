@@ -6,8 +6,8 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/bot"
-	"steki-bot/moderation"
+	"steki-bot/internal/bot"
+	"steki-bot/internal/moderation"
 )
 
 // The registration card. Each register channel holds one message that shows

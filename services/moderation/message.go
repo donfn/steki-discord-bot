@@ -3,8 +3,8 @@ package moderation
 import (
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/bot"
-	"steki-bot/rpc"
+	"steki-bot/internal/bot"
+	"steki-bot/internal/rpc"
 )
 
 // onMessage screens guild messages. Direct messages are ignored.

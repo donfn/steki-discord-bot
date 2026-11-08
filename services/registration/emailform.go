@@ -6,8 +6,8 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/bot"
-	"steki-bot/store"
+	"steki-bot/internal/bot"
+	"steki-bot/internal/store"
 )
 
 // Register channels are read-only for the member: they give their address

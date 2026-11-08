@@ -2,7 +2,7 @@
 
 Slash commands, restricted to the staff and mod roles; replies are ephemeral. Each
 command is answered by exactly one service, which is why the list below names it
-(`TestEveryCommandHasOneOwner` enforces this). Definitions live in `bot/commands.go`;
+(`TestEveryCommandHasOneOwner` enforces this). Definitions live in `internal/bot/commands.go`;
 `moderation` installs them with Discord on start-up.
 
 | Command | Service | What it does |
@@ -50,7 +50,7 @@ run at the same time.
 
 ## Adding a command
 
-1. Define it in `bot/commands.go` (descriptions must be 1–100 characters; required
+1. Define it in `internal/bot/commands.go` (descriptions must be 1–100 characters; required
    options come before optional ones — `TestCommandDefinitionsFitDiscordLimits`).
 2. Route it in exactly one service's `Routes()` and handler.
 3. Keep it staff-only (`TestEveryCommandIsStaffOnly`).

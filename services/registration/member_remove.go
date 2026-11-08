@@ -7,8 +7,8 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/bot"
-	"steki-bot/store"
+	"steki-bot/internal/bot"
+	"steki-bot/internal/store"
 )
 
 // onMemberRemove cleans up after a member who left or was removed.

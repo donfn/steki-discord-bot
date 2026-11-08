@@ -9,10 +9,10 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/bot"
-	"steki-bot/dc"
-	"steki-bot/rpc"
-	"steki-bot/store"
+	"steki-bot/internal/bot"
+	"steki-bot/internal/dc"
+	"steki-bot/internal/rpc"
+	"steki-bot/internal/store"
 )
 
 // historyLimit is how many events /reg history shows.

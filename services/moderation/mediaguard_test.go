@@ -8,7 +8,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 	"github.com/golang-jwt/jwt/v5"
 
-	"steki-bot/tokens"
+	"steki-bot/internal/tokens"
 )
 
 func TestFlaggedPost(t *testing.T) {

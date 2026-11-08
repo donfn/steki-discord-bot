@@ -16,8 +16,8 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/config"
-	"steki-bot/store"
+	"steki-bot/internal/config"
+	"steki-bot/internal/store"
 )
 
 // A fake Discord for the tests that run a whole pass (reconcile, the commands)

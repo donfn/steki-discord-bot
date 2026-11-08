@@ -6,10 +6,10 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/bot"
-	"steki-bot/config"
-	"steki-bot/dc"
-	"steki-bot/store"
+	"steki-bot/internal/bot"
+	"steki-bot/internal/config"
+	"steki-bot/internal/dc"
+	"steki-bot/internal/store"
 )
 
 // onMemberAdd records a join, greets the member and gives them a registration

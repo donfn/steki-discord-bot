@@ -11,10 +11,10 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/bot"
-	"steki-bot/dc"
-	"steki-bot/moderation"
-	"steki-bot/tokens"
+	"steki-bot/internal/bot"
+	"steki-bot/internal/dc"
+	"steki-bot/internal/moderation"
+	"steki-bot/internal/tokens"
 )
 
 // Cross-channel duplicate detection. A hijacked account typically pastes the

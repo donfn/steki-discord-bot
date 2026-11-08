@@ -9,8 +9,8 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/bot"
-	"steki-bot/store"
+	"steki-bot/internal/bot"
+	"steki-bot/internal/store"
 )
 
 // Errors from grantVerification that callers turn into member- or

@@ -3,7 +3,7 @@ package registration
 import (
 	"regexp"
 
-	"steki-bot/bot"
+	"steki-bot/internal/bot"
 )
 
 var (

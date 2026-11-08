@@ -25,56 +25,37 @@ gateway connection with the same token and ignore events that are not theirs, pl
 `blastdoor`, a secret-free helper that handles hostile files.
 
 ```mermaid
-flowchart LR
-    subgraph Discord
-        GW[Gateway + REST API]
-    end
-
-    subgraph Internet
-        Browser[Members' browsers]
-        AI[AI assistants<br/>MCP clients]
-    end
+flowchart TB
+    GW["Discord<br/>gateway and REST API"]
+    BR["Members' browsers"]
+    AI["AI assistants<br/>(MCP clients)"]
 
     subgraph Railway["Railway private network"]
-        REG["registration<br/>(cmd/registration)"]
-        MOD["moderation<br/>(cmd/moderation)"]
-        WEB["web<br/>(cmd/web)"]
-        BD["blastdoor<br/>(blastdoor/cmd)<br/>no secrets"]
+        direction LR
+        REG["registration<br/>cmd/registration"]
+        MOD["moderation<br/>cmd/moderation"]
+        WEB["web<br/>cmd/web"]
     end
 
-    subgraph Bucket["S3 bucket (Railway)"]
-        DB[("db/&lt;shard&gt;/…<br/>SQLite shards")]
-        MAT[("material/…<br/>course files")]
-        NOTES[("usernotes/…")]
-    end
+    Resend["Resend<br/>email API"]
+    DB[("S3 bucket<br/>db/ shards, material/, usernotes/")]
+    BD["blastdoor<br/>blastdoor/cmd<br/>no secrets"]
+    Gemini["Google Gemini<br/>image check"]
+    RWAPI["Railway API<br/>edge rules"]
 
-    Resend[Resend<br/>email API]
-    Gemini[Google Gemini<br/>image check]
-    RailwayAPI[Railway API<br/>edge rules]
-    Posthog[PostHog<br/>anonymous counts]
-
-    GW <--> REG
-    GW <--> MOD
-    GW <--> WEB
-    Browser -->|HTTPS| WEB
-    AI -->|HTTPS /mcp| WEB
-
-    REG <-->|signed RPC :8081| MOD
-    MOD <-->|signed RPC :8081| WEB
-    REG <-->|signed RPC :8081| WEB
-
-    REG --> DB
-    MOD --> DB
-    WEB --> DB
-    WEB --> MAT
-    WEB --> NOTES
-    WEB -->|plain HTTP| BD
-
+    GW <-->|"one gateway connection per service"| Railway
+    BR -->|HTTPS| WEB
+    AI -->|"HTTPS /mcp"| WEB
+    Railway -->|"each service uses its own shards"| DB
     REG --> Resend
+    WEB -->|"plain HTTP"| BD
     WEB --> Gemini
-    WEB --> RailwayAPI
-    REG & MOD & WEB -.-> Posthog
+    WEB --> RWAPI
 ```
+
+The three services call one another over signed RPC on port 8081, drawn in
+[Service-to-service calls](#service-to-service-calls). All three also send anonymous
+counts to PostHog, which is omitted here.
 
 | Service | Role | Owns |
 |---|---|---|
@@ -108,53 +89,34 @@ These rules are enforced by tests, not by convention. See
 ```mermaid
 flowchart TB
     subgraph cmds["Entry points (cmd/)"]
-        cR[cmd/registration]
-        cM[cmd/moderation]
-        cW[cmd/web]
-        cB[blastdoor/cmd]
+        direction LR
+        cR[registration]
+        cM[moderation]
+        cW[web]
+        cB[blastdoor]
     end
 
     subgraph svcs["Service logic (services/)"]
-        sR[services/registration]
-        sM[services/moderation]
-        sW[services/web]
+        direction LR
+        sR[registration]
+        sM[moderation]
+        sW[web]
     end
 
-    subgraph only["Linked by one service only"]
-        mail[mail]
-        verify["verify<br/>HTTP pages"]
-        mcp["mcp<br/>MCP + OAuth"]
-        materials[materials]
-        usernotes[usernotes]
-        shield[shield]
-    end
-
-    subgraph shared["Shared by all three"]
-        bot["bot<br/>Core, session, logging, runtime"]
-        rpc["rpc<br/>signed internal API"]
-        tokens["tokens<br/>signed links"]
-        config["config<br/>env + guild IDs"]
-        dc["dc<br/>Discord retries, placement"]
-        store["store<br/>typed SQLite access"]
-        s3db["s3db<br/>SQLite in a bucket"]
-        analytics[analytics]
-        brand[brand]
-        modpkg["moderation<br/>log channel, link filter"]
-    end
+    mail["mail<br/>linked by registration only"]
+    webpk["verify, mcp, materials, usernotes, shield<br/>linked by web only"]
+    shared["Shared by all three services<br/>bot, config, dc, analytics, moderation,<br/>rpc, tokens, store, s3db, brand"]
 
     cR --> sR
     cM --> sM
     cW --> sW
     sR --> mail
-    sW --> verify & mcp & materials & usernotes & shield
-
-    sR & sM & sW --> bot
-    bot --> config & store & s3db
-    sR & sM & sW --> rpc & tokens & dc & analytics & modpkg
-    rpc --> tokens & store
-    store --> s3db
-    mail & verify --> brand
+    sW --> webpk
+    svcs --> shared
 ```
+
+Within the shared group, `bot` builds on `config`, `store` and `s3db`; `rpc` builds on
+`tokens` and `store`; `store` builds on `s3db`. `mail` and `verify` use `brand`.
 
 Directory guide:
 
@@ -162,23 +124,23 @@ Directory guide:
 |---|---|
 | `cmd/<service>/` | `main.go`, `Dockerfile` and `settings.toml` for one service |
 | `services/<service>/` | event handlers, slash commands and RPC handlers of that service |
-| `bot/` | what every Discord service shares: `Core`, gateway session, panic guard, graceful shutdown, command definitions, runtime tuning |
-| `config/` | per-service environment loaders, plus the guild's channel, category and role IDs as constants |
-| `store/` | the persistence layer, one Go type per shard, plus embedded SQL migrations |
-| `s3db/` | the engine that keeps a SQLite file durable in a bucket |
-| `rpc/` | signed service-to-service JSON calls |
-| `tokens/` | signed links (email, captcha, material, MCP guide) and the ALTCHA captcha |
-| `verify/` | the public HTTP pages and middleware (`web` only) |
-| `mcp/` | MCP server and its OAuth 2.1 authorization server (`web` only) |
-| `materials/` | course-file backup worker, screening and compression (`web` only) |
-| `shield/` | per-address abuse detection and Railway edge rules (`web` only) |
+| `internal/bot/` | what every Discord service shares: `Core`, gateway session, panic guard, graceful shutdown, command definitions, runtime tuning |
+| `internal/config/` | per-service environment loaders, plus the guild's channel, category and role IDs as constants |
+| `internal/store/` | the persistence layer, one Go type per shard, plus embedded SQL migrations |
+| `internal/s3db/` | the engine that keeps a SQLite file durable in a bucket |
+| `internal/rpc/` | signed service-to-service JSON calls |
+| `internal/tokens/` | signed links (email, captcha, material, MCP guide) and the ALTCHA captcha |
+| `internal/verify/` | the public HTTP pages and middleware (`web` only) |
+| `internal/mcp/` | MCP server and its OAuth 2.1 authorization server (`web` only) |
+| `internal/materials/` | course-file backup worker, screening and compression (`web` only) |
+| `internal/shield/` | per-address abuse detection and Railway edge rules (`web` only) |
 | `blastdoor/` | the sandboxed image and compression service |
-| `mail/` | the registration email (`registration` only) |
-| `moderation/` | the mod log channel and the blacklisted-link filter, shared helpers |
-| `usernotes/` | per-member study notes, one SQLite object per member |
-| `dc/` | bounded retries, error classification and register-channel placement |
-| `analytics/` | anonymous PostHog events |
-| `brand/` | logos and university names |
+| `internal/mail/` | the registration email (`registration` only) |
+| `internal/moderation/` | the mod log channel and the blacklisted-link filter, shared helpers |
+| `internal/usernotes/` | per-member study notes, one SQLite object per member |
+| `internal/dc/` | bounded retries, error classification and register-channel placement |
+| `internal/analytics/` | anonymous PostHog events |
+| `internal/brand/` | logos and university names |
 
 ### Guardrail tests
 
@@ -195,33 +157,33 @@ you open a pull request; each fails with a message naming the offender.
 ## Service-to-service calls
 
 Nothing shares a database. A service reaches another's data only through its internal
-API in [`rpc/`](../rpc/): JSON over HTTP on port 8081, which has no public route.
+API in [`internal/rpc/`](../internal/rpc/): JSON over HTTP on port 8081, which has no public route.
 Requests carry an HMAC signature and timestamp derived from `INTERNAL_SECRET` and are
 refused after one minute.
 
 ```mermaid
-flowchart LR
-    REG[registration]
+flowchart TB
     MOD[moderation]
+    REG[registration]
     WEB[web]
 
-    WEB -- "link/pending, link/accept<br/>(email consent page)" --> REG
-    MOD -- "emails/ban, emails/unban<br/>(/member ban)" --> REG
-    REG -- "forget, events<br/>(/reg forget, /reg history)" --> MOD
-    REG -- "forget, events" --> WEB
-    MOD -- "stats (/bot stats)" --> REG
-    MOD -- "stats" --> WEB
-
-    WEB -- "guard/active, guard/lift<br/>(captcha page)" --> MOD
-    WEB -- "screen-title<br/>(upload titles vs phishing list)" --> MOD
-    REG -- "roster/sync<br/>(from /reg reconcile)" --> MOD
-
-    MOD -- "materials/drop-message<br/>(hide a restricted author's post)" --> WEB
+    WEB -->|"link/pending, link/accept"| REG
+    MOD -->|"emails/ban, emails/unban, stats"| REG
+    REG -->|"forget, events, roster/sync"| MOD
+    WEB -->|"guard/active, guard/lift, screen-title"| MOD
+    MOD -->|"materials/drop-message, stats"| WEB
+    REG -->|"forget, events"| WEB
 ```
+
+Each arrow points from the caller to the service that answers. The purpose of each
+route is in the [route table](../internal/rpc/README.md#routes): `link/*` serves the email consent
+page, `emails/*` serves `/member ban`, `forget` and `events` serve `/reg forget` and
+`/reg history`, `guard/*` serves the captcha page, and `drop-message` hides the post of a
+restricted author.
 
 Rules of thumb:
 
-- Add a route as a constant in `rpc/rpc.go`, register it with `rpc.Handle` in the
+- Add a route as a constant in `internal/rpc/rpc.go`, register it with `rpc.Handle` in the
   owner's `API` method, and call it from the caller. Typed request and response
   structs keep both ends in step.
 - The owner decides; the caller asks. `moderation` never writes the address table, it
@@ -233,10 +195,10 @@ Rules of thumb:
 
 There is no database server and no volume. Each shard is a SQLite file on the
 container's scratch disk with exactly one writing process; the S3 bucket holds the
-truth. Details are in [`s3db/README.md`](../s3db/README.md).
+truth. Details are in [`internal/s3db/README.md`](../internal/s3db/README.md).
 
 ```mermaid
-flowchart LR
+flowchart TB
     subgraph Container
         APP[service code] --> STORE["store.Registry / Guard /<br/>Activity / Library"]
         STORE --> DRV["s3db driver wrapper<br/>holds each write's result"]
@@ -252,9 +214,9 @@ flowchart LR
         DAILY["daily/… one a day, 2 weeks"]
     end
 
-    SHIP -->|1. upload segment| SEG
-    SHIP -->|2. conditional write| MANI
-    SHIP -->|3. release waiting writers| DRV
+    SHIP -->|"(1) upload segment"| SEG
+    SHIP -->|"(2) conditional write"| MANI
+    SHIP -->|"(3) release waiting writers"| DRV
     MANI --- SNAP & SEG & DAILY
 ```
 
@@ -412,7 +374,7 @@ also refuses banned addresses itself.
 Every service follows the same shape in `main.go`:
 
 ```mermaid
-flowchart LR
+flowchart TB
     A[bot.TuneRuntime] --> B["config.Load…<br/>fail on missing vars"]
     B --> C["bot.OpenBucket<br/>prove stale writes are refused"]
     C --> D["store.Open… shard<br/>download image, replay segments"]
@@ -431,20 +393,23 @@ Railway is told not to restart it into its successor's way
 ## Secrets and trust boundaries
 
 ```mermaid
-flowchart TB
+flowchart LR
+    subgraph input["Untrusted input"]
+        I["Internet, uploaded files,<br/>message content"]
+    end
+
     subgraph trusted["Trusted: holds secrets"]
-        direction LR
         R["registration<br/>RESEND_API_KEY<br/>INTERNAL_SECRET"]
         M["moderation<br/>INTERNAL_SECRET<br/>URL_BLACKLIST"]
         W["web<br/>JWT_SECRET, OAuth secret<br/>GOOGLE_AI_TOKEN, RAILWAY_TOKEN<br/>INTERNAL_SECRET"]
     end
+
     subgraph untrusted["Assume compromised"]
         B["blastdoor<br/>PORT only"]
-        I["Internet, uploaded files,<br/>message content"]
     end
 
-    I --> W
     I --> M
+    I --> W
     W -->|bytes in, bytes out| B
 ```
 

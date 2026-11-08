@@ -5,9 +5,9 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/bot"
-	"steki-bot/dc"
-	"steki-bot/moderation"
+	"steki-bot/internal/bot"
+	"steki-bot/internal/dc"
+	"steki-bot/internal/moderation"
 )
 
 var inviteRegex = moderation.InviteRegex

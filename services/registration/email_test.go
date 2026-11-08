@@ -5,7 +5,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/bot"
+	"steki-bot/internal/bot"
 )
 
 func TestClassifyEmail(t *testing.T) {

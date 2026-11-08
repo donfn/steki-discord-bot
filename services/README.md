@@ -1,46 +1,48 @@
 # services
 
-The three Discord services. Each is a package of event handlers, slash-command handlers
-and an internal API (`rpc`); the `main.go` that wires them up is in `cmd/<name>/`.
+The logic of the three Discord services. Each service is a separate binary, wired in
+`cmd/<name>/main.go`, so that the process boundary also serves as the privilege boundary
+described in the [architecture](../docs/ARCHITECTURE.md#why-three-services-and-a-blastdoor).
 
-| Package | Does | Holds | README |
-|---|---|---|---|
-| `registration` | register channels, the email link, the reaper, `/reg`, `/email` | Resend key, members' addresses | [registration](registration/) |
-| `moderation` | screens messages, media guard, ghost role, edit/delete logs, `/guard`, `/member`, `/rules`, `/bot` | message cache, phishing list | [moderation](moderation/) |
-| `web` | pages, MCP server, course material, IP shield, `/materials`, `/mcp` | `JWT_SECRET`, OAuth, Gemini and Railway tokens | [web](web/) |
+| Package | Responsibility | Holds |
+|---|---|---|
+| [`registration`](registration/) | admission of members | mail API key, member addresses |
+| [`moderation`](moderation/) | screening of messages | message cache, phishing list |
+| [`web`](web/) | public pages, MCP, course material, address shield | token-signing key, OAuth, Gemini and Railway tokens |
 
-All three open a gateway connection with the same bot token and ignore events that are
-not theirs. Each subscribes only to the intents it reads (`Intents` in `handler.go`).
+All three open a gateway connection with the same bot token and ignore events that
+concern another service. Each subscribes only to the intents it reads (`Intents` in
+`handler.go`).
 
-## Shape of a service
+## Interface of a service
 
-Every service exposes the same surface, which is all `cmd/<name>/main.go` needs:
+Every service exposes the same three operations, which are all that `main.go` needs:
 
 ```go
-h, err := web.NewHandler(cfg, store, analytics, logger) // build (arguments differ per service)
+h, err := web.NewHandler(cfg, store, analytics, logger) // arguments differ per service
 h.Register(session)                                      // gateway handlers
 h.API(rpcServer, session)                                // internal API routes
 ```
 
-plus a package-level `Routes()`, the list of slash subcommands it answers, which
-`TestEveryCommandHasOneOwner` checks.
+Each package also provides `Routes()`, the slash subcommands it answers. The tests below
+read it.
 
-## Cross-cutting tests (`services/*_test.go`)
+## Tests that enforce the architecture
 
-| Test | Keeps true |
+The tests in `services/*_test.go` check properties that a reviewer would otherwise have
+to verify by hand. Each failure message names the package or command at fault.
+
+| Test | Property |
 |---|---|
-| `TestServicesStayInTheirLane` | a service links none of the packages it is forbidden to |
-| `TestSecretsStayWithTheirService` | a secret is read only by its service's config loader |
+| `TestServicesStayInTheirLane` | a service links none of the packages it is forbidden to link |
+| `TestSecretsStayWithTheirService` | a secret is read only by the config loader of its service |
 | `TestEveryCommandHasOneOwner` | each subcommand is answered by exactly one service |
-| `TestWatchPatternsCoverEveryDependency` | each service's `settings.toml` watches everything it links |
-| `TestCommandDefinitionsFitDiscordLimits`, `TestEveryCommandIsStaffOnly` | command definitions are valid and staff-only |
-
-If one of these fails, the message names the package or command to fix. The
-[architecture doc](../docs/ARCHITECTURE.md#guardrail-tests) explains why they exist.
+| `TestWatchPatternsCoverEveryDependency` | each `settings.toml` watches every package its service links, so a change redeploys it |
+| `TestCommandDefinitionsFitDiscordLimits`, `TestEveryCommandIsStaffOnly`, `TestEveryTextOptionIsBounded` | command definitions are valid, staff-only, and bounded in size |
 
 ## Testing a handler
 
-Each service has a `fakediscord_test.go` (registration, web) or helper
-(`helpers_test.go`) that stands in for Discord, and uses `store.OpenTest…` for a
-throwaway database. Copy a neighbouring test: build a handler, feed it an event, assert
-on what the fake Discord received and on what the store holds.
+Each service has a stand-in for Discord (`fakediscord_test.go` or `helpers_test.go`) and
+uses `store.OpenTest…` for a throwaway database. A new test follows the neighbouring
+ones: build a handler, deliver an event, and assert on what the fake Discord received and
+on what the store holds.

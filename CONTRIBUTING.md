@@ -17,10 +17,10 @@ go test ./...
 ```
 
 `go test ./...` needs no Discord token, bucket or network: store tests open a throwaway
-local SQLite file (`store/testing.go`), and handler tests use fake Discord sessions
+local SQLite file (`internal/store/testing.go`), and handler tests use fake Discord sessions
 (`services/*/fakediscord_test.go`). Two optional extras:
 
-- `STEKI_TEST_S3="endpoint region key secret bucket" go test ./s3db` also runs the
+- `STEKI_TEST_S3="endpoint region key secret bucket" go test ./internal/s3db` also runs the
   database engine against a real S3 server.
 - `blastdoor`'s sandbox test only runs on Linux.
 
@@ -31,15 +31,17 @@ Most changes do not need this. When one does:
 1. Create a **test** Discord application and bot, and a **test** server. Never use the
    production token or bucket: starting against the production bucket takes a shard
    over and fences the live service.
-2. Start a local [MinIO](https://min.io) as the bucket.
-3. `cp .env.example .env` and fill it in. Set `BUCKET_PATH_STYLE=1` for MinIO and
+2. To run the whole mesh with a bundled S3 server (RustFS), use `docker compose up --build` and skip
+   the remaining steps; they describe running a single service from Go. Otherwise start
+   any S3-compatible server with conditional writes (the compose file uses RustFS).
+3. `cp .env.example .env` and fill it in. Set `BUCKET_PATH_STYLE=1` for a local server and
    `DB_CREATE_EMPTY=1` to start with empty databases.
 4. Run one service: `go run ./cmd/registration` (or `moderation`, `web`).
    Every service's internal API listens on port 8081, so run them one at a time or in
    containers. `go run ./blastdoor/cmd` runs the helper (Linux only for the sandbox).
 
 Channel, category and role IDs are constants for the real guild
-(`config/config.go`, `bot/constants.go`); for a test server you will edit those locally.
+(`internal/config/config.go`, `internal/bot/constants.go`); for a test server you will edit those locally.
 Do not commit that edit.
 
 ## Where does my change go?
@@ -48,13 +50,13 @@ Do not commit that edit.
 |---|---|
 | change what happens when someone joins or registers | `services/registration/` |
 | change message filtering, the media guard, edit/delete logs | `services/moderation/` |
-| change a public page | `verify/` (HTML is embedded next to the Go) |
-| change course material, uploads, stickies | `services/web/`, `materials/` |
-| change the MCP server | `mcp/` |
-| add or change a slash command | `bot/commands.go` + the owning service, see [COMMANDS.md](docs/COMMANDS.md#adding-a-command) |
-| add a service-to-service call | `rpc/rpc.go` + both services, see [ARCHITECTURE.md](docs/ARCHITECTURE.md#service-to-service-calls) |
-| add a table or column | `store/migrations/<shard>/NNNN_name.sql` + `store/` |
-| add an environment variable | `config/config.go`, `.env.example`, [OPERATIONS.md](docs/OPERATIONS.md#configuration) |
+| change a public page | `internal/verify/` (HTML is embedded next to the Go) |
+| change course material, uploads, stickies | `services/web/`, `internal/materials/` |
+| change the MCP server | `internal/mcp/` |
+| add or change a slash command | `internal/bot/commands.go` + the owning service, see [COMMANDS.md](docs/COMMANDS.md#adding-a-command) |
+| add a service-to-service call | `internal/rpc/rpc.go` + both services, see [ARCHITECTURE.md](docs/ARCHITECTURE.md#service-to-service-calls) |
+| add a table or column | `internal/store/migrations/<shard>/NNNN_name.sql` + `internal/store/` |
+| add an environment variable | `internal/config/config.go`, `.env.example`, [OPERATIONS.md](docs/OPERATIONS.md#configuration) |
 
 ## The rules that are tested
 
@@ -63,16 +65,16 @@ purpose; do not weaken a test to get green. Ask in the pull request if you think
 is wrong.
 
 - **A service only links what it may.** `registration`, `moderation` and `web` have
-  forbidden packages (`TestServicesStayInTheirLane`). Do not import `mail` from `web`,
-  or `verify` from `moderation`.
+  forbidden packages (`TestServicesStayInTheirLane`). Do not import `internal/mail` from `web`,
+  or `internal/verify` from `moderation`.
 - **Secrets stay with their service** (`TestSecretsStayWithTheirService`).
 - **Every slash command has exactly one owner** (`TestEveryCommandHasOneOwner`).
 - **Watch patterns are complete** (`TestWatchPatternsCoverEveryDependency`). If you
-  add a package that a service links, add `"<package>/**"` to
+  add a package that a service links, add `"internal/<package>/**"` to
   `cmd/<service>/settings.toml`.
-- **SQL is safe.** `store/sqlsafety_test.go` checks queries; use `?` placeholders,
+- **SQL is safe.** `internal/store/sqlsafety_test.go` checks queries; use `?` placeholders,
   never build SQL from strings.
-- **Nothing shares a database.** Reach another service's data through `rpc/`.
+- **Nothing shares a database.** Reach another service's data through `internal/rpc/`.
 
 ## Code conventions
 

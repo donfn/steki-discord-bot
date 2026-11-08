@@ -1,0 +1,125 @@
+# The whole mesh on one machine: three Go services, blastdoor, and a bucket server in
+# place of the production S3 bucket.
+#
+#   cp .env.example .env     # then set DISCORD_TOKEN (and the optional keys below)
+#   docker compose up --build
+#
+# Compose reads .env in this directory for the ${...} values. The pages are served at
+# http://localhost:8080. Stop with `docker compose down`; add -v to also discard the
+# databases and files held in the bucket server.
+#
+# Use a test bot's token, never the production one. A starting service takes over its
+# databases and fences out the previous writer, so a local mesh pointed at the real
+# bucket would lock the live deployment out.
+
+# ── Shared by every service ─────────────────────────────────────────────────
+x-shared: &shared
+  DISCORD_TOKEN: ${DISCORD_TOKEN:?set DISCORD_TOKEN in .env}
+  # Signs the calls between services. Only the internal network can reach port 8081,
+  # so the default is acceptable here and nowhere else.
+  INTERNAL_SECRET: ${INTERNAL_SECRET:-local-development-internal-secret-0123456789}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  PUBLIC_URL: http://localhost:8080
+  # Local development only: a missing database may start empty. In production it
+  # stops the service.
+  DB_CREATE_EMPTY: "1"
+  BUCKET_ENDPOINT: http://bucket:9000
+  BUCKET_REGION: us-east-1
+  BUCKET_NAME: steki
+  BUCKET_ACCESS_KEY_ID: steki
+  BUCKET_SECRET_ACCESS_KEY: steki-local-secret
+  BUCKET_PATH_STYLE: "1"
+  # Each service's address on the internal network.
+  REGISTRATION_URL: http://registration:8081
+  MODERATION_URL: http://moderation:8081
+  WEB_URL: http://web:8081
+
+# ── The AI token ────────────────────────────────────────────────────────────
+# Only `web` takes it: the image check is a web function, and the isolation tests
+# forbid the other services from reading it. Leave it empty to check image format only.
+x-ai: &ai
+  GOOGLE_AI_TOKEN: ${GOOGLE_AI_TOKEN:-}
+  GOOGLE_AI_MODEL: ${GOOGLE_AI_MODEL:-}
+
+services:
+  registration:
+    build:
+      context: .
+      dockerfile: cmd/registration/Dockerfile
+    environment:
+      <<: *shared
+      # Required at start-up. Mail is not sent unless this is a real Resend key.
+      RESEND_API_KEY: ${RESEND_API_KEY:-re_local_placeholder}
+      EMAIL_FROM: ${EMAIL_FROM:-Steki <steki@poiw.org>}
+    depends_on:
+      bucket-init:
+        condition: service_completed_successfully
+
+  moderation:
+    build:
+      context: .
+      dockerfile: cmd/moderation/Dockerfile
+    environment:
+      <<: *shared
+      URL_BLACKLIST: ${URL_BLACKLIST:-}
+    depends_on:
+      bucket-init:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      <<: [*shared, *ai]
+      JWT_SECRET: ${JWT_SECRET:-local-development-jwt-secret-0123456789abcdef}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:-}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:-}
+      BLASTDOOR_URL: http://blastdoor:8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      bucket-init:
+        condition: service_completed_successfully
+      blastdoor:
+        condition: service_healthy
+
+  # Holds no secrets and no bucket credentials, by design: do not add any here.
+  blastdoor:
+    build:
+      context: .
+      dockerfile: blastdoor/Dockerfile
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # An S3-compatible server in place of the production bucket. It must honour
+  # If-None-Match, which the s3db fencing relies on; its own integration test
+  # (STEKI_TEST_S3) passes against this image.
+  bucket:
+    image: rustfs/rustfs:1.0.4
+    command: /data
+    environment:
+      RUSTFS_ACCESS_KEY: steki
+      RUSTFS_SECRET_KEY: steki-local-secret
+      RUSTFS_ADDRESS: ":9000"
+    volumes:
+      - bucket-data:/data
+
+  # Creates the bucket once the server answers, then exits.
+  bucket-init:
+    image: amazon/aws-cli:2.39.6
+    environment:
+      AWS_ACCESS_KEY_ID: steki
+      AWS_SECRET_ACCESS_KEY: steki-local-secret
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: >
+      /bin/sh -c "until aws --endpoint-url http://bucket:9000 s3api head-bucket --bucket steki 2>/dev/null
+      || aws --endpoint-url http://bucket:9000 s3 mb s3://steki; do sleep 2; done"
+    depends_on:
+      - bucket
+
+volumes:
+  bucket-data:

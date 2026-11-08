@@ -7,7 +7,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/bot"
+	"steki-bot/internal/bot"
 )
 
 // cmdBotStats shows this service's health and each of the others', so a service

@@ -16,7 +16,7 @@ see [ARCHITECTURE.md](ARCHITECTURE.md); for moderator commands see
 
 Each service reads only its own variables and refuses to start with a list of any that
 are missing. [`.env.example`](../.env.example) is the annotated template, and
-`config/config.go` is the source of truth.
+`internal/config/config.go` is the source of truth.
 
 | Variable | registration | moderation | web |
 |----------|:---:|:---:|:---:|
@@ -32,7 +32,7 @@ are missing. [`.env.example`](../.env.example) is the annotated template, and
 | `LOG_LEVEL`, `POSTHOG_*` | optional | optional | optional |
 
 Discord channel, category and role IDs are compile-time constants in
-`config/config.go` and `bot/constants.go`. The guild ID is learned from the gateway.
+`internal/config/config.go` and `internal/bot/constants.go`. The guild ID is learned from the gateway.
 
 Adding a variable? Put it only in the loader of the service that needs it. If it is a
 secret, add it to the `onlyIn` map in `TestSecretsStayWithTheirService`
@@ -49,7 +49,10 @@ project and environment, sharing one S3-compatible bucket.
 - The `watchPatterns` in each file make a change redeploy only the services built from
   it. `TestWatchPatternsCoverEveryDependency` fails if you add a package a service
   links without adding it to that list.
-- `web` builds from the root `Dockerfile` (it also installs the pinned, checksummed
+- The shared packages live in `internal/`, so the watch patterns name
+  `internal/<package>/**`. The patterns set on the services in Railway must be changed
+  to match these files whenever the files change.
+- `web` builds from the root `Dockerfile` (it also installs the pinned
   Railway CLI for Under Attack Mode); `registration` and `moderation` from
   `cmd/<service>/Dockerfile`; `blastdoor` from `blastdoor/Dockerfile`.
 - A service stops cleanly when a newer deployment takes its databases over
@@ -191,6 +194,6 @@ When you add a cache, give it a size bound and an eviction path.
   still fails (a channel that cannot be created, an email that cannot be sent) is posted
   to the moderator log channel rather than lost to stdout.
 - **Time budgets:** every database and Discord call from a handler runs under a timeout
-  from `bot/constants.go` (`DBTimeout`, `FlowTimeout`, …), so nothing wedges.
+  from `internal/bot/constants.go` (`DBTimeout`, `FlowTimeout`, …), so nothing wedges.
 - **Databases never start from less than the whole:** see
-  [`s3db/README.md`](../s3db/README.md#how-a-write-becomes-durable).
+  [`internal/s3db/README.md`](../internal/s3db/README.md#how-a-write-becomes-durable).

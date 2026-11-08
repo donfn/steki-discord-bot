@@ -17,15 +17,15 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/analytics"
-	"steki-bot/bot"
-	"steki-bot/config"
-	"steki-bot/materials"
-	"steki-bot/rpc"
-	"steki-bot/store"
-	"steki-bot/tokens"
-	"steki-bot/usernotes"
-	"steki-bot/verify"
+	"steki-bot/internal/analytics"
+	"steki-bot/internal/bot"
+	"steki-bot/internal/config"
+	"steki-bot/internal/materials"
+	"steki-bot/internal/rpc"
+	"steki-bot/internal/store"
+	"steki-bot/internal/tokens"
+	"steki-bot/internal/usernotes"
+	"steki-bot/internal/verify"
 )
 
 // Intents are the gateway events this service reads.

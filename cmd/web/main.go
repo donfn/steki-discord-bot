@@ -14,15 +14,15 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/analytics"
-	"steki-bot/bot"
-	"steki-bot/config"
-	"steki-bot/mcp"
-	"steki-bot/rpc"
+	"steki-bot/internal/analytics"
+	"steki-bot/internal/bot"
+	"steki-bot/internal/config"
+	"steki-bot/internal/mcp"
+	"steki-bot/internal/rpc"
+	"steki-bot/internal/shield"
+	"steki-bot/internal/store"
+	"steki-bot/internal/verify"
 	"steki-bot/services/web"
-	"steki-bot/shield"
-	"steki-bot/store"
-	"steki-bot/verify"
 )
 
 // gatewayDelay lets the other services identify with the gateway first.

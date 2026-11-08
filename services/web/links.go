@@ -10,8 +10,8 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/bot"
-	"steki-bot/verify"
+	"steki-bot/internal/bot"
+	"steki-bot/internal/verify"
 )
 
 // The buttons on the stickies and the MCP announcements carry no link. A click

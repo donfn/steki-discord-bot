@@ -6,10 +6,10 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/bot"
-	"steki-bot/dc"
-	"steki-bot/rpc"
-	"steki-bot/store"
+	"steki-bot/internal/bot"
+	"steki-bot/internal/dc"
+	"steki-bot/internal/rpc"
+	"steki-bot/internal/store"
 )
 
 // /member ban removes someone from the server for good and closes every email

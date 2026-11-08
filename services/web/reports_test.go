@@ -7,7 +7,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/store"
+	"steki-bot/internal/store"
 )
 
 func TestReportCard(t *testing.T) {

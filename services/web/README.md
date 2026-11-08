@@ -1,37 +1,34 @@
 # services/web
 
-The public face of the bot: the pages, the MCP server and the course material. It is the
-only service on the internet, so it is the only one holding **`JWT_SECRET`**, the OAuth
-application, the Gemini and Railway tokens, and the only one that can reach `blastdoor`.
-It has no mail key and links no other service's logic.
+The public face of the bot: the web pages, the MCP server and the course material. It is
+the only service reachable from the internet. It therefore holds the token-signing key
+(`JWT_SECRET`), the OAuth application, and the Gemini and Railway tokens, and it is the
+only service that can call `blastdoor`. It holds no mail key and links no other
+service's logic. Entry point: [`cmd/web`](../../cmd/web/).
 
-Entry point: [`cmd/web`](../../cmd/web/). The two pages that belong to other services
-(email consent, media-guard captcha) are served here and answered by their owners over
-RPC.
+Two pages belong to other services: the email consent page and the media-guard captcha.
+`web` serves them and their owners answer over RPC.
 
-Diagrams: [material pipeline](../../docs/ARCHITECTURE.md#course-material-backup-screening-viewing),
-[MCP login](../../docs/ARCHITECTURE.md#mcp-server),
-[IP shield](../../docs/ARCHITECTURE.md#ip-shield). Behaviour of stickies, uploads and
-the shield is in [OPERATIONS.md](../../docs/OPERATIONS.md).
+Related documents: the
+[material pipeline](../../docs/ARCHITECTURE.md#course-material-backup-screening-viewing),
+the [MCP login](../../docs/ARCHITECTURE.md#mcp-server), the
+[address shield](../../docs/ARCHITECTURE.md#ip-shield), and
+[OPERATIONS.md](../../docs/OPERATIONS.md) for stickies, uploads and the shield.
 
-## Files
+## Contents
 
-| File | Holds |
-|---|---|
-| `handler.go` | `Handler`, gateway registration, RPC routes, the adapters the pages call |
-| `materials.go` | discovery of course files, `/materials scan`, course category IDs |
-| `sticky.go` | the silent bottom-of-channel card per course channel |
-| `links.go` | the personal 30-second links behind the buttons |
-| `upload.go` | the upload form: title, files, post, pin, credit |
-| `review.go` | admin cards for images the content check holds |
-| `reports.go` | members reporting a file |
-| `mcp.go` | the bot's side of MCP: who may read what |
+`handler.go` holds the `Handler` and the adapters through which the pages reach the
+service. The other files are `materials.go` (discovery of course files), `sticky.go` (the
+silent card at the bottom of each course channel), `links.go` (the 30-second personal
+links), `upload.go` (the upload form), `review.go` (administrator cards for held images),
+`reports.go` (member reports) and `mcp.go` (which members may read which material).
 
 ## Invariants
 
-- Everything signed here uses `JWT_SECRET`; a compromised `registration` or `moderation`
-  must not be able to forge a material link or MCP token.
-- Anything that comes back from `blastdoor` or from Gemini is untrusted input.
-- Never remove a file from the bucket because a message was deleted; hide it.
-- Adding or renaming a public route also means updating Railway's edge allowlist.
-- Must not import `mail` or the other services (enforced).
+- Everything signed here uses `JWT_SECRET`, so a compromised `registration` or
+  `moderation` cannot forge a material link or an MCP token.
+- Data returned by `blastdoor` or by Gemini is untrusted input.
+- A deleted Discord message hides its files and never removes them from the bucket.
+- Adding or renaming a public route requires an update to Railway's edge allowlist.
+- The package must not import `mail` or another service.
+  `TestServicesStayInTheirLane` checks this.

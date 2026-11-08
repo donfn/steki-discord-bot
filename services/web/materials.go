@@ -12,13 +12,13 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/bot"
-	"steki-bot/dc"
-	"steki-bot/materials"
-	"steki-bot/mcp"
-	"steki-bot/store"
-	"steki-bot/usernotes"
-	"steki-bot/verify"
+	"steki-bot/internal/bot"
+	"steki-bot/internal/dc"
+	"steki-bot/internal/materials"
+	"steki-bot/internal/mcp"
+	"steki-bot/internal/store"
+	"steki-bot/internal/usernotes"
+	"steki-bot/internal/verify"
 )
 
 // The PDFs and JPEGs posted in the course channels (and their threads) are

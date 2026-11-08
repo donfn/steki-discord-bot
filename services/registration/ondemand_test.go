@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"steki-bot/bot"
+	"steki-bot/internal/bot"
 )
 
 // TestCatchUpWorkStartsOnlyFromCommands guards a rule of this bot: work that

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"steki-bot/bot"
+	"steki-bot/internal/bot"
 	"steki-bot/services/moderation"
 	"steki-bot/services/registration"
 	"steki-bot/services/web"

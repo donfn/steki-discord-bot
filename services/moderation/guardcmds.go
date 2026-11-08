@@ -8,9 +8,9 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/bot"
-	"steki-bot/store"
-	"steki-bot/tokens"
+	"steki-bot/internal/bot"
+	"steki-bot/internal/store"
+	"steki-bot/internal/tokens"
 )
 
 // discordTime renders a timestamp the way Discord localises for each reader.

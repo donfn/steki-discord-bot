@@ -11,11 +11,11 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/bot"
-	"steki-bot/config"
-	"steki-bot/materials"
-	"steki-bot/store"
-	"steki-bot/verify"
+	"steki-bot/internal/bot"
+	"steki-bot/internal/config"
+	"steki-bot/internal/materials"
+	"steki-bot/internal/store"
+	"steki-bot/internal/verify"
 )
 
 // A member reports a file from the material page. The check runs at once; a

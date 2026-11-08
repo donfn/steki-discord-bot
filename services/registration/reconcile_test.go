@@ -11,8 +11,8 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/bot"
-	"steki-bot/store"
+	"steki-bot/internal/bot"
+	"steki-bot/internal/store"
 )
 
 // The reconcile tests run the whole pass: a real database, the fake Discord,

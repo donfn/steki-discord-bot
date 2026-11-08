@@ -5,10 +5,10 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/bot"
-	"steki-bot/config"
-	"steki-bot/dc"
-	"steki-bot/store"
+	"steki-bot/internal/bot"
+	"steki-bot/internal/config"
+	"steki-bot/internal/dc"
+	"steki-bot/internal/store"
 )
 
 // The help channel is hidden from everyone. A member stuck in registration

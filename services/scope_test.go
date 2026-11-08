@@ -29,11 +29,11 @@ func deps(t *testing.T, cmd string) []string {
 func TestServicesStayInTheirLane(t *testing.T) {
 	forbidden := map[string][]string{
 		// Holds members' addresses and the mail key: no pages, no file handling.
-		"registration": {"verify", "mcp", "materials", "usernotes", "shield", "services/moderation", "services/web"},
+		"registration": {"internal/verify", "internal/mcp", "internal/materials", "internal/usernotes", "internal/shield", "services/moderation", "services/web"},
 		// Reads every message: no pages, no files, no mail.
-		"moderation": {"verify", "mcp", "materials", "usernotes", "shield", "mail", "services/registration", "services/web"},
+		"moderation": {"internal/verify", "internal/mcp", "internal/materials", "internal/usernotes", "internal/shield", "internal/mail", "services/registration", "services/web"},
 		// Faces the internet: no mail, nor other services' logic.
-		"web": {"mail", "services/registration", "services/moderation"},
+		"web": {"internal/mail", "services/registration", "services/moderation"},
 	}
 	for cmd, banned := range forbidden {
 		have := deps(t, cmd)
@@ -64,7 +64,7 @@ func TestWatchPatternsCoverEveryDependency(t *testing.T) {
 // TestSecretsStayWithTheirService reads the configuration loaders: a variable
 // appearing in the wrong loader would hand that container the secret.
 func TestSecretsStayWithTheirService(t *testing.T) {
-	raw, err := os.ReadFile("../config/config.go")
+	raw, err := os.ReadFile("../internal/config/config.go")
 	if err != nil {
 		t.Fatal(err)
 	}

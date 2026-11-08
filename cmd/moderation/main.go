@@ -7,12 +7,12 @@ import (
 	"os"
 	"time"
 
-	"steki-bot/analytics"
-	"steki-bot/bot"
-	"steki-bot/config"
-	"steki-bot/rpc"
+	"steki-bot/internal/analytics"
+	"steki-bot/internal/bot"
+	"steki-bot/internal/config"
+	"steki-bot/internal/rpc"
+	"steki-bot/internal/store"
 	"steki-bot/services/moderation"
-	"steki-bot/store"
 )
 
 // gatewayDelay lets the registration service identify with the gateway first.

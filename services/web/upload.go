@@ -14,10 +14,10 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/bot"
-	"steki-bot/materials"
-	"steki-bot/moderation"
-	"steki-bot/rpc"
+	"steki-bot/internal/bot"
+	"steki-bot/internal/materials"
+	"steki-bot/internal/moderation"
+	"steki-bot/internal/rpc"
 )
 
 // "Ανέβασμα υλικού" opens a form with a title and a file picker. The bot

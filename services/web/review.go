@@ -10,11 +10,11 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/bot"
-	"steki-bot/config"
-	"steki-bot/dc"
-	"steki-bot/materials"
-	"steki-bot/store"
+	"steki-bot/internal/bot"
+	"steki-bot/internal/config"
+	"steki-bot/internal/dc"
+	"steki-bot/internal/materials"
+	"steki-bot/internal/store"
 )
 
 // Images the content check flags are not listed and not backed up. The bot

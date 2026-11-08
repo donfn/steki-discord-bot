@@ -7,7 +7,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/bot"
+	"steki-bot/internal/bot"
 )
 
 // TestRegisterHandlersAreAccepted guards the generic panic wrapper: discordgo

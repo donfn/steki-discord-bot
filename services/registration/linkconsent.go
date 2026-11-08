@@ -10,11 +10,11 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"steki-bot/bot"
-	"steki-bot/brand"
-	"steki-bot/mail"
-	"steki-bot/store"
-	"steki-bot/tokens"
+	"steki-bot/internal/bot"
+	"steki-bot/internal/brand"
+	"steki-bot/internal/mail"
+	"steki-bot/internal/store"
+	"steki-bot/internal/tokens"
 )
 
 // universityFor maps an eligible address to its key in brand.Universities.

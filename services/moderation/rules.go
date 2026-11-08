@@ -3,7 +3,7 @@ package moderation
 import (
 	"fmt"
 
-	"steki-bot/bot"
+	"steki-bot/internal/bot"
 
 	"github.com/bwmarrin/discordgo"
 )
