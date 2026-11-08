@@ -258,11 +258,30 @@ func (m *Manager) download(ctx context.Context, user, tmp string) error {
 	return f.Close()
 }
 
+// compact gives the file back the pages that replaced and deleted notes left
+// free, which SQLite otherwise keeps, so the file only ever grew. A quarter of
+// the file free is worth rewriting it.
+func (m *Manager) compact(ctx context.Context, e *entry) {
+	var free, total int
+	if err := e.db.QueryRowContext(ctx, `pragma freelist_count`).Scan(&free); err != nil {
+		return
+	}
+	if err := e.db.QueryRowContext(ctx, `pragma page_count`).Scan(&total); err != nil || free*4 <= total {
+		return
+	}
+	if _, err := e.db.ExecContext(ctx, `vacuum`); err != nil {
+		m.log.Warn("usernotes: vacuum", "user_id", e.user, "error", err)
+	}
+}
+
 // settle closes and uploads the database if nothing is using it any more. A
 // failed upload keeps the working copy for sweep to retry.
 func (m *Manager) settle(ctx context.Context, e *entry) {
 	if e.db == nil || e.sockets > 0 || e.lease != nil {
 		return
+	}
+	if e.dirty {
+		m.compact(ctx, e)
 	}
 	err := e.db.Close()
 	e.db = nil

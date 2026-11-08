@@ -2642,10 +2642,48 @@
   let drawing = null;
 
   const strokesOf = (f, page) => ((ink[f.id] ||= {})[page] ||= []);
+
+  // The pen reports a point every few milliseconds, far more than a line needs,
+  // and each one costs about 14 bytes in the member's database. A stroke keeps
+  // only the points that move it more than INK_TOLERANCE (a fraction of the page
+  // width, under a pixel on screen) off the line between its neighbours
+  // (Ramer-Douglas-Peucker). Strokes saved before this are thinned the same way
+  // when their file is next saved.
+  const INK_TOLERANCE = 0.0008;
+  // Squared distance from (px, py) to the segment a-b.
+  function segDist2(px, py, ax, ay, bx, by) {
+    const dx = bx - ax, dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+    const t = len2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2)) : 0;
+    const ex = px - ax - t * dx, ey = py - ay - t * dy;
+    return ex * ex + ey * ey;
+  }
+  function thinPoints(p) {
+    const n = p.length / 2;
+    if (n < 3) return p;
+    const keep = new Uint8Array(n);
+    keep[0] = keep[n - 1] = 1;
+    const stack = [0, n - 1];
+    while (stack.length) {
+      const b = stack.pop(), a = stack.pop();
+      let far = -1, most = INK_TOLERANCE * INK_TOLERANCE;
+      for (let i = a + 1; i < b; i++) {
+        const d = segDist2(p[2 * i], p[2 * i + 1], p[2 * a], p[2 * a + 1], p[2 * b], p[2 * b + 1]);
+        if (d > most) { most = d; far = i; }
+      }
+      if (far >= 0) { keep[far] = 1; stack.push(a, far, far, b); }
+    }
+    const out = [];
+    for (let i = 0; i < n; i++) if (keep[i]) out.push(p[2 * i], p[2 * i + 1]);
+    return out;
+  }
+
   function saveInk() {
     if (!current || sock.dead) return;
     const m = ink[current.id];
     if (m) {
+      // Thin in place: the undo list holds these very strokes.
+      for (const list of Object.values(m)) for (const s of list) s.p = thinPoints(s.p);
       for (const k of Object.keys(m)) if (!m[k].length) delete m[k];
       if (!Object.keys(m).length) delete ink[current.id];
     }
@@ -2703,16 +2741,19 @@
     const r = 0.015;
     const ratio = c.height / c.width;
     for (let i = list.length - 1; i >= 0; i--) {
+      // Thinned strokes have long segments, so test the line, not just its points.
       const p = list[i].p;
-      for (let j = 0; j < p.length; j += 2) {
-        const dx = p[j] - x;
-        const dy = (p[j + 1] - y) * ratio;
-        if (dx * dx + dy * dy < r * r) {
-          inkUndo.push({ op: 'del', page: c.dataset.page, s: list[i], i });
-          list.splice(i, 1);
-          paintInk(c);
-          break;
-        }
+      let ax = p[0], ay = p[1] * ratio;
+      let hit = segDist2(x, y * ratio, ax, ay, ax, ay) < r * r;
+      for (let j = 2; j < p.length && !hit; j += 2) {
+        const bx = p[j], by = p[j + 1] * ratio;
+        hit = segDist2(x, y * ratio, ax, ay, bx, by) < r * r;
+        ax = bx; ay = by;
+      }
+      if (hit) {
+        inkUndo.push({ op: 'del', page: c.dataset.page, s: list[i], i });
+        list.splice(i, 1);
+        paintInk(c);
       }
     }
   }
@@ -2813,9 +2854,9 @@
     if (!d.erase) {
       strokesOf(current, d.c.dataset.page).push(d.s);
       inkUndo.push({ op: 'add', page: d.c.dataset.page, s: d.s });
-      paintInk(d.c);
     }
     saveInk();
+    if (!d.erase) paintInk(d.c);
     syncInkButtons();
   }
   // A second finger means a pinch: the line the first one began is not kept.

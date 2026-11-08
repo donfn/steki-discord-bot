@@ -244,6 +244,30 @@ func TestQuotaAndDelete(t *testing.T) {
 	}
 }
 
+// Replacing a big note with a small one must shrink the uploaded file, not just
+// leave its pages free inside it.
+func TestReplacedNoteShrinksFile(t *testing.T) {
+	m, b := setup(t)
+	ctx := context.Background()
+	key := objectKey(user)
+
+	release, _ := m.Open(ctx, user)
+	if err := m.Save(ctx, user, "f", "ink", `{"d":"`+strings.Repeat("x", 512<<10)+`"}`); err != nil {
+		t.Fatal(err)
+	}
+	release()
+	big := len(b.objects[key])
+
+	release, _ = m.Open(ctx, user)
+	if err := m.Save(ctx, user, "f", "ink", `{"d":"x"}`); err != nil {
+		t.Fatal(err)
+	}
+	release()
+	if small := len(b.objects[key]); small*10 > big {
+		t.Errorf("file %d bytes after replacing a note that made it %d", small, big)
+	}
+}
+
 func TestBadUserRefused(t *testing.T) {
 	m, _ := setup(t)
 	if _, err := m.Open(context.Background(), "../../etc/x"); err == nil {
