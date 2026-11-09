@@ -18,7 +18,9 @@ table.
    checks that the file is really a PDF or a JPEG. For JPEGs, `gemini.go` adds a content
    check by a Gemini model, whose answer is constrained to a JSON schema. The image is
    untrusted, so any text inside it is treated as data and never as an instruction. Held
-   images become review cards for administrators.
+   images become review cards for administrators. The same answer rates an approved image
+   as sure, unsure or not final exam exercises (`Verdict.Exam`); the worker hands the first
+   two to `services/web/exam.go`, which grants the exam role.
 3. A file is **listed only when approved**. A rejected file stays in the bucket, as does
    every file whose message was later deleted.
 4. **Compression** (`compress.go`) stores an object as a small header followed by a zstd

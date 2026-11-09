@@ -21,7 +21,8 @@ the [MCP login](../../docs/ARCHITECTURE.md#mcp-server), the
 service. The other files are `materials.go` (discovery of course files), `sticky.go` (the
 silent card at the bottom of each course channel), `links.go` (the 30-second personal
 links), `upload.go` (the upload form), `review.go` (administrator cards for held images),
-`reports.go` (member reports) and `mcp.go` (which members may read which material).
+`exam.go` (the role for photos of final exam exercises, with a revert button in the log
+channel), `reports.go` (member reports) and `mcp.go` (which members may read which material).
 
 ## Invariants
 
