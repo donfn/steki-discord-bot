@@ -10,6 +10,7 @@ const (
 	HMURoleID      = "886993717725102103"
 	OutsiderRoleID = "993612908074381352"
 	GoldenRoleID   = "943889393863774279"
+	ExamRoleID     = "943886410782494771"  // shared photos of final exam papers
 	GhostRoleID    = "1565626375941918850" // members silent for three months
 )
 

@@ -102,6 +102,9 @@ func (h *Handler) Register(s *discordgo.Session) {
 	h.mat = materials.NewWorker(h.st, h.bucket, screener, h.refreshMaterialSource(s),
 		func(home string) { h.refreshSticky(s, home) },
 		func() { go h.Safely("review_cards", func() { h.announceReviews(s) }) },
+		func(m *store.Material, v materials.Verdict) {
+			go h.Safely("exam_role", func() { h.awardExamRole(s, m, v) })
+		},
 		func(ctx context.Context) ([]string, error) { return h.courseChannelIDs(ctx, s) }, h.Log)
 	notes, err := usernotes.New(h.bucket, filepath.Join(h.cfg.DataDir, "user-notes"), h.Log)
 	if err != nil {
@@ -261,6 +264,8 @@ func (h *Handler) onComponent(s *discordgo.Session, i *discordgo.InteractionCrea
 	switch {
 	case strings.HasPrefix(id, reviewApprovePrefix) || strings.HasPrefix(id, reviewRejectPrefix):
 		h.onReviewButton(s, i)
+	case strings.HasPrefix(id, examUndoPrefix):
+		h.onExamUndo(s, i)
 	case strings.HasPrefix(id, reportRemovePrefix) || strings.HasPrefix(id, reportRestorePrefix):
 		h.onReportButton(s, i)
 	case id == uploadButtonID:

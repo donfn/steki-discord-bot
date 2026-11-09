@@ -52,6 +52,9 @@ type Worker struct {
 	// held is called when a file is held for review, so its admin card can be
 	// posted.
 	held func()
+	// exam is called with an image taken for final exam exercises once it is
+	// approved, so its uploader can be rewarded.
+	exam func(m *store.Material, v Verdict)
 	http *http.Client
 	log  *slog.Logger
 	wake chan struct{}
@@ -78,11 +81,12 @@ type Worker struct {
 
 // NewWorker returns a Worker. Call Run to start it.
 func NewWorker(st *store.Library, bucket *Bucket, screener Screener, refresh Refresher,
-	changed func(homeChannelID string), held func(), courses func(ctx context.Context) ([]string, error),
+	changed func(homeChannelID string), held func(), exam func(m *store.Material, v Verdict), courses func(ctx context.Context) ([]string, error),
 	logger *slog.Logger) *Worker {
 	ps, _ := screener.(PreScreener)
 	return &Worker{
 		held:        held,
+		exam:        exam,
 		courses:     courses,
 		imagesFirst: ps != nil && ps.PreScreens(TypeJPEG),
 		st:          st,
@@ -367,6 +371,9 @@ func (w *Worker) screen(ctx context.Context, m *store.Material) {
 	if v.Status == store.MaterialRejected {
 		log.Warn("materials: file rejected by screening", "note", v.Note, "filename", m.Filename)
 		return
+	}
+	if v.Exam != "" && v.Status == store.MaterialApproved && w.exam != nil {
+		w.exam(m, v)
 	}
 	// A file still to be copied is listed once the backup is done.
 	if m.BackedUpAt != nil && m.Status != store.MaterialApproved && w.changed != nil {

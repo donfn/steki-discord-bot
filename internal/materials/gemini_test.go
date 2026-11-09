@@ -228,3 +228,33 @@ func TestGeminiPDFsGetTheFormatCheckOnly(t *testing.T) {
 		t.Errorf("verdict %+v, err %v", v, err)
 	}
 }
+
+func TestGeminiExamVerdicts(t *testing.T) {
+	examReply := func(kind, exam string) []byte {
+		text, _ := json.Marshal(map[string]any{"kind": kind, "people": false, "exam": exam, "reason": "θέματα"})
+		body, _ := json.Marshal(map[string]any{"candidates": []any{map[string]any{
+			"finishReason": "STOP",
+			"content":      map[string]any{"parts": []any{map[string]any{"text": string(text)}}},
+		}}})
+		return body
+	}
+	for _, tc := range []struct {
+		kind, exam, wantExam, wantStatus string
+	}{
+		{"course_material", "yes", ExamSure, store.MaterialApproved},
+		{"course_material", "unsure", ExamUnsure, store.MaterialApproved},
+		{"course_material", "no", "", store.MaterialApproved},
+		{"course_material", "", "", store.MaterialApproved},
+		{"course_material", "bogus", "", store.MaterialApproved},
+		// An exam claim never rescues a picture that was flagged.
+		{"meme_or_joke", "yes", "", store.MaterialReview},
+	} {
+		v, err := parseGemini(examReply(tc.kind, tc.exam))
+		if err != nil || v.Exam != tc.wantExam || v.Status != tc.wantStatus {
+			t.Errorf("%s/%s: verdict %+v, err %v", tc.kind, tc.exam, v, err)
+		}
+		if tc.wantExam != "" && v.Note != "θέματα" {
+			t.Errorf("%s/%s: note %q lost the model's description", tc.kind, tc.exam, v.Note)
+		}
+	}
+}

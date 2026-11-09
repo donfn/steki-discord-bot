@@ -7,6 +7,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"steki-bot/internal/materials"
 	"steki-bot/internal/store"
 )
 
@@ -45,6 +46,20 @@ func TestReportCard(t *testing.T) {
 		id := b.(discordgo.Button).CustomID
 		if strings.HasPrefix(id, reviewApprovePrefix) || strings.HasPrefix(id, reviewRejectPrefix) {
 			t.Errorf("button %q collides with the image review prefixes", id)
+		}
+	}
+}
+
+func TestExamCard(t *testing.T) {
+	m := &store.Material{AttachmentID: "555", UploaderID: "u9", ChannelID: "c1", GuildID: "g1", MessageID: "m1", Filename: "a.jpg"}
+	for _, exam := range []string{materials.ExamSure, materials.ExamUnsure} {
+		e, rows := examCard(m, materials.Verdict{Exam: exam, Note: "θέματα"}, "")
+		btns := rows[0].(discordgo.ActionsRow).Components
+		if len(btns) != 1 || btns[0].(discordgo.Button).CustomID != examUndoPrefix+"u9" {
+			t.Errorf("%s: want one revert button for u9, got %+v", exam, btns)
+		}
+		if strings.Contains(e.Description, "δεν είναι σίγουρο") != (exam == materials.ExamUnsure) {
+			t.Errorf("%s: description %q", exam, e.Description)
 		}
 	}
 }

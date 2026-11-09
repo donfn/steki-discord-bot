@@ -59,6 +59,11 @@ kind:
 
 people: true when the face of a real person is clearly visible and recognisable. Drawings, cartoons, statues, tiny profile pictures in a chat screenshot, and a hand or an anonymous silhouette do not count.
 
+exam: only meaningful for course_material, otherwise "no". Is the picture a photo or scan of the exercises of a FINAL EXAM (θέματα τελικών εξετάσεων / εξεταστικής περιόδου), that is an exam paper with its questions?
+- yes: it clearly is. A low resolution, skewed or badly lit photo is still a yes as long as most of the exam text can be read.
+- unsure: it may be exam questions but you cannot tell, for example a midterm, quiz, practice sheet or problem set, a cropped or partial page, or text that is mostly unreadable.
+- no: lecture slides, notes, textbook pages, solutions, diagrams and any other study material.
+
 reason: one short sentence in Greek (at most 120 characters) saying what the picture shows.`
 
 // kindLabels are the Greek names of the kinds, for the admin card.
@@ -156,6 +161,7 @@ func (g *Gemini) wait(ctx context.Context) error {
 type answer struct {
 	Kind   string `json:"kind"`
 	People bool   `json:"people"`
+	Exam   string `json:"exam"`
 	Reason string `json:"reason"`
 }
 
@@ -173,7 +179,11 @@ func (a answer) verdict() Verdict {
 		why = append(why, "φαίνονται άνθρωποι")
 	}
 	if len(why) == 0 {
-		return Verdict{Status: store.MaterialApproved, Checked: true}
+		v := Verdict{Status: store.MaterialApproved, Checked: true}
+		if a.Exam == ExamSure || a.Exam == ExamUnsure {
+			v.Exam, v.Note = a.Exam, strings.TrimSpace(a.Reason)
+		}
+		return v
 	}
 	note := strings.Join(why, ", ")
 	if r := strings.TrimSpace(a.Reason); r != "" {
@@ -232,7 +242,8 @@ func (g *Gemini) writeRequest(w io.Writer, img io.Reader) error {
 	prompt, _ := json.Marshal(visionPrompt)
 	schema := `{"type":"OBJECT","properties":{` +
 		`"kind":{"type":"STRING","enum":["course_material","meme_or_joke","explicit_sexual","graphic_violence","personal_photo","other_unrelated"]},` +
-		`"people":{"type":"BOOLEAN"},"reason":{"type":"STRING"}},"required":["kind","people","reason"]}`
+		`"people":{"type":"BOOLEAN"},"exam":{"type":"STRING","enum":["no","unsure","yes"]},` +
+		`"reason":{"type":"STRING"}},"required":["kind","people","exam","reason"]}`
 	// Blocking is turned off: a refused picture would say nothing about why,
 	// and the point is to be told. A refusal that still happens is treated as
 	// a flag below.

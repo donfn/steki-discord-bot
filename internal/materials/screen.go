@@ -22,7 +22,17 @@ type Verdict struct {
 	// Checked reports that the content was looked at by the vision check, not
 	// only its format.
 	Checked bool
+	// Exam is set on an approved image the vision check took for a photo of
+	// final exam exercises: ExamSure, or ExamUnsure when it may be one. Note then
+	// holds the model's description.
+	Exam string
 }
+
+// Values of Verdict.Exam.
+const (
+	ExamSure   = "yes"
+	ExamUnsure = "unsure"
+)
 
 // RateLimitError is returned by a Screener whose service is out of quota. The
 // worker stops screening until RetryAfter has passed and then carries on, so
