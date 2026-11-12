@@ -89,7 +89,7 @@ func (h *Handler) Register(s *discordgo.Session) {
 	h.Core.Register(s)
 	h.SkipMemberCache(s)
 	h.OnHome = func(s *discordgo.Session) {
-		h.GoLoop("status", 30*time.Second, func() { h.updateStatus(s) })
+		h.GoLoop("status", statusEvery, func() { h.updateStatus(s) })
 		h.GoLoop("phishing_feed", phishRefreshEvery, h.refreshPhishFeed)
 		h.GoLoop("duplicate_sweep", dupWindow, func() {
 			now := time.Now()
@@ -216,15 +216,7 @@ func (h *Handler) updateStatus(s *discordgo.Session) {
 		return
 	}
 
-	var status string
-	switch h.statusIndex.Add(1) % 3 {
-	case 0:
-		status = "Uptime: " + formatUptime(time.Since(h.BootTime))
-	case 1:
-		status = fmt.Sprintf("Κακόβουλα μηνύματα: %d", h.blocked.Load())
-	case 2:
-		status = fmt.Sprintf("Επεξεργασμένα μηνύματα: %d", h.processed.Load())
-	}
+	status := statusFrame(h.statusIndex.Add(1), time.Since(h.BootTime), h.blocked.Load(), h.processed.Load())
 
 	if err := s.UpdateGameStatus(0, status); err != nil {
 		h.Log.Debug("update status failed", "error", err)
