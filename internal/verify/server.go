@@ -38,6 +38,7 @@ type (
 const (
 	ReasonMedia     = tokens.ReasonMedia
 	ReasonDuplicate = tokens.ReasonDuplicate
+	ReasonSpam      = tokens.ReasonSpam
 	ReasonManual    = tokens.ReasonManual
 	ReasonLink      = tokens.ReasonLink
 	ReasonMaterials = tokens.ReasonMaterials
@@ -222,7 +223,7 @@ func (v *Server) guardClaims(raw string) (*Claims, bool) {
 		return nil, false
 	}
 	switch c.Reason {
-	case "", ReasonMedia, ReasonDuplicate, ReasonManual:
+	case "", ReasonMedia, ReasonDuplicate, ReasonSpam, ReasonManual:
 		return c, true
 	}
 	return nil, false

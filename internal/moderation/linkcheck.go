@@ -31,6 +31,13 @@ func ContainsURL(text string) bool {
 	return urlRegex.MatchString(text)
 }
 
+// URLs returns the links in text that carry a scheme or start with www. Unlike
+// the screening, it skips bare domains, which ordinary text such as "main.go"
+// can look like.
+func URLs(text string) []string {
+	return urlRegex.FindAllString(text, -1)
+}
+
 // SafeMentions lets the bot's messages ping the users they name but never
 // @everyone, @here or a role, whatever member-written text they quote.
 var SafeMentions = &discordgo.MessageAllowedMentions{

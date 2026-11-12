@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -41,6 +42,11 @@ type Handler struct {
 	phish   *moderation.PhishFeed
 	// dups tracks recent messages for cross-channel duplicate detection.
 	dups *dupTracker
+	// repeats tracks images and links a member sends more than once.
+	repeats *dupTracker
+	// cdn downloads attachments to fingerprint them; fetch bounds how many at once.
+	cdn   *http.Client
+	fetch chan struct{}
 	// msgs remembers recent message text for the edit and delete logs.
 	msgs *msgCache
 	// invites caches whether an invite code points at the Steki guild.
@@ -68,6 +74,9 @@ func NewHandler(cfg *config.Moderation, st *store.Guard, activity *store.Activit
 		linkChk:      moderation.NewLinkChecker(cfg.URLBlacklist, phish, core.Modlog, logger),
 		phish:        phish,
 		dups:         newDupTracker(),
+		repeats:      newRepeatTracker(),
+		cdn:          &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
+		fetch:        make(chan struct{}, intelFetchers),
 		msgs:         newMsgCache(msgCacheSize),
 		invites:      map[string]bool{},
 		registration: rpc.NewClient(cfg.RegistrationURL, cfg.InternalSecret),
@@ -82,7 +91,11 @@ func (h *Handler) Register(s *discordgo.Session) {
 	h.OnHome = func(s *discordgo.Session) {
 		h.GoLoop("status", 30*time.Second, func() { h.updateStatus(s) })
 		h.GoLoop("phishing_feed", phishRefreshEvery, h.refreshPhishFeed)
-		h.GoLoop("duplicate_sweep", dupWindow, func() { h.dups.sweep(time.Now()) })
+		h.GoLoop("duplicate_sweep", dupWindow, func() {
+			now := time.Now()
+			h.dups.sweep(now)
+			h.repeats.sweep(now)
+		})
 		h.GoLoop("ghost_sweep", ghostSweepEvery, func() { h.sweepGhosts(s) })
 		h.WG.Add(1)
 		go func() {
@@ -258,12 +271,17 @@ func Routes() []string {
 }
 
 func (h *Handler) onInteractionCreate(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	if i.Type != discordgo.InteractionApplicationCommand {
-		return
-	}
-	sub, path, ok := h.BeginCommand(s, i, func(p string) bool { _, ok := commandRoutes[p]; return ok })
-	if ok {
-		commandRoutes[path](h, s, i, sub)
+	switch i.Type {
+	case discordgo.InteractionMessageComponent:
+		// The web service already counts every button press as an interaction.
+		if strings.HasPrefix(i.MessageComponentData().CustomID, intelPrefix) {
+			h.onIntelComponent(s, i)
+		}
+	case discordgo.InteractionApplicationCommand:
+		sub, path, ok := h.BeginCommand(s, i, func(p string) bool { _, ok := commandRoutes[p]; return ok })
+		if ok {
+			commandRoutes[path](h, s, i, sub)
+		}
 	}
 }
 

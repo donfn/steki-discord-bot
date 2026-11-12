@@ -26,6 +26,12 @@ const (
 	// dupMinLen ignores short text ("ok", "χαχα") that people legitimately
 	// say in several channels; attachments always count.
 	dupMinLen = 12
+
+	// Repeats of one image or link. A second copy within the window is spam:
+	// the media guard already restricts a member's second attachment or link in
+	// an hour, so this only adds removing what they sent.
+	repeatWindow   = 5 * time.Minute
+	repeatMessages = 2
 )
 
 type dupPost struct {
@@ -35,41 +41,55 @@ type dupPost struct {
 	at        time.Time
 }
 
-// dupTracker keeps each member's posts from the last dupWindow in memory.
-// Nothing here needs to survive a restart: the window is a minute long.
+// dupTracker keeps each member's recent posts in memory. Nothing here needs to
+// survive a restart: the windows are minutes long.
 type dupTracker struct {
+	window time.Duration
+	// min distinct values of spread among posts of one key trip the tracker.
+	min    int
+	spread func(dupPost) string
+
 	mu    sync.Mutex
 	posts map[string][]dupPost
 }
 
+// newDupTracker trips on the same message in dupChannels channels.
 func newDupTracker() *dupTracker {
-	return &dupTracker{posts: map[string][]dupPost{}}
+	return &dupTracker{window: dupWindow, min: dupChannels,
+		spread: func(p dupPost) string { return p.channelID }, posts: map[string][]dupPost{}}
 }
 
-// add records a post and, when the same content has now appeared in
-// dupChannels distinct channels within the window, returns every copy and
-// forgets them so the same burst does not trip twice.
+// newRepeatTracker trips on the same image or link in repeatMessages messages,
+// in one channel or several.
+func newRepeatTracker() *dupTracker {
+	return &dupTracker{window: repeatWindow, min: repeatMessages,
+		spread: func(p dupPost) string { return p.messageID }, posts: map[string][]dupPost{}}
+}
+
+// add records a post and, when the same content has now reached the tracker's
+// minimum spread within the window, returns every copy and forgets them so the
+// same burst does not trip twice.
 func (t *dupTracker) add(userID string, p dupPost) []dupPost {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	kept := t.posts[userID][:0]
 	for _, old := range t.posts[userID] {
-		if p.at.Sub(old.at) < dupWindow {
+		if p.at.Sub(old.at) < t.window {
 			kept = append(kept, old)
 		}
 	}
 	kept = append(kept, p)
 
 	var same []dupPost
-	channels := map[string]bool{}
+	spread := map[string]bool{}
 	for _, q := range kept {
 		if q.key == p.key {
 			same = append(same, q)
-			channels[q.channelID] = true
+			spread[t.spread(q)] = true
 		}
 	}
-	if len(channels) < dupChannels {
+	if len(spread) < t.min {
 		t.posts[userID] = kept
 		return nil
 	}
@@ -82,7 +102,7 @@ func (t *dupTracker) sweep(now time.Time) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	for user, posts := range t.posts {
-		if len(posts) == 0 || now.Sub(posts[len(posts)-1].at) >= dupWindow {
+		if len(posts) == 0 || now.Sub(posts[len(posts)-1].at) >= t.window {
 			delete(t.posts, user)
 		}
 	}
@@ -116,6 +136,14 @@ func (h *Handler) screenDuplicates(s *discordgo.Session, m *discordgo.MessageCre
 		return false
 	}
 
+	h.Log.Info("duplicate: cross-channel burst", "user_id", m.Author.ID, "copies", len(copies))
+	h.punishSpam(s, m, copies, tokens.ReasonDuplicate)
+	return true
+}
+
+// punishSpam deletes every copy of a spam message and restricts the member
+// until they pass the captcha.
+func (h *Handler) punishSpam(s *discordgo.Session, m *discordgo.MessageCreate, copies []dupPost, reason string) {
 	ctx, cancel := h.Ctx()
 	defer cancel()
 	for _, c := range copies {
@@ -123,20 +151,18 @@ func (h *Handler) screenDuplicates(s *discordgo.Session, m *discordgo.MessageCre
 			return s.ChannelMessageDelete(c.channelID, c.messageID, discordgo.WithContext(ctx))
 		})
 		if err != nil && !dc.IsMissingResource(err) {
-			h.Log.Warn("duplicate: delete failed", "channel_id", c.channelID, "message_id", c.messageID, "error", err)
+			h.Log.Warn("spam: delete failed", "channel_id", c.channelID, "message_id", c.messageID, "error", err)
 		}
 	}
-	h.Log.Info("duplicate: cross-channel burst", "user_id", m.Author.ID, "copies", len(copies))
 
 	tokenID, err := bot.NewTokenID()
 	if err != nil {
-		h.Log.Error("duplicate: token id", "error", err)
-		return true
+		h.Log.Error("spam: token id", "error", err)
+		return
 	}
 	if err := h.st.ForceRestriction(ctx, m.Author.ID, m.GuildID, tokenID, time.Now()); err != nil {
-		h.Log.Error("duplicate: record restriction", "user_id", m.Author.ID, "error", err)
-		return true
+		h.Log.Error("spam: record restriction", "user_id", m.Author.ID, "error", err)
+		return
 	}
-	_, _ = h.restrict(s, m.Author.ID, m.GuildID, m.ChannelID, tokens.ReasonDuplicate, tokenID, "")
-	return true
+	_, _ = h.restrict(s, m.Author.ID, m.GuildID, m.ChannelID, reason, tokenID, "")
 }

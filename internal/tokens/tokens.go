@@ -25,6 +25,7 @@ const issuer = "steki-bot"
 const (
 	ReasonMedia     = "media"
 	ReasonDuplicate = "duplicate"
+	ReasonSpam      = "spam"
 	ReasonManual    = "manual"
 
 	// ReasonLink marks a registration email link rather than a restriction.
@@ -110,7 +111,7 @@ func pageKey(internalSecret string) []byte {
 // pageReason reports whether a reason belongs to a link signed with the page key.
 func pageReason(reason string) bool {
 	switch reason {
-	case "", ReasonMedia, ReasonDuplicate, ReasonManual, ReasonLink:
+	case "", ReasonMedia, ReasonDuplicate, ReasonSpam, ReasonManual, ReasonLink:
 		return true
 	}
 	return false

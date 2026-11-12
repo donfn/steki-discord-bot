@@ -14,7 +14,7 @@ only through [`rpc/`](../rpc/).
 | Type | Owner | Holds |
 |---|---|---|
 | `store.Registry` | registration | addresses, members, registrations, events, bans |
-| `store.Guard` | moderation | media guard state |
+| `store.Guard` | moderation | media guard state, intel feed |
 | `store.Activity` | moderation | when members last spoke |
 | `store.Library` | web | materials, reports, stickies, study notes, address bans, events |
 

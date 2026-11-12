@@ -89,6 +89,9 @@ func restrictionSubject(userID, channelID, reason, actorID string) string {
 	switch reason {
 	case tokens.ReasonManual:
 		return fmt.Sprintf("Ο <@%s> έβαλε τον χρήστη <@%s> σε έλεγχο captcha", actorID, userID)
+	case tokens.ReasonSpam:
+		return fmt.Sprintf("Ο χρήστης <@%s> έστειλε εικόνα ή σύνδεσμο που επαναλαμβάνεται ή είναι ήδη γνωστός από spam "+
+			"(τελευταίο στο <#%s>, τα μηνύματα διαγράφηκαν)", userID, channelID)
 	case tokens.ReasonDuplicate:
 		return fmt.Sprintf("Ο χρήστης <@%s> έστειλε το ίδιο μήνυμα σε πολλά κανάλια μέσα σε ένα λεπτό "+
 			"(τελευταίο στο <#%s>, τα μηνύματα διαγράφηκαν)", userID, channelID)
@@ -158,6 +161,9 @@ func guardMessage(reason, link string, disabled bool) (*discordgo.MessageEmbed, 
 	what := "Ο λογαριασμός σου έστειλε **δύο μηνύματα με συνημμένα ή συνδέσμους μέσα σε μία ώρα**, " +
 		"οπότε μπήκε αυτόματα σε timeout για 24 ώρες."
 	switch reason {
+	case tokens.ReasonSpam:
+		what = "Ο λογαριασμός σου έστειλε **εικόνα ή σύνδεσμο που επαναλαμβάνεται ή έχει ήδη εντοπιστεί σε επιθέσεις spam**, " +
+			"οπότε τα μηνύματα διαγράφηκαν και μπήκε αυτόματα σε timeout για 24 ώρες."
 	case tokens.ReasonDuplicate:
 		what = "Ο λογαριασμός σου έστειλε **το ίδιο μήνυμα σε πολλά κανάλια μέσα σε ένα λεπτό**, " +
 			"οπότε τα μηνύματα διαγράφηκαν και μπήκε αυτόματα σε timeout για 24 ώρες."

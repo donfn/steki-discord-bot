@@ -10,7 +10,8 @@ import (
 // onMessage screens guild messages. Direct messages are ignored.
 //
 // Screening runs strongest signal first: blacklisted and phishing links
-// (every guild), then in Steki the same message across channels, invites to
+// (every guild), then in Steki the intelligence feed and repeated images and
+// links, the same message across channels, invites to
 // other servers, and the media guard. A removed invite still counts towards
 // the media guard, since it is a link.
 func (h *Handler) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -32,6 +33,10 @@ func (h *Handler) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 	if !h.InHomeGuild(m.GuildID) {
+		return
+	}
+	if h.screenIntel(s, m) {
+		h.blocked.Add(1)
 		return
 	}
 	if h.screenDuplicates(s, m) {

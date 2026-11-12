@@ -281,7 +281,9 @@ flowchart TD
     MODQ --> CACHE["store in the 1500-message ring<br/>(for edit and delete logs)"]
     CACHE --> LINK{"link on the blacklist<br/>or phishing feed?"}
     LINK -- yes --> DEL["delete message,<br/>time out sender, log it"]
-    LINK -- no --> INV{"invite to another<br/>server?"}
+    LINK -- no --> INTEL{"image or link in the intel feed,<br/>or sent twice by this author?"}
+    INTEL -- yes --> DEL
+    INTEL -- no --> INV{"invite to another<br/>server?"}
     INV -- yes --> DEL
     INV -- no --> DUP{"same text pasted<br/>across channels?"}
     DUP -- yes --> DEL

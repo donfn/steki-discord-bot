@@ -14,12 +14,17 @@ tests run first:
 
 1. Links on the blacklist (`URL_BLACKLIST`) or in the phishing feeds: the message is
    deleted and the sender is timed out.
-2. Invitations to other servers (`invites.go`).
-3. The same text posted in several channels, the usual sign of a hijacked account
+2. The intelligence feed (`intel.go`): an image (fingerprinted by the SHA-256 of the file,
+   downloaded from Discord's CDN) or link that is in the feed, or that the author sent twice
+   within five minutes. Either way the messages are deleted and the author is restricted; a
+   repeat also adds the item to the feed and posts a card to the log channel with a button
+   that removes it again (staff only). Links to widely shared hosts are never learned.
+3. Invitations to other servers (`invites.go`).
+4. The same text posted in several channels, the usual sign of a hijacked account
    (`duplicates.go`).
-4. The media guard (`mediaguard.go`), which holds a member's attachments and links until
+5. The media guard (`mediaguard.go`), which holds a member's attachments and links until
    the member passes a captcha. `web` serves the captcha page and this service answers it.
-5. Messages from an author who has just been restricted are removed from the material
+6. Messages from an author who has just been restricted are removed from the material
    page by asking `web` (`internal/materials/drop-message`).
 
 Edits and deletions are logged from a ring of the last 1500 messages (`msgcache.go`).
