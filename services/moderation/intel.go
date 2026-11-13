@@ -1,6 +1,7 @@
 package moderation
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -9,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -26,13 +28,13 @@ import (
 // and over, and the next hijacked account sends the same ones again. An item
 // sent twice by one member is taken for spam, removed, and remembered in the
 // feed; after that, sending it from any account removes the message and
-// restricts the sender at once. An admin can take an entry out from the card
+// restricts the sender at once. Recognising a repeat costs no download: a file
+// is told by its name and size, and only a message that matches a feed entry,
+// or repeats, is downloaded, to hash it. An admin can take an entry out from the card
 // that announced it.
 const (
-	// intelMaxFile bounds what is downloaded to fingerprint an attachment.
-	intelMaxFile = 8 << 20
-	// intelFetchers bounds how many attachments are downloaded at once.
-	intelFetchers      = 3
+	// intelMaxFile bounds what is downloaded to hash an attachment.
+	intelMaxFile       = 8 << 20
 	intelFetchTimeout  = 15 * time.Second
 	intelScreenTimeout = time.Minute
 
@@ -57,9 +59,9 @@ var cdnHosts = []string{"cdn.discordapp.com", "media.discordapp.net"}
 // spamItem is one image or link of a message.
 type spamItem struct {
 	kind  string // store.IntelMedia or store.IntelLink
-	key   string // the file's SHA-256, or the normalised link
+	key   string // the normalised link, or a file's lower-case name and size
 	label string
-	image string // where an admin can see it, for images
+	file  *discordgo.MessageAttachment // for media
 }
 
 func (it spamItem) trackKey() string { return it.kind + ":" + it.key }
@@ -91,54 +93,56 @@ func linkKey(raw, ownHost string) (string, bool) {
 	return key, true
 }
 
+// fileKey names a file by what the message already says about it, so nothing
+// has to be downloaded to recognise a repeat. Two files with the same name and
+// byte size sent by one member within minutes are the same file.
+func fileKey(a *discordgo.MessageAttachment) string {
+	return fmt.Sprintf("%s:%d", strings.ToLower(a.Filename), a.Size)
+}
+
 // fromDiscordCDN reports whether raw is an attachment URL worth downloading.
 func fromDiscordCDN(raw string) bool {
 	u, err := url.Parse(raw)
 	return err == nil && u.Scheme == "https" && slices.Contains(cdnHosts, u.Hostname())
 }
 
-// hashBody fingerprints a file, or reports false when it is too large.
-func hashBody(r io.Reader) (string, bool) {
-	sum := sha256.New()
-	n, err := io.Copy(sum, io.LimitReader(r, intelMaxFile+1))
-	if err != nil || n > intelMaxFile {
-		return "", false
-	}
-	return hex.EncodeToString(sum.Sum(nil)), true
+// readFile reads a file, or reports false when it is too large.
+func readFile(r io.Reader) ([]byte, bool) {
+	data, err := io.ReadAll(io.LimitReader(r, intelMaxFile+1))
+	return data, err == nil && len(data) <= intelMaxFile
 }
 
-// fingerprint downloads an attachment and hashes it. An attachment that
-// cannot be fetched is simply not tracked, never guessed at.
-func (h *Handler) fingerprint(ctx context.Context, a *discordgo.MessageAttachment) (string, bool) {
+func sha(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+// download fetches an attachment from Discord's CDN. It is for the rare
+// message already suspected, never for every message.
+func (h *Handler) download(ctx context.Context, a *discordgo.MessageAttachment) ([]byte, bool) {
 	if a.Size > intelMaxFile || !fromDiscordCDN(a.URL) {
-		return "", false
-	}
-	select {
-	case h.fetch <- struct{}{}:
-		defer func() { <-h.fetch }()
-	case <-ctx.Done():
-		return "", false
+		return nil, false
 	}
 	ctx, cancel := context.WithTimeout(ctx, intelFetchTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.URL, nil)
 	if err != nil {
-		return "", false
+		return nil, false
 	}
 	resp, err := h.cdn.Do(req)
 	if err != nil {
 		h.Log.Debug("intel: download failed", "error", err)
-		return "", false
+		return nil, false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", false
+		return nil, false
 	}
-	return hashBody(resp.Body)
+	return readFile(resp.Body)
 }
 
-// itemsOf lists a message's distinct images and links.
-func (h *Handler) itemsOf(ctx context.Context, m *discordgo.Message) []spamItem {
+// itemsOf lists a message's distinct images and links. It makes no request.
+func (h *Handler) itemsOf(m *discordgo.Message) []spamItem {
 	var own string
 	if u, err := url.Parse(h.cfg.PublicURL); err == nil {
 		own = strings.TrimPrefix(strings.ToLower(u.Hostname()), "www.")
@@ -155,15 +159,83 @@ func (h *Handler) itemsOf(ctx context.Context, m *discordgo.Message) []spamItem 
 		}
 	}
 	for _, a := range moderation.Attachments(m) {
-		if key, ok := h.fingerprint(ctx, a); ok {
-			it := spamItem{kind: store.IntelMedia, key: key, label: a.Filename}
-			if strings.HasPrefix(a.ContentType, "image/") {
-				it.image = a.URL
-			}
-			add(it)
-		}
+		add(spamItem{kind: store.IntelMedia, key: fileKey(a), label: a.Filename, file: a})
 	}
 	return items
+}
+
+// known finds the feed's entry for an item. A file is a candidate by name and
+// size; only then is it downloaded, to compare its hash with the entry's.
+func (h *Handler) known(ctx context.Context, it spamItem) (store.IntelEntry, bool) {
+	if it.kind == store.IntelLink {
+		e, err := h.st.MatchIntel(ctx, it.kind, it.key)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			h.Log.Error("intel: match", "error", err)
+		}
+		return e, err == nil
+	}
+	cands, err := h.st.IntelByQuick(ctx, it.key)
+	if err != nil {
+		h.Log.Error("intel: match", "error", err)
+		return store.IntelEntry{}, false
+	}
+	if len(cands) == 0 {
+		return store.IntelEntry{}, false
+	}
+	data, ok := h.download(ctx, it.file)
+	if !ok {
+		return store.IntelEntry{}, false
+	}
+	hash := sha(data)
+	for _, c := range cands {
+		if c.Key == hash {
+			return c, true
+		}
+	}
+	return store.IntelEntry{}, false
+}
+
+// learn adds a repeated item to the feed and announces it. A file is
+// downloaded now, while its message still exists, so the card can show it.
+func (h *Handler) learn(ctx context.Context, s *discordgo.Session, it spamItem, userID string) {
+	key, quick := it.key, ""
+	var shown *discordgo.File
+	if it.kind == store.IntelMedia {
+		data, ok := h.download(ctx, it.file)
+		if !ok {
+			return
+		}
+		key, quick = sha(data), it.key
+		if strings.HasPrefix(it.file.ContentType, "image/") {
+			shown = &discordgo.File{Name: "intel" + fileExt(it.file.Filename), Reader: bytes.NewReader(data)}
+		}
+	}
+	id, added, err := h.st.AddIntel(ctx, it.kind, key, quick, it.label, userID)
+	if err != nil {
+		h.Log.Error("intel: add", "error", err)
+		return
+	}
+	if !added {
+		return
+	}
+	h.Log.Info("intel: added", "intel_id", id, "kind", it.kind, "user_id", userID)
+	embed, components := intelCard(id, it, userID, shown != nil)
+	if shown != nil {
+		embed.Image = &discordgo.MessageEmbedImage{URL: "attachment://" + shown.Name}
+		h.Modlog.PostCard(s, embed, components, shown)
+		return
+	}
+	h.Modlog.PostCard(s, embed, components)
+}
+
+// fileExt is a file name's extension if it is a plain one, so the name the
+// card's image is attached under is never member-controlled.
+func fileExt(name string) string {
+	ext := strings.ToLower(path.Ext(name))
+	if len(ext) < 2 || len(ext) > 6 || strings.Trim(ext[1:], "abcdefghijklmnopqrstuvwxyz0123456789") != "" {
+		return ".png"
+	}
+	return ext
 }
 
 // screenIntel removes a message that carries an item from the feed, or that
@@ -173,21 +245,17 @@ func (h *Handler) screenIntel(s *discordgo.Session, m *discordgo.MessageCreate) 
 	if !flaggedPost(m.Message) || h.isModerator(s, m.Author.ID, m.GuildID, m.ChannelID) {
 		return false
 	}
-	ctx, cancel := h.CtxTimeout(intelScreenTimeout)
-	defer cancel()
-	items := h.itemsOf(ctx, m.Message)
+	items := h.itemsOf(m.Message)
 	if len(items) == 0 {
 		return false
 	}
+	ctx, cancel := h.CtxTimeout(intelScreenTimeout)
+	defer cancel()
 	self := dupPost{channelID: m.ChannelID, messageID: m.ID}
 
 	for _, it := range items {
-		e, err := h.st.MatchIntel(ctx, it.kind, it.key)
-		if errors.Is(err, store.ErrNotFound) {
-			continue
-		}
-		if err != nil {
-			h.Log.Error("intel: match", "error", err)
+		e, ok := h.known(ctx, it)
+		if !ok {
 			continue
 		}
 		if err := h.st.CountIntelHit(ctx, e.ID); err != nil {
@@ -199,28 +267,21 @@ func (h *Handler) screenIntel(s *discordgo.Session, m *discordgo.MessageCreate) 
 	}
 
 	var copies []dupPost
+	var repeated []spamItem
 	for _, it := range items {
 		p := dupPost{key: it.trackKey(), channelID: m.ChannelID, messageID: m.ID, at: time.Now()}
-		repeated := h.repeats.add(m.Author.ID, p)
-		if repeated == nil {
-			continue
-		}
-		copies = append(copies, repeated...)
-		id, added, err := h.st.AddIntel(ctx, it.kind, it.key, it.label, m.Author.ID)
-		if err != nil {
-			h.Log.Error("intel: add", "error", err)
-			continue
-		}
-		if added {
-			h.Log.Info("intel: added", "intel_id", id, "kind", it.kind, "user_id", m.Author.ID)
-			// The card goes out before the copies are deleted, so Discord has
-			// already rendered the image it shows.
-			embed, components := intelCard(id, it, m.Author.ID)
-			h.Modlog.PostCard(s, embed, components)
+		if c := h.repeats.add(m.Author.ID, p); c != nil {
+			copies = append(copies, c...)
+			repeated = append(repeated, it)
 		}
 	}
 	if copies == nil {
 		return false
+	}
+	// Files are downloaded before anything is deleted, since Discord stops
+	// serving a file once its message is gone.
+	for _, it := range repeated {
+		h.learn(ctx, s, it, m.Author.ID)
 	}
 	seen := map[string]bool{}
 	copies = slices.DeleteFunc(copies, func(c dupPost) bool {
@@ -233,7 +294,7 @@ func (h *Handler) screenIntel(s *discordgo.Session, m *discordgo.MessageCreate) 
 }
 
 // intelCard announces a new entry, with the button that takes it out again.
-func intelCard(id int64, it spamItem, userID string) (*discordgo.MessageEmbed, []discordgo.MessageComponent) {
+func intelCard(id int64, it spamItem, userID string, hasImage bool) (*discordgo.MessageEmbed, []discordgo.MessageComponent) {
 	what := "Σύνδεσμος"
 	if it.kind == store.IntelMedia {
 		what = "Αρχείο"
@@ -247,9 +308,6 @@ func intelCard(id int64, it spamItem, userID string) (*discordgo.MessageEmbed, [
 		Fields: []*discordgo.MessageEmbedField{
 			{Name: what, Value: "`" + moderation.Quote(clip(it.label, 200)) + "`"},
 		},
-	}
-	if it.image != "" {
-		embed.Image = &discordgo.MessageEmbedImage{URL: it.image}
 	}
 	return embed, intelButtons(id, false)
 }

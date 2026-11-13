@@ -143,7 +143,11 @@ func (h *Handler) screenDuplicates(s *discordgo.Session, m *discordgo.MessageCre
 
 // punishSpam deletes every copy of a spam message and restricts the member
 // until they pass the captcha.
+//
+// Several copies often arrive at once. They queue here, and once one has
+// restricted the member the rest are only deleted: one restriction, one DM.
 func (h *Handler) punishSpam(s *discordgo.Session, m *discordgo.MessageCreate, copies []dupPost, reason string) {
+	defer h.LockUser(m.Author.ID)()
 	ctx, cancel := h.Ctx()
 	defer cancel()
 	for _, c := range copies {
@@ -153,6 +157,11 @@ func (h *Handler) punishSpam(s *discordgo.Session, m *discordgo.MessageCreate, c
 		if err != nil && !dc.IsMissingResource(err) {
 			h.Log.Warn("spam: delete failed", "channel_id", c.channelID, "message_id", c.messageID, "error", err)
 		}
+	}
+
+	if g, err := h.st.GuardStatus(ctx, m.Author.ID); err == nil && g.LinkPending &&
+		g.RestrictedAt != nil && time.Since(*g.RestrictedAt) < guardTimeout {
+		return
 	}
 
 	tokenID, err := bot.NewTokenID()

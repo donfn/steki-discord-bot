@@ -15,17 +15,19 @@ const (
 type IntelEntry struct {
 	ID     int64
 	Kind   string
+	Key    string // the file's SHA-256, or the normalised link
 	Label  string
 	UserID string // the member it was first seen from
 }
 
 // AddIntel records an item and returns its ID. added is false when the item
-// was already in the feed.
-func (s *Guard) AddIntel(ctx context.Context, kind, key, label, userID string) (id int64, added bool, err error) {
+// was already in the feed. quick is a media item's name and size, which finds
+// it again without downloading anything.
+func (s *Guard) AddIntel(ctx context.Context, kind, key, quick, label, userID string) (id int64, added bool, err error) {
 	err = s.db.QueryRowContext(ctx, `
-		insert into intel (kind, key, label, user_id, added_at) values (?1, ?2, ?3, ?4, ?5)
+		insert into intel (kind, key, quick, label, user_id, added_at) values (?1, ?2, ?3, ?4, ?5, ?6)
 		on conflict (kind, key) do nothing
-		returning id`, kind, key, label, userID, ms(time.Now())).Scan(&id)
+		returning id`, kind, key, nullStr(quick), label, userID, ms(time.Now())).Scan(&id)
 	if err == nil {
 		return id, true, nil
 	}
@@ -43,6 +45,26 @@ func (s *Guard) MatchIntel(ctx context.Context, kind, key string) (IntelEntry, e
 		select id, label, user_id from intel where kind = ?1 and key = ?2`, kind, key).
 		Scan(&e.ID, &e.Label, &e.UserID)
 	return e, noRows(err)
+}
+
+// IntelByQuick returns the media entries that may be a file of this name and
+// size. The caller confirms a candidate by comparing the file's hash with Key.
+func (s *Guard) IntelByQuick(ctx context.Context, quick string) ([]IntelEntry, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		select id, key, label, user_id from intel where kind = 'media' and quick = ?1`, quick)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []IntelEntry
+	for rows.Next() {
+		e := IntelEntry{Kind: IntelMedia}
+		if err := rows.Scan(&e.ID, &e.Key, &e.Label, &e.UserID); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }
 
 // CountIntelHit notes that an entry was seen again.

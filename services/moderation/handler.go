@@ -44,9 +44,8 @@ type Handler struct {
 	dups *dupTracker
 	// repeats tracks images and links a member sends more than once.
 	repeats *dupTracker
-	// cdn downloads attachments to fingerprint them; fetch bounds how many at once.
-	cdn   *http.Client
-	fetch chan struct{}
+	// cdn downloads the attachments of suspected spam.
+	cdn *http.Client
 	// msgs remembers recent message text for the edit and delete logs.
 	msgs *msgCache
 	// invites caches whether an invite code points at the Steki guild.
@@ -76,7 +75,6 @@ func NewHandler(cfg *config.Moderation, st *store.Guard, activity *store.Activit
 		dups:         newDupTracker(),
 		repeats:      newRepeatTracker(),
 		cdn:          &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
-		fetch:        make(chan struct{}, intelFetchers),
 		msgs:         newMsgCache(msgCacheSize),
 		invites:      map[string]bool{},
 		registration: rpc.NewClient(cfg.RegistrationURL, cfg.InternalSecret),

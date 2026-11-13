@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bwmarrin/discordgo"
+
 	"steki-bot/internal/store"
 )
 
@@ -52,15 +54,27 @@ func TestFromDiscordCDN(t *testing.T) {
 	}
 }
 
-func TestHashBody(t *testing.T) {
-	a, ok := hashBody(strings.NewReader("scam.png"))
-	b, _ := hashBody(strings.NewReader("scam.png"))
-	c, _ := hashBody(strings.NewReader("other"))
-	if !ok || a != b || a == c {
-		t.Fatalf("hashes: %q %q %q", a, b, c)
+func TestFileKeyAndHash(t *testing.T) {
+	a := &discordgo.MessageAttachment{Filename: "Image.JPG", Size: 123}
+	if got := fileKey(a); got != "image.jpg:123" {
+		t.Errorf("fileKey = %q", got)
 	}
-	if _, ok := hashBody(strings.NewReader(strings.Repeat("x", intelMaxFile+1))); ok {
-		t.Error("an oversized file was hashed")
+	if sha([]byte("scam")) != sha([]byte("scam")) || sha([]byte("scam")) == sha([]byte("other")) {
+		t.Error("sha does not tell files apart")
+	}
+	if _, ok := readFile(strings.NewReader(strings.Repeat("x", intelMaxFile+1))); ok {
+		t.Error("an oversized file was read")
+	}
+	if data, ok := readFile(strings.NewReader("ok")); !ok || string(data) != "ok" {
+		t.Error("a small file was not read")
+	}
+}
+
+func TestFileExt(t *testing.T) {
+	for name, want := range map[string]string{"a.JPG": ".jpg", "a.png": ".png", "noext": ".png", "x.p/../ng": ".png", "a.verylongext": ".png"} {
+		if got := fileExt(name); got != want {
+			t.Errorf("fileExt(%q) = %q, want %q", name, got, want)
+		}
 	}
 }
 
@@ -91,8 +105,8 @@ func TestRepeatTrackerTripsOnSecondMessage(t *testing.T) {
 }
 
 func TestIntelCard(t *testing.T) {
-	embed, components := intelCard(7, spamItem{kind: store.IntelMedia, key: "k", label: "a`b.png", image: "https://cdn.discordapp.com/x.png"}, "u1")
-	if embed.Image == nil || !strings.Contains(embed.Fields[0].Value, "aˋb.png") {
+	embed, components := intelCard(7, spamItem{kind: store.IntelMedia, key: "k", label: "a`b.png"}, "u1", true)
+	if !strings.Contains(embed.Fields[0].Value, "aˋb.png") {
 		t.Fatalf("card = %+v", embed)
 	}
 	if !strings.Contains(embed.Description, "<@u1>") {

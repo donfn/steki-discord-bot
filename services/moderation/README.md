@@ -14,11 +14,13 @@ tests run first:
 
 1. Links on the blacklist (`URL_BLACKLIST`) or in the phishing feeds: the message is
    deleted and the sender is timed out.
-2. The intelligence feed (`intel.go`): an image (fingerprinted by the SHA-256 of the file,
-   downloaded from Discord's CDN) or link that is in the feed, or that the author sent twice
-   within five minutes. Either way the messages are deleted and the author is restricted; a
-   repeat also adds the item to the feed and posts a card to the log channel with a button
-   that removes it again (staff only). Links to widely shared hosts are never learned.
+2. The intelligence feed (`intel.go`): an image or link that is in the feed, or that the author
+   sent twice within five minutes. Either way the messages are deleted and the author is
+   restricted once. A file is recognised by name and size with no download; only a message that
+   matches a feed entry, or repeats, is downloaded and hashed (SHA-256, the entry's key). A
+   repeat adds the item to the feed and posts a card to the log channel, with the image
+   attached and a button that removes the entry again (staff only). Links to widely shared
+   hosts are never learned.
 3. Invitations to other servers (`invites.go`).
 4. The same text posted in several channels, the usual sign of a hijacked account
    (`duplicates.go`).

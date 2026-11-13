@@ -43,10 +43,10 @@ func (b *Log) Alert(s *discordgo.Session, message string) {
 }
 
 // PostCard sends an embed with buttons silently, for a post moderators answer
-// with a click.
-func (b *Log) PostCard(s *discordgo.Session, embed *discordgo.MessageEmbed, components []discordgo.MessageComponent) {
+// with a click. files are attached, so an embed can show one as attachment://name.
+func (b *Log) PostCard(s *discordgo.Session, embed *discordgo.MessageEmbed, components []discordgo.MessageComponent, files ...*discordgo.File) {
 	if _, err := s.ChannelMessageSendComplex(b.channelID, &discordgo.MessageSend{
-		Embeds: []*discordgo.MessageEmbed{embed}, Components: components,
+		Embeds: []*discordgo.MessageEmbed{embed}, Components: components, Files: files,
 		AllowedMentions: SafeMentions, Flags: discordgo.MessageFlagsSuppressNotifications,
 	}); err != nil {
 		b.log.Error("mod log delivery failed", "channel_id", b.channelID, "error", err)
